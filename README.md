@@ -96,7 +96,7 @@ Run them after any code change; run `test_frontend.py` after any app edit.
 
 ## PENDING: files not yet imported
 
-This repository holds 21 of the working system's files. The remaining 3 exist in the
+This repository holds 22 of the working system's files. The remaining 2 exist in the
 operator's working folder (`rtv/`) and should be committed here verbatim, with no edits,
 before any refactor.
 
@@ -104,7 +104,6 @@ before any refactor.
 |---|---|
 | `patch_frontend.py` | lineage: built v1.6 from the v1.5 app |
 | `patch_frontend_p4.py` | lineage: built v1.7 from v1.6 |
-| `TNL_Resort_Climate_Risk_Explorer.html` (v1.5) | patch source, keep for regeneration |
 
 ## Where this is going
 
