@@ -248,9 +248,14 @@ exactly, pinned by tests. Wildfire damage: value x burn probability x
 conditional damage ratio (0.6) x profile modifiers (Class A roof 0.6,
 defensible space 0.7). Rainfall damage: mm to ponding depth via documented
 drainage constants (150 mm capacity, 0.4 ponding, 0.3 m freeboard), then the
-flood curve. Remaining follow-ups: wfire/prain in the results pack's event
-math (so catalog wildfire measures price pack-side too) and run_pipeline.sh
-orchestration of the new producers.
+flood curve. The follow-ups shipped in the coherence pass: wfire and prain
+now flow through the results pack's event math (wildfire as a frequency-scaled
+event set, rainfall through the drainage transform, both honoring warming
+uplifts), catalog wildfire measures price pack-side, run_pipeline.sh
+orchestrates the new producers behind --fire/--rain opt-in flags, and a
+holistic review pass (v1.13) fixed every misleading data trail found: the
+by-peril split, export columns, chip counts, and INFO copy all agree on six
+perils.
 
 -----------------------------------------------------------------------------
 PHASE C: THE EXPERIENCE LEAP (frontend v2)
@@ -259,13 +264,38 @@ PHASE C: THE EXPERIENCE LEAP (frontend v2)
 Goal: retire the patch-anchor build chain and give the product the interface its
 science deserves, without changing a single answer until the parity gate passes.
 
+STATUS (C1 SHIPPED): the structural rebuild is done. The app's source of truth
+is now app/src/: a shell head, eight readable JS domain modules (hazard engine,
+finance, adaptation, uncertainty, state and INFO copy, render, intake, persist
+and wiring), and a shell tail, concatenated in MANIFEST order by
+app/assemble_app.py into the same zero-install single-file deployable
+(TNL_Resort_Climate_Risk_Explorer_v200.html). The split from v1.13 was proven
+lossless byte for byte before any edit. The refactor inside the source made the
+peril set registry-driven: scorePhysTotal, the financial by-peril split, and
+the Power BI export all iterate the ACUTE registry, with the export column
+order frozen by explicit EXPORT_ACUTE_LEGACY and EXPORT_ACUTE_APPENDED lists
+so the contract cannot drift. The executable spec demanded below exists:
+tests/test_app_parity.py runs an identical six-peril fixture through v1.13 and
+v2.0.0 and requires exact equality across per-site per-peril EAD, the
+financial layer, adaptation with and without modifiers, waterfall, insurance
+layering, uncertainty bands, and the export CSV string byte for byte. CI gates
+both directions: assemble_app.py --check catches a deployable that drifted
+from source, and the parity test catches a refactor that changed an answer.
+The patchers remain as verified history (v1.5 through v1.13 regenerate byte
+identically); new work edits app/src/ and reassembles. Next is C2, the
+experience itself, on this foundation.
+
 1. Parity first. Every constant, formula, measure, fallback, and the no-grid
    regression from v1.7 becomes an executable spec (the successor to
    `test_frontend.py`'s 31 assertions) before any visual work begins.
-2. Rebuild as a modern static SPA: Vite + TypeScript + MapLibre + a proper chart
-   layer. Still zero-install (opens from file:// or any static host), no backend,
-   same localStorage privacy, same drop UX for grid, meta, and pack. The v1.7 file
-   stays the deployable until the parity suite passes against the new app.
+2. Rebuild the structure. Original sketch said Vite + TypeScript + MapLibre; the
+   shipped C1 deliberately kept the zero-toolchain constraint instead (readable
+   source modules + a dependency-free Python assembler), because "opens from
+   file://, nothing to install" is the product's distribution model and a node
+   build chain would break it for the exact operators it serves. Zero-install
+   (file:// or any static host), no backend, same localStorage privacy, same
+   drop UX for grid, meta, and pack. The prior deployable stays authoritative
+   until the parity suite passes against the new app (it has: v2.0.0 == v1.13).
 3. The experience, realistically scoped:
    - Map-first home: per-site risk halos, peril toggles, brand filters.
    - Site scorecards with "why is this red?" drilldowns that trace a score to the
@@ -279,8 +309,12 @@ science deserves, without changing a single answer until the parity gate passes.
    - The INFO popover corpus carries over intact as the plain-language layer.
 4. The CSV export schema does not change (Power BI).
 
-Acceptance: parity suite green against v1.7 outputs; grid and pack drops behave
-identically; trust chips behave identically; export byte-compatible.
+Acceptance: parity suite green against the prior deployable's outputs (met:
+v2.0.0 matches v1.13 exactly, export string byte for byte); grid and pack
+drops behave identically; trust chips behave identically; export
+byte-compatible. C2 acceptance: every new surface (map drilldowns, scrubber,
+PDF) reads from the same functions the parity suite pins, so the numbers on
+screen are the numbers under test.
 
 -----------------------------------------------------------------------------
 PHASE D: FRONTIER OPTIONS (choose by appetite after C)

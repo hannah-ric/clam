@@ -135,7 +135,8 @@ measures (appraised in the app's financial model) stay identified per site.
 ## Repository layout
 
 ```
-app/        the browser application (self-contained HTML; highest version wins)
+app/        the browser application: readable source in app/src/, assembled by
+            assemble_app.py into the self-contained HTML deployable
 pipeline/   the hazard factory scripts and preflight/diagnostic tools
 tests/      contract tests (pure pandas/numpy, no CLIMADA needed)
 docs/       the standing documents: execution plan, runbook, novice guide,
@@ -154,8 +155,10 @@ bash tests/run_all.sh
 
 That is: the contract suites, the end-to-end simulations (which
 exercise the validators' accept and reject paths), the frontend assertions
-against the deployable app, byte-for-byte regeneration of the full app
-lineage from the v1.5 patch source, and the project style guard.
+against the deployable app plus the v1.13-vs-v2.0.0 parity suite,
+byte-for-byte regeneration of the historical app lineage from the v1.5 patch
+source, the assembly drift check (deployable matches app/src/ exactly), and
+the project style guard.
 
 CI runs the same script on every push and pull request
 (`.github/workflows/ci.yml`), so the badge above is the live answer to "is the
@@ -165,22 +168,39 @@ silently lapses (it skips itself if the previous quarter's issue is still open).
 
 Run the gates after any code change; `test_frontend.py` after any app edit.
 
-## App lineage
+## App source and lineage
 
-`app/` carries the full patch chain, verified reproducible on every push: the v1.5
-original is the patch source, and patch_frontend.py, then _p4 through _p9, regenerate
-v1.6 through v1.12 byte-identically to the committed files. Every patcher aborts with
-no output if its anchors no longer match. The v1.12 file is the deployable; the rest
-is lineage. Recent additions by version: v1.8 results-pack intake, v1.9 renewal
-benchmark and capital plan, v1.10 building profiles, v1.11 phased catalog plan,
-v1.12 the wildfire and TC-rainfall perils.
+The app's source of truth is `app/src/`: a shell head, eight readable JS domain
+modules (hazard engine, finance, adaptation, uncertainty, state and INFO copy,
+render, intake, persist and wiring), and a shell tail, concatenated in MANIFEST
+order. `python3 app/assemble_app.py` joins them into the deployable
+(`TNL_Resort_Climate_Risk_Explorer_v200.html`), still a single self-contained
+file that opens from file:// with nothing to install. To change the app: edit
+the module, reassemble, run the gates. `assemble_app.py --check` (a CI gate)
+fails if the committed deployable ever drifts from the source, and
+`tests/test_app_parity.py` proved v2.0.0 numerically identical to v1.13 across
+every peril, the financial layer, adaptation, and the export string before
+v2.0.0 took over as the deployable.
 
-The working system is fully consolidated in this repository. Next steps are on the
-roadmap in `MASTER_PLAN.md` (Phase A: CI wiring and the one-command container).
+`app/` also carries the historical patch chain, verified reproducible on every
+push: the v1.5 original is the patch source, and patch_frontend.py through
+_p10 regenerate v1.6 through v1.13 byte-identically to the committed files.
+Every patcher aborts with no output if its anchors no longer match. That chain
+is closed history now; new work happens in `app/src/`. Additions by version:
+v1.8 results-pack intake, v1.9 renewal benchmark and capital plan, v1.10
+building profiles, v1.11 phased catalog plan, v1.12 the wildfire and
+TC-rainfall perils, v1.13 the coherence pass, v2.0.0 the source-split rebuild.
+
+The working system is fully consolidated in this repository, with CI green on
+every push. The roadmap lives in `MASTER_PLAN.md`; Phase C1 (structural
+rebuild with exact parity) is shipped, and Phase C2 (the experience layer) is
+next.
 
 ## Where this is going
 
-Read `MASTER_PLAN.md`. Short version: consolidate and containerize (Phase A), then the
-results pack, which makes the portfolio loss curve, adaptation appraisal, and
-uncertainty bands CLIMADA-native (Phase B), then a rebuilt frontend with a parity-first
-migration (Phase C), then optional frontier layers (Phase D).
+Read `MASTER_PLAN.md`. Short version: consolidation and CI shipped (Phase A,
+container still open), the CLIMADA-native results pack with appraisal and
+uncertainty shipped (Phase B), the parity-first structural rebuild shipped
+(Phase C1), and next comes the experience layer on that foundation (Phase C2:
+map-first drilldowns, scenario scrubber, board PDF), then optional frontier
+layers (Phase D).

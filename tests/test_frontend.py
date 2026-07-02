@@ -302,6 +302,10 @@ assert(panel.innerHTML.indexOf("prain")>=0&&panel.innerHTML.indexOf("wfire")>=0,
 assert(panel.innerHTML.indexOf("await")<0,
   "the stale wildfire caveat is gone from the pack panel");
 
+assert(JSON.stringify(EXPORT_ACUTE_LEGACY.concat(EXPORT_ACUTE_APPENDED).slice().sort())
+  ===JSON.stringify(ACUTE.slice().sort()),
+  "the frozen export column lists partition ACUTE exactly (Power BI contract)");
+
 persistPack();
 resultsPack=null;
 restore();

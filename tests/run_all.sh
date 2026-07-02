@@ -41,8 +41,9 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_badfire_grid.csv
 
 echo
-echo "== 3  frontend functional tests (v1.13 surface) ====================="
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v113.html
+echo "== 3  frontend functional tests (v2.0.0 surface) ====================="
+python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v200.html
+python3 tests/test_app_parity.py
 
 echo
 echo "== 4  app lineage reproducibility ==================================="
@@ -72,6 +73,7 @@ echo "ok  regenerated v1.12 is byte-identical to the committed v1.12"
 python3 app/patch_frontend_p10.py "$TMP/v112.html" "$TMP/v113.html"
 cmp "$TMP/v113.html" app/TNL_Resort_Climate_Risk_Explorer_v113.html
 echo "ok  regenerated v1.13 is byte-identical to the committed v1.13"
+python3 app/assemble_app.py --check
 
 echo
 echo "== 5  style guard ===================================================="
