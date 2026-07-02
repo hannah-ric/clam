@@ -31,14 +31,14 @@ function parseCsv(text){
   }
   return {head,out};
 }
-function truthy(v){ v=String(v==null?"":v).trim().toLowerCase(); return v==="1"||v==="true"||v==="yes"||v==="y"||v==="coastal"; }
+function truthy(v){ v=String(v==null?"":v).trim().toLowerCase(); return v==="1"||v==="true"||v==="yes"||v==="y"; }
 function loadSiteCsv(text){
   const {head,out}=parseCsv(text);
   const missing=["name","latitude","longitude","asset_value_usd"].filter(k=>head.indexOf(k)<0);
   if(missing.length){
     toast("CSV is missing required column"+(missing.length>1?"s":"")+": "+missing.join(", ")+".");return;
   }
-  const hasCoastal=head.indexOf("coastal")>=0, hasCountry=head.indexOf("country")>=0, hasRev=head.indexOf("annual_revenue_usd")>=0;
+  const hasCountry=head.indexOf("country")>=0, hasRev=head.indexOf("annual_revenue_usd")>=0;
   const hasConstr=head.indexOf("construction")>=0, hasYear=head.indexOf("year_built")>=0, hasDef=head.indexOf("defended")>=0;
   const arr=[];let skipped=0;
   out.forEach(row=>{
@@ -47,7 +47,6 @@ function loadSiteCsv(text){
     const rec={name:String(row.get("name")||"Site").slice(0,120),brand:String(row.get("brand")||"").slice(0,80),
               latitude:lat,longitude:lon,asset_value_usd:val};
     if(hasCountry){const c=String(row.get("country")||"").slice(0,60);if(c)rec.country=c;}
-    if(hasCoastal){const cv=row.get("coastal");if(cv!==undefined&&String(cv).trim()!=="")rec.coastal=truthy(cv);}
     if(hasRev){const rv=toNum(row.get("annual_revenue_usd"));if(isFinite(rv)&&rv>=0)rec.annual_revenue_usd=rv;}
     if(hasConstr){const cs=String(row.get("construction")||"").trim().toLowerCase();if(CONSTR_FACTOR[cs]!=null)rec.construction=cs;}
     if(hasYear){const yb=toNum(row.get("year_built"));if(isFinite(yb)&&yb>1800&&yb<2100)rec.year_built=Math.round(yb);}

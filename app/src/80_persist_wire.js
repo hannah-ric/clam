@@ -99,12 +99,12 @@ function exportCsv(){
   toast("Exported "+sites.length+" rows (multi-hazard Power BI schema)");
 }
 function downloadTemplate(){
-  // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, coastal.
+  // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country.
   const csv=
-    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,,intermix,10,false\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,,,,\n";
+    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

@@ -138,7 +138,7 @@ function renderOverview(scored){
     document.getElementById("narrative").innerHTML=
       "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, extreme-heat exposure at "+SCEN_LABEL[scenario].toLowerCase()+" averages <b>"+heatDays+" days per year over 32\u00b0C</b>. "+
       (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s rate":" rates")+" High or Severe for heat. ":"")+
-      "Across all modeled perils, coastal flood and wind drive the portfolio's physical expected annual damage; the combined figure rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
+      "Across all modeled perils, <b>"+domName+"</b> is the largest driver of physical expected annual damage; the combined figure rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
   }else{
     document.getElementById("narrative").innerHTML=
       "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
@@ -208,15 +208,12 @@ function renderDetail(r){
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
       '<button class="lightbtn" id="editVal">Edit value</button>'+
-      '<button class="lightbtn" id="toggleCoast">'+(r.coastal?"Coastal ✓":"Mark coastal")+'</button>'+
       '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
     '</div>';
   document.getElementById("openCard").onclick=()=>openScorecard(r.id);
   document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
-  document.getElementById("toggleCoast").onclick=()=>{const s=sites.find(x=>x.id===r.id);s.coastal=!s.coastal;persist();render();};
   document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
 }
-function interimOrGrid(r,sc){ return provider()(r.latitude,r.longitude,sc).vec; }
 
 function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
@@ -335,7 +332,7 @@ function costCurveSvg(appraised){
   items.forEach((a,i)=>{
     const w=(a.averted/totAvert)*(W-padL-14);
     const y=Y(a.bcr), h=(H-padB)-y;
-    s+='<rect x="'+(X(x/ (totAvert) * totAvert)+0)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" fill="'+colors[i%colors.length]+'" opacity="'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
+    s+='<rect x="'+X(x)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" fill="'+colors[i%colors.length]+'" opacity="'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
     legend+='<span style="margin-right:12px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+colors[i%colors.length]+';margin-right:5px;vertical-align:middle;opacity:'+(a.st.on?1:0.4)+'"></span>'+esc(a.m.name.split("(")[0].trim())+' '+a.bcr.toFixed(1)+'x</span>';
     x+=a.averted;
   });
