@@ -111,6 +111,17 @@ Enrichment fills only blank fields, marks every draft needs_review in the
 meta sidecar, and never overwrites an operator value. Review, confirm, then
 use the confirmed file as the pipeline's sites input.
 
+The measure catalog (`pipeline/measures_catalog.py`) turns the profile into a
+short-term capital plan: per-measure applicability with plain-language
+exclusion reasons (a high-rise cannot be elevated; a new metal roof has
+nothing to gain from re-roofing), per-key costs with value-percent fallbacks,
+lifecycle BCR over min(lifespan, horizon), refurbishment-cycle phasing via
+`renovation_year` (shared mobilization discounts the cost), and an annual
+budget lens: `python refresh_impacts.py --sites sites.csv --budget 5000000`
+phases funded projects into years 1..3 and marks the rest deferred, never
+dropped. Wildfire and continuity measures the pipeline cannot yet price are
+still identified per site in the pack.
+
 ## Repository layout
 
 ```

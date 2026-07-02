@@ -165,8 +165,15 @@ FLOOD_CAP_DEFAULT = 0.75          # the published curve's cap
 
 
 def _txt(x):
-    s = str(x).strip().lower() if x is not None else ""
-    return s if s and s not in ("nan", "none") else None
+    """Lowercased text or None for genuinely-missing values. The literal
+    string "none" is a REAL value (opening_protection's vocabulary), so only
+    the None object, NaN, and empty/nan strings count as missing."""
+    if x is None:
+        return None
+    if isinstance(x, float) and not np.isfinite(x):
+        return None
+    s = str(x).strip().lower()
+    return s if s and s != "nan" else None
 
 
 def _num(x):
@@ -550,6 +557,84 @@ _MC_KW = {"haz": "haz_mult", "dmg": "dmg_scale", "exp": "exp_mult"}
 # applied: the pack's headline figures keep the app's published curve.
 # ---------------------------------------------------------------------------
 
+def run_catalog(prep, sites_c, values, wind_mult, fb_coast, fb_river, fcap,
+                base_by_scen, plan_scenario_pref=("ssp245_2050", "present")):
+    """Appraise every catalog measure per site (increment 2). Returns
+    (measures_catalog section, projects list ready for phasing, scenario).
+    Modeled measures get event-set averted AAL over exactly the sites they
+    apply to (and are costed on); identified-but-unmodeled measures (wildfire
+    ahead of its layer, continuity) surface with sites and costs but no BCR."""
+    import measures_catalog as mc          # lazy: mc imports this module
+    sc = next((s for s in plan_scenario_pref if s in base_by_scen), None)
+    if sc is None:
+        return None, [], None
+    base = base_by_scen[sc]
+    ead_by_peril = {p: np.asarray(base[p]["ead"], float)
+                    for p in ("tc", "cflood", "rflood")}
+    names = [str(n) for n in sites_c["name"]]
+    modeled, identified, projects = {}, [], []
+    for m in mc.CATALOG:
+        mask, knobs, costs, reasons = mc.catalog_effects(sites_c, ead_by_peril, m)
+        entry = {"name": m["name"], "peril": m["peril"],
+                 "lifespan_years": m["lifespan_years"],
+                 "lead_time_months": m["lead_time_months"],
+                 "downtime_room_nights_per_key": m["downtime_room_nights_per_key"],
+                 "premium_credit_pct": m["premium_credit_pct"],
+                 "note": m["note"],
+                 "sites_in_scope": int(mask.sum()),
+                 "excluded": [{"site": names[i], "reason": reasons[i]}
+                              for i in range(len(names)) if not mask[i]]}
+        if not m["modeled"]:
+            entry["cost_usd"] = round(float(costs.sum()), 2)
+            entry["sites"] = [names[i] for i in range(len(names)) if mask[i]]
+            identified.append({"key": m["key"], **entry})
+            continue
+        cap_knob = knobs["flood_cap"]
+        cap_eff = np.where(np.isnan(cap_knob), fcap,
+                           np.minimum(fcap, cap_knob))
+        adapted = eval_scenario(prep, sc, values, wind_mult, fb_coast,
+                                fb_river, flood_cap=cap_eff,
+                                wind_dmg_mult=knobs["wind_dmg_mult"],
+                                fb_bonus=knobs["fb_bonus"],
+                                cf_depth_red=knobs["cf_depth_red"])
+        if adapted is None:
+            continue
+        av_site = np.maximum(np.asarray(base["acute"]["ead"], float) -
+                             np.asarray(adapted["acute"]["ead"], float), 0.0)
+        an_years = min(m["lifespan_years"], HORIZON_YEARS)
+        an = annuity(an_years, DISCOUNT_RATE)
+        entry["averted_direct_aal_usd"] = round(float(av_site.sum()), 2)
+        entry["cost_usd"] = round(float(costs.sum()), 2)
+        entry["annuity_years"] = an_years
+        modeled[m["key"]] = entry
+        for i in range(len(names)):
+            if mask[i] and costs[i] > 0:
+                projects.append({"site": names[i], "measure": m["name"],
+                                 "measure_key": m["key"], "peril": m["peril"],
+                                 "averted_direct_aal_usd": round(float(av_site[i]), 2),
+                                 "cost_usd": round(float(costs[i]), 2),
+                                 "annuity_years": an_years,
+                                 "bcr": round(float(av_site[i]) * an
+                                              / float(costs[i]), 3)})
+    projects.sort(key=lambda p: (-p["bcr"], p["site"], p["measure_key"]))
+    return ({"modeled": modeled, "identified": identified}, projects, sc)
+
+
+def build_capital_plan_v2(projects, sites_c, scenario, budget_annual_usd=None,
+                          max_projects=40):
+    """Phase the BCR-ranked catalog projects into the short-term plan."""
+    import measures_catalog as mc
+    if not projects:
+        return None
+    phased = mc.phase_projects(projects[:max_projects], sites_c,
+                               budget_annual_usd)
+    return {"scenario": scenario, "discount_rate": DISCOUNT_RATE,
+            "horizon_years": HORIZON_YEARS, "plan_years": mc.PLAN_YEARS,
+            "budget_annual_usd": budget_annual_usd,
+            "renovation_synergy_factor": mc.RENOV_SYNERGY,
+            "projects": phased}
+
+
 def build_capital_plan(adaptation, names, max_projects=20,
                        scenario_pref=("ssp245_2050", "present")):
     """Rank every (site, measure) pair by benefit-cost ratio: the canonical
@@ -910,6 +995,8 @@ def main(argv=None) -> int:
     ap.add_argument("--mc", type=int, default=300,
                     help="Monte Carlo samples (default %(default)s)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--budget", type=float, default=None, metavar="USD",
+                    help="annual capex budget for the phased capital plan")
     ap.add_argument("--backtest", default=None, metavar="CSV",
                     help="observed-loss CSV (name, observed_annual_loss_usd): "
                          "fits v_half and records it in the pack, not applied")
@@ -979,7 +1066,13 @@ def main(argv=None) -> int:
                         np.asarray(scen["present"]["cflood"]["ead"])[mask].sum()
                         + np.asarray(scen["present"]["rflood"]["ead"])[mask].sum())})
                 matched_names.update(sites_c.loc[mask, "name"].astype(str))
+        cat_section, cat_projects, cat_sc = run_catalog(
+            prep, sites_c, values, wm, fb_coast, fb_river, fcap,
+            {k: v for k, v in scen.items() if k in base_keys})
         per_country.append({"scen": scen, "adaptation": adaptation,
+                            "catalog": cat_section,
+                            "cat_projects": cat_projects, "cat_sc": cat_sc,
+                            "sites_df": sites_c,
                             "uncertainty": uncertainty, "iso3": iso3,
                             "names": list(sites_c["name"]), "values": values})
         order.extend(sites_c["name"])
@@ -1001,7 +1094,13 @@ def main(argv=None) -> int:
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites)
-    plan = build_capital_plan(lead["adaptation"], lead["names"])
+    if lead.get("catalog"):
+        pack["measures_catalog"] = lead["catalog"]
+    plan = build_capital_plan_v2(lead.get("cat_projects") or [],
+                                 lead["sites_df"], lead.get("cat_sc"),
+                                 budget_annual_usd=args.budget)
+    if plan is None:                       # catalog empty: legacy fallback
+        plan = build_capital_plan(lead["adaptation"], lead["names"])
     if plan:
         pack["capital_plan"] = plan
     if backtest is not None:

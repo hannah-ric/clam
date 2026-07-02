@@ -141,10 +141,19 @@ const goodPack={pack_version:1,kind:"results_pack",
     per_site:[]}},
   adaptation:{},
   capital_plan:{scenario:"ssp585_2080",discount_rate:0.03,horizon_years:25,
-    projects:[{site:"Reef Bay",measure:"Wind hardening (roofs & openings)",measure_key:"wind",
-               averted_direct_aal_usd:400000,cost_usd:1200000,bcr:5.804},
-              {site:"Dune Point",measure:"Dry floodproofing & utility elevation",measure_key:"flood",
-               averted_direct_aal_usd:90000,cost_usd:480000,bcr:3.265}]},
+    plan_years:3,budget_annual_usd:1500000,
+    projects:[{site:"Reef Bay",measure:"Re-roof to rated metal system",measure_key:"reroof",
+               averted_direct_aal_usd:400000,cost_usd:1200000,bcr:5.804,
+               annuity_years:25,year:1},
+              {site:"Dune Point",measure:"Dry floodproofing (barriers & sealing)",measure_key:"floodproof",
+               averted_direct_aal_usd:90000,cost_usd:408000,bcr:3.265,
+               annuity_years:25,year:2,renovation_synergy:true},
+              {site:"River Bend",measure:"Roof-to-wall connection retrofit",measure_key:"tiedown",
+               averted_direct_aal_usd:20000,cost_usd:300000,bcr:1.161,
+               annuity_years:25,year:null,deferred:true}]},
+  measures_catalog:{modeled:{},identified:[
+    {key:"defensible",name:"Defensible space (wildfire)",sites_in_scope:2},
+    {key:"backup_power",name:"Backup power (full-site generation)",sites_in_scope:3}]},
   uncertainty:{present:{acute_aal_usd:{p5:1900000,p50:2500000,p95:3400000,central:2500000},
     loss_1in100_usd:{p5:8000000,p50:11000000,p95:15000000,central:11000000},drivers:[]}}};
 
@@ -192,6 +201,16 @@ assert(panel.innerHTML.indexOf("Top capital projects")>=0&&panel.innerHTML.index
   &&panel.innerHTML.indexOf("BCR 5.804")>=0,"pack panel ranks the capital plan");
 assert(panel.innerHTML.indexOf("ssp585_2080 appraisal")>=0,
   "capital plan states its appraisal scenario");
+
+/* ---------------- v1.11: phased catalog plan + identified measures ---------- */
+assert(panel.innerHTML.indexOf("Y1 · Reef Bay")>=0,"plan rows carry the phase year");
+assert(panel.innerHTML.indexOf("deferred · River Bend")>=0,"deferred projects say so");
+assert(panel.innerHTML.indexOf("refurbishment-phased")>=0,"renovation synergy is marked");
+assert(panel.innerHTML.indexOf("$1.50M/yr budget")>=0,"the annual budget is stated");
+assert(panel.innerHTML.indexOf("Identified, not yet priced")>=0
+  &&panel.innerHTML.indexOf("Defensible space (wildfire)")>=0
+  &&panel.innerHTML.indexOf("(2 sites)")>=0,
+  "identified-but-unpriced measures stay visible with their site counts");
 
 /* ---------------- v1.10: profile v2 parity with the pipeline ---------------- */
 let v=vulnOf({construction:"masonry",year_built:1980,roof_type:"metal",roof_year:2020,opening_protection:"impact"});

@@ -214,10 +214,20 @@ pipeline/enrich_sites.py drafts profile fields from public data (DEM sample,
 dist-to-coast, FEMA NFHL zone, OSM building count) with per-field provenance,
 needs_review flags, never overwriting operator values, every source skippable.
 
-Increment 2 (NEXT): realistic measure catalog (applicability predicates on the
-profile, unit costs per key/site, lifespan, lead time, downtime, premium-credit
-hook) and capital plan v2 (budget-constrained selection, refurbishment-cycle
-phasing via renovation_year, benefit components reported separately).
+Increment 2 (SHIPPED): pipeline/measures_catalog.py, a ten-measure catalog
+across wind, flood, wildfire, and continuity. Applicability predicates on the
+profile with plain-language exclusion reasons; retrofit effects DERIVED from
+the vuln_v2 factor table itself (re-roofing benefit is exactly the factor
+delta it causes, so an already-new metal roof correctly gains nothing);
+per-key costs with value-percent fallbacks; lifecycle BCR over min(lifespan,
+horizon); premium-credit hook at 0 until broker quotes arrive. Capital plan
+v2: refurbishment-cycle phasing (renovation_year within 3 years shares
+mobilization at a 0.85 cost factor), --budget fills years 1..3 greedily by
+BCR and DEFERS what does not fit (never drops it), wildfire and continuity
+measures surface as identified-not-yet-priced. The v1.11 app renders phase
+years, deferral, synergy tags, the budget, and the identified list.
+validate_pack gates funded-project ordering, per-year budget, and per-project
+annuity reconciliation.
 
 Increment 3: wildfire hazard layer (Petals WildFire) and TCRain pluvial as
 fifth and sixth perils, with the app's HAZARDS surface extended; wildfire

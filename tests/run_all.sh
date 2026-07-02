@@ -23,6 +23,7 @@ PYTHONPATH=pipeline python3 tests/test_gridops.py
 PYTHONPATH=pipeline python3 tests/test_phase23_ops.py
 python3 tests/test_impactops.py
 python3 tests/test_profileops.py
+python3 tests/test_catalogops.py
 
 echo
 echo "== 2  pipeline + results-pack simulations ==========================="
@@ -35,8 +36,8 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_pack_*.json pipeline/sim_backtest.csv
 
 echo
-echo "== 3  frontend functional tests (v1.10 surface) ====================="
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v110.html
+echo "== 3  frontend functional tests (v1.11 surface) ====================="
+python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v111.html
 
 echo
 echo "== 4  app lineage reproducibility ==================================="
@@ -57,6 +58,9 @@ echo "ok  regenerated v1.9 is byte-identical to the committed v1.9"
 python3 app/patch_frontend_p7.py "$TMP/v19.html" "$TMP/v110.html"
 cmp "$TMP/v110.html" app/TNL_Resort_Climate_Risk_Explorer_v110.html
 echo "ok  regenerated v1.10 is byte-identical to the committed v1.10"
+python3 app/patch_frontend_p8.py "$TMP/v110.html" "$TMP/v111.html"
+cmp "$TMP/v111.html" app/TNL_Resort_Climate_Risk_Explorer_v111.html
+echo "ok  regenerated v1.11 is byte-identical to the committed v1.11"
 
 echo
 echo "== 5  style guard ===================================================="

@@ -175,6 +175,30 @@ def run():
     assert r_plan.returncode == 1 and "not sorted by BCR" in r_plan.stdout
     print("ok  capital plan: ranked in the pack, unsorted plan rejected")
 
+    # 5a3. measures catalog + budgeted plan
+    catsec = pack.get("measures_catalog")
+    assert catsec and "reroof" in catsec["modeled"]
+    assert any(e["reason"] for m in catsec["modeled"].values()
+               for e in m["excluded"]), "exclusions carry plain-language reasons"
+    assert any(i["key"] == "backup_power" for i in catsec["identified"])
+    rc_b = ri.main(["--sites", "sim_sites.csv", "--out",
+                    "sim_results_pack_b.json", "--mc", "60", "--seed", "42",
+                    "--budget", "1500000"])
+    assert rc_b == 0
+    pb = json.loads(Path("sim_results_pack_b.json").read_text())
+    planb = pb["capital_plan"]
+    assert planb["budget_annual_usd"] == 1500000.0
+    spent = {}
+    for p in planb["projects"]:
+        if p.get("year") is not None:
+            spent[p["year"]] = spent.get(p["year"], 0.0) + p["cost_usd"]
+    assert all(v <= 1500000.0 * 1.001 for v in spent.values())
+    r_b = subprocess.run([sys.executable, "validate_pack.py",
+                          "sim_results_pack_b.json"],
+                         capture_output=True, text=True)
+    assert r_b.returncode == 0
+    print("ok  catalog section, exclusion reasons, budgeted plan gated")
+
     # 5b. backtest calibration: recorded, sane, and gated
     pd.DataFrame({"name": ["Reef Bay", "Dune Point", "Nowhere Resort"],
                   "observed_annual_loss_usd": [900_000, 400_000, 1]}
