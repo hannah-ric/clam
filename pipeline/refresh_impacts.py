@@ -190,6 +190,10 @@ def ep_curve(event_losses, freq, rps=tuple(RPS)):
     """
     losses = np.asarray(event_losses, dtype=float)
     freq = np.asarray(freq, dtype=float)
+    keep = freq > 0                      # zero-frequency events carry no
+    losses, freq = losses[keep], freq[keep]   # exceedance and would poison 1/cum
+    if not len(losses):
+        return {rp: 0.0 for rp in rps}
     order = np.argsort(losses)[::-1]
     l_desc = losses[order]
     cum = np.cumsum(freq[order])
@@ -320,13 +324,13 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
 
     if joint is None and river is None:
         return None
-    zero = {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
-            "ead": np.zeros_like(vals)}
-    joint = joint or dict(zero)
-    river = river or dict(zero)
+    zero = lambda: {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
+                    "ead": np.zeros_like(vals)}
+    joint = joint or zero()
+    river = river or zero()
     return {
-        "tc": wind or dict(zero),
-        "cflood": surge or dict(zero),
+        "tc": wind or zero(),
+        "cflood": surge or zero(),
         "rflood": river,
         "acute": {"aal": joint["aal"] + river["aal"],
                   "ep": add_ep(joint["ep"], river["ep"]),
@@ -450,7 +454,7 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
     matrices (the pure structure eval_scenario consumes)."""
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
-    prep = {"wind": {}, "surge": {}, "rflood": {}}
+    prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set()}
 
     for source in rh.unique_sources(rh.APP_SCENARIOS):
         skey = rh.source_key(source)
@@ -464,10 +468,13 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
         idx, dist = nearest_centroids(lat, lon, haz.centroids.lat,
                                       haz.centroids.lon)
         for j in np.where(idx < 0)[0]:
-            meta["skipped"].append({"country": iso3, "layer": "tc",
-                                    "site": str(sites_c.iloc[j]["name"]),
-                                    "reason": f"outside coverage "
-                                              f"({dist[j]:.0f} km to nearest cell)"})
+            site = str(sites_c.iloc[j]["name"])
+            if site not in prep["_outside"]:      # once per site, not per source
+                prep["_outside"].add(site)
+                meta["skipped"].append({"country": iso3, "layer": "tc",
+                                        "site": site,
+                                        "reason": f"outside coverage "
+                                                  f"({dist[j]:.0f} km to nearest cell)"})
         prep["wind"][skey] = {"freq": np.asarray(haz.frequency, float),
                               "int": site_intensity(haz, idx)}
         LOG.info("  wind %s / %s -> %d events x %d sites", iso3, skey,
@@ -497,10 +504,11 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
 
     if river_enabled:
         for app_key in rh.APP_SCENARIOS:
+            fetch_failed = False
             try:
                 members = fetch_river_flood_hazards(iso3, app_key, meta)
             except Exception as exc:
-                members = []
+                members, fetch_failed = [], True
                 meta["skipped"].append({"country": iso3, "scenario": app_key,
                                         "layer": "rflood",
                                         "reason": str(exc)[:300]})
@@ -512,7 +520,7 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
                                "int": site_intensity(mhaz, midx)})
             if packed:
                 prep["rflood"][app_key] = packed
-            elif members == []:
+            elif not fetch_failed:      # empty result; failure already recorded
                 meta["skipped"].append({"country": iso3, "scenario": app_key,
                                         "layer": "rflood",
                                         "reason": "no river_flood dataset"})
@@ -523,22 +531,39 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
 # Pack assembly (pure)
 # ---------------------------------------------------------------------------
 
-def combine_countries(results):
+def combine_countries(results, site_counts, countries=None, meta=None):
     """AALs and per-site EADs concatenate exactly; exceedance curves add at
-    equal return periods (comonotonic across independent country catalogs)."""
+    equal return periods (comonotonic across independent country catalogs).
+
+    `site_counts[i]` is the number of sites in `results[i]`. A country whose
+    hazards all failed for a scenario contributes explicit ZEROS for its
+    sites (keeping every per-site array aligned with the full site list) and
+    the gap is recorded in meta.skipped rather than silently dropped: the
+    same rule align_to_cells applies to the hazard grid."""
     out = {}
+    countries = countries or ["?"] * len(results)
     for app_key in rh.APP_SCENARIOS:
-        parts = [r[app_key] for r in results if r.get(app_key)]
-        if not parts:
+        if not any(r.get(app_key) for r in results):
             continue
         combined = {}
         for peril in ("tc", "cflood", "rflood", "acute"):
-            aal = sum(p[peril]["aal"] for p in parts)
-            ep = {rp: 0.0 for rp in RPS}
-            for p in parts:
+            aal, ep, eads = 0.0, {rp: 0.0 for rp in RPS}, []
+            for r, n, iso3 in zip(results, site_counts, countries):
+                p = r.get(app_key)
+                if p is None:
+                    eads.append(np.zeros(n))
+                    if meta is not None and peril == "acute":
+                        meta["skipped"].append(
+                            {"country": iso3, "scenario": app_key,
+                             "layer": "pack",
+                             "reason": "scenario absent for this country; "
+                                       "its sites carry zero in the pack here"})
+                    continue
+                aal += p[peril]["aal"]
                 ep = add_ep(ep, p[peril]["ep"])
-            ead = np.concatenate([np.asarray(p[peril]["ead"]) for p in parts])
-            combined[peril] = {"aal": aal, "ep": ep, "ead": ead}
+                eads.append(np.asarray(p[peril]["ead"], float))
+            combined[peril] = {"aal": aal, "ep": ep,
+                               "ead": np.concatenate(eads)}
         out[app_key] = combined
     return out
 
@@ -683,7 +708,7 @@ def main(argv=None) -> int:
                                        if k in scen],
                                       args.mc, args.seed)
         per_country.append({"scen": scen, "adaptation": adaptation,
-                            "uncertainty": uncertainty,
+                            "uncertainty": uncertainty, "iso3": iso3,
                             "names": list(sites_c["name"]), "values": values})
         order.extend(sites_c["name"])
 
@@ -691,7 +716,9 @@ def main(argv=None) -> int:
         LOG.error("No impacts produced. Check network access and the sites file.")
         return 1
 
-    combined = combine_countries([c["scen"] for c in per_country])
+    combined = combine_countries([c["scen"] for c in per_country],
+                                 [len(c["names"]) for c in per_country],
+                                 [c["iso3"] for c in per_country], meta)
     # single-country portfolios keep their exact adaptation and uncertainty;
     # multi-country runs report the value-weighted country with a meta note
     lead = max(per_country, key=lambda c: float(c["values"].sum()))

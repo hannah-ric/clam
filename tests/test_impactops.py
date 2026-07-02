@@ -175,6 +175,33 @@ def test_uncertainty_deterministic():
     ok("uncertainty: seeded determinism, quantile order, central in band")
 
 
+def test_combine_countries_padding():
+    # country A lacks ssp585_2080 entirely (all sources failed there);
+    # its 2 sites must appear as explicit zeros, aligned, and recorded
+    mk = lambda n, aal: {p: {"aal": aal if p in ("tc", "acute") else 0.0,
+                             "ep": {rp: aal if p in ("tc", "acute") else 0.0
+                                    for rp in ri.RPS},
+                             "ead": (np.full(n, aal / n) if p in ("tc", "acute")
+                                     else np.zeros(n))}
+                         for p in ("tc", "cflood", "rflood", "acute")}
+    res_a = {"present": mk(2, 10.0)}
+    res_b = {"present": mk(3, 20.0), "ssp585_2080": mk(3, 30.0)}
+    meta = {"skipped": []}
+    out = ri.combine_countries([res_a, res_b], [2, 3], ["PRI", "USA"], meta)
+    assert len(out["present"]["acute"]["ead"]) == 5
+    assert len(out["ssp585_2080"]["acute"]["ead"]) == 5      # padded, aligned
+    assert np.allclose(out["ssp585_2080"]["acute"]["ead"][:2], 0.0)
+    assert abs(out["ssp585_2080"]["acute"]["aal"] - 30.0) < 1e-12
+    assert any(s["country"] == "PRI" and s["scenario"] == "ssp585_2080"
+               and s["layer"] == "pack" for s in meta["skipped"])
+    # and build_pack no longer misaligns or crashes
+    pack_scen = ri.build_pack(out, ["a1", "a2", "b1", "b2", "b3"],
+                              np.ones(5), {}, {}, "x.csv")["scenarios"]
+    assert pack_scen["ssp585_2080"]["per_site"][0]["direct_ead_usd"] == 0.0
+    assert pack_scen["ssp585_2080"]["per_site"][2]["direct_ead_usd"] > 0.0
+    ok("combine_countries: scenario gaps pad with aligned zeros and are recorded")
+
+
 def test_annuity():
     # 25 years at 3%: standard annuity factor ~17.413
     assert abs(ri.annuity(25, 0.03) - 17.4131) < 5e-4
@@ -193,5 +220,6 @@ if __name__ == "__main__":
     test_losses_and_measures()
     test_eval_scenario_and_adaptation()
     test_uncertainty_deterministic()
+    test_combine_countries_padding()
     test_annuity()
     print("\nALL IMPACT-OP TESTS PASSED")

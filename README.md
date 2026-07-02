@@ -46,9 +46,13 @@ One-time setup (full novice walkthrough in `docs/DEM_AND_VSCODE_FOR_DUMMIES.md`)
 ```bash
 bash pipeline/setup_env.sh          # upgrades or creates the climada_env conda env
 conda activate climada_env
+cd pipeline                         # the pipeline reads and writes HERE:
+                                    # running these from the repo root would put the
+                                    # DEM where refresh_hazard.py cannot find it and
+                                    # the surge layer would silently drop out
 # download SRTM15_V2.x.nc from https://topex.ucsd.edu/pub/srtm15_plus/ then:
-python pipeline/convert_dem.py SRTM15_V2.7.nc
-python pipeline/check_phase1.py --smoke
+python convert_dem.py SRTM15_V2.7.nc
+python check_phase1.py --smoke
 ```
 
 The quarterly refresh is one command, run from `pipeline/` (details in `docs/RUNBOOK.md`;
@@ -105,8 +109,8 @@ no CLIMADA and no network:
 bash tests/run_all.sh
 ```
 
-That is: the two contract suites, the end-to-end pipeline simulation (which
-exercises the validator's accept and reject paths), the 31 frontend assertions
+That is: the three contract suites, the two end-to-end simulations (which
+exercise both validators' accept and reject paths), the 31 frontend assertions
 against the v1.7 app, byte-for-byte regeneration of the app lineage
 (v1.5 through both patchers to v1.7), and the project style guard.
 

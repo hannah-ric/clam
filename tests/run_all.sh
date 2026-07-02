@@ -5,8 +5,9 @@
 # Run from the repository root:   bash tests/run_all.sh
 #
 # Gates, in order:
-#   1. contract tests        (pure pandas/numpy, pin the pipeline's grid ops)
-#   2. pipeline simulation   (end-to-end with CLIMADA mocked, validator gates)
+#   1. contract tests        (three suites, pure pandas/numpy)
+#   2. simulations           (two end-to-end runs with CLIMADA mocked,
+#                             both validators' accept and reject gates)
 #   3. frontend functional   (31 assertions against the v1.7 app, needs node)
 #   4. app lineage           (v1.5 -> patcher -> v1.6 -> patcher -> v1.7 must
 #                             reproduce the committed files byte for byte)
@@ -28,7 +29,7 @@ echo "== 2  pipeline + results-pack simulations ==========================="
 ( cd pipeline && PYTHONPATH=. python3 ../tests/test_impacts_sim.py )
 rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_heat_grid.csv pipeline/sim_heat_grid_meta.json \
-      pipeline/sim_ghost_meta.json pipeline/fake_dem.tiff \
+      pipeline/sim_ghost_meta.json pipeline/sim_v1_grid.csv pipeline/fake_dem.tiff \
       pipeline/sim_sites.csv pipeline/sim_results_pack*.json \
       pipeline/sim_pack_*.json
 

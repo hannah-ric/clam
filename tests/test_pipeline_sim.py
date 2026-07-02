@@ -230,14 +230,20 @@ def run():
     print(r.stdout)
     assert r.returncode == 0, "validator must accept the simulated grid"
 
-    # 7. ...and must REJECT the deployed v1 grid (present-only, no hazard col)
-    r2 = subprocess.run([sys.executable, "validate_grid.py",
-                         "/mnt/project/hazard_grid.csv"],
+    # 7. ...and must REJECT a v1-style grid (present-only, no hazard column),
+    #    built here as a fixture so this gate is real on every machine, not
+    #    just where the originally deployed file happened to live
+    v1 = df[df.scenario == "present"].drop(columns=["hazard"])
+    v1.to_csv("sim_v1_grid.csv", index=False)
+    r2 = subprocess.run([sys.executable, "validate_grid.py", "sim_v1_grid.csv"],
                         capture_output=True, text=True)
-    print("--- validate_grid.py on the DEPLOYED v1 grid ---")
+    print("--- validate_grid.py on a v1-style present-only grid ---")
     print(r2.stdout)
     assert r2.returncode == 1, "validator must reject the v1 present-only grid"
-    print("ok  validator: accepts v2 output, rejects the deployed v1 grid")
+    assert "ONLY the present scenario" in r2.stdout, \
+        "rejection must be for the right reason, not an incidental crash"
+    print("ok  validator: accepts v2 output, rejects a v1-style grid for the "
+          "right reason")
     print("\nALL PIPELINE SIMULATION TESTS PASSED")
 
 

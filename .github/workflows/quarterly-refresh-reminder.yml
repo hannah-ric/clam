@@ -40,7 +40,7 @@ jobs:
               "the whole ritual is about ten minutes of attention.",
               "",
               "- [ ] `cd pipeline && bash run_pipeline.sh` (add `--preflight` after any env change)",
-              "- [ ] Confirm the last line reads `RESULT: grid is shippable`",
+              "- [ ] Confirm the validation gate printed `RESULT: grid is shippable`",
               "- [ ] Open the v1.7 app, Method tab, drop `hazard_grid.csv` + `hazard_grid_meta.json`",
               "- [ ] Badge reads `CLIMADA x 4/4 perils`; chips green (amber means partial coverage, read the panel)",
               "- [ ] Commit both files plus the console log as the quarter's provenance record",

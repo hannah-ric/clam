@@ -63,6 +63,8 @@ def main(path: str, meta_path: str | None = None) -> int:
     hard = False
     df = pd.read_csv(path)
     print(f"Loaded {len(df):,} rows from {path}\n")
+    if not len(df):
+        return int(fail("grid contains no rows at all: nothing to ship"))
 
     # A. schema ---------------------------------------------------------------
     need = ["lat", "lon", "scenario"] + VCOLS

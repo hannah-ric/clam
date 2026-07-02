@@ -132,29 +132,33 @@ def main(path: str, meta_path: str | None = None) -> int:
             ok("climate signal present -> ssp585_2080 is non-negative")
 
     # F. adaptation --------------------------------------------------------------------
+    f_bad = False
     for mk, m in pack["adaptation"].items():
         for sk, r in m.get("per_scenario", {}).items():
             if r["averted_direct_aal_usd"] < 0:
-                hard |= fail(f"adaptation {mk}/{sk}: negative averted AAL")
+                f_bad |= fail(f"adaptation {mk}/{sk}: negative averted AAL")
             if r["cost_usd"] <= 0:
                 warn(f"adaptation {mk}/{sk}: non-positive cost")
             elif r["bcr"] is not None and not rel_close(
                     r["bcr"], r["npv_benefit_usd"] / r["cost_usd"], 0.02):
-                hard |= fail(f"adaptation {mk}/{sk}: BCR inconsistent with "
-                             f"benefit/cost")
-    if not hard:
+                f_bad |= fail(f"adaptation {mk}/{sk}: BCR inconsistent with "
+                              f"benefit/cost")
+    hard |= f_bad
+    if not f_bad:
         ok("adaptation: averted AAL, costs, and BCR internally consistent")
 
     # G. uncertainty --------------------------------------------------------------------
+    g_bad = False
     for sk, u in pack["uncertainty"].items():
         for metric in ("acute_aal_usd", "loss_1in100_usd"):
             b = u[metric]
             if not (b["p5"] <= b["p50"] <= b["p95"]):
-                hard |= fail(f"uncertainty {sk}/{metric}: quantiles out of order")
+                g_bad |= fail(f"uncertainty {sk}/{metric}: quantiles out of order")
             if not (b["p5"] * 0.99 <= b["central"] <= b["p95"] * 1.01):
                 warn(f"uncertainty {sk}/{metric}: central estimate outside "
                      f"the p5..p95 band (small MC samples can do this)")
-    if not hard:
+    hard |= g_bad
+    if not g_bad:
         ok("uncertainty: quantile ordering sane")
 
     # H. provenance cross-check ------------------------------------------------------------

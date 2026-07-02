@@ -103,8 +103,9 @@ PHASE A: CONSOLIDATE AND DE-FRICTION
 Goal: the working system lives in this repository, tested on every push, and the
 quarterly ritual runs with one command on any machine.
 
-1. Import the 12 pending files verbatim (list in README). No refactors on import; the
-   tests in `tests/` pin their contracts.
+1. DONE: the working system's complete file set is imported verbatim and the app
+   lineage is verified reproducible (v1.5 through both patchers to v1.7, byte for
+   byte). The tests in `tests/` pin the contracts.
 2. CI (GitHub Actions): run `test_gridops.py`, `test_phase23_ops.py`,
    `test_pipeline_sim.py` (pandas/numpy only) and `test_frontend.py` (node only) on
    every push. Green CI becomes the merge gate.
@@ -230,8 +231,8 @@ Principles carried through every phase:
 6. Contracts are stable: grid schema, export schema, localStorage keys.
 
 Risks and mitigations:
-- Twelve files still pending import: commit verbatim before any refactor; the tests
-  define their contracts if a copy is ever lost.
+- Import completeness: RESOLVED; the full working set is committed and the lineage
+  regenerates byte for byte in CI. The tests define the contracts if a copy is lost.
 - Data API drift: keep the candidate-fallback pattern and `list_datasets.py`; record
   matched properties in the meta sidecar.
 - unsequa compute cost: modest Saltelli N, `--fast` mode, parallelize when needed.
