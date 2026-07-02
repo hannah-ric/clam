@@ -28,7 +28,7 @@ Built on [CLIMADA](https://github.com/CLIMADA-project/climada_python) 6.1 and
   |      hazard_grid.csv  +  hazard_grid_meta.json
   |  gated by validate_grid.py (ship only on exit 0)
   v
-  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v112.html, the deployable)
+  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v200.html, the deployable)
   |  Opened by double-click, runs entirely offline. Holds all
   |  vulnerability, financial, adaptation, and insurance logic.
   |  The CSV + JSON pair dropped on its Method tab is the only bridge.

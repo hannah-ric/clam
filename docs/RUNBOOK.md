@@ -42,8 +42,17 @@ loaded: the no-grid regression is part of test_frontend.py.
     bash setup_env.sh
     conda activate climada_env
 
-Corporate network: the diagnose_network.py certificate exports cover the
-Data API, the NASA dist-to-coast download, and the NOAA PSL downloads alike.
+Corporate network: the diagnose_network.py certificate exports fix TLS
+interception for the Data API, the NASA dist-to-coast download, and the NOAA
+PSL downloads alike. A stricter web filter can still refuse the NASA
+dist-to-coast file (oceancolor.gsfc.nasa.gov) with an HTTP 403 AFTER TLS is
+trusted; a content block is not something the cert exports can fix. Seed that
+one 300 MB file once from off the corporate network: run check_phase1.py on a
+hotspot or home wifi so CLIMADA fetches it, or unzip
+GMT_intermediate_coast_distance_01d.tif into ~/climada/data by hand. Once
+~/climada/data/GMT_intermediate_coast_distance_01d.tif exists, surge runs on
+the corporate network with no download; refresh_hazard.py --no-surge runs the
+other layers until then.
 DEM: download the newest SRTM15_V2.x.nc from the Scripps SRTM15+ page and run
 convert_dem.py on it to produce SRTM15+V2.0.tiff (or set RTV_TOPO_PATH);
 CoastalDEM is the drop-in upgrade when granted.
