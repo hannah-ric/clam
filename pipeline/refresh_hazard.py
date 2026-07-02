@@ -69,7 +69,9 @@ Output schema (the app parses all of it today; `hazard` defaults to "tc"):
 Requirements
 ------------
 CLIMADA needs a compiled geospatial stack, so use conda/mamba, not plain pip.
-Petals must match Core's minor version:
+Core and Petals must share the same MAJOR version; Petals' minor may lead Core's
+(Petals ships between Core releases and declares an open floor like climada>=6.1,
+so e.g. Petals 6.2.0 on Core 6.1.0 is the intended, supported pairing):
 
     # You already have climada_env from the original setup; ADD to it:
     mamba install -n climada_env -c conda-forge \

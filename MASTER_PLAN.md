@@ -82,8 +82,11 @@ engine (prices risk transfer off the loss exceedance curve the results pack will
 produce), OSM footprint exposures (upgrades top coastal sites from a point to a
 footprint), and the Hazard Emulator (warming-level scenarios and a true 2030).
 
-Version and operational facts that bound the design: core and petals minor versions
-must match (currently 6.1.x, conda-forge); the Data API property vocabulary drifts
+Version and operational facts that bound the design: core and petals must share a
+major version, but the petals minor may lead core's (petals releases between core
+releases and declares an open floor on core; petals 6.2.0 requires climada>=6.1
+and there is no core 6.2.0, so conda-forge resolves core 6.1.x + petals 6.2.x); the
+Data API property vocabulary drifts
 between releases, so the candidate-fallback fetch pattern and `list_datasets.py` stay;
 impact runs keep `save_mat=False` unless per-event detail is needed; the API caches
 under `~/climada/data`, so re-runs are cheap.
@@ -110,7 +113,8 @@ quarterly ritual runs with one command on any machine.
    `test_pipeline_sim.py` (pandas/numpy only) and `test_frontend.py` (node only) on
    every push. Green CI becomes the merge gate.
 3. One-command container: a Dockerfile on a conda-forge base with climada and
-   climada-petals pinned at 6.1.*, certificate handling baked in, wrapping
+   climada-petals pinned at 6.* (resolving core 6.1.x + petals 6.2.x today),
+   certificate handling baked in, wrapping
    `run_pipeline.sh`. DEM handling automated: fetch, then `convert_dem.py` crop, into
    a cache mount; the manual USB-carry fallback stays documented for locked-down
    networks. `docker run ... --fast` reproduces the runbook rehearsal with zero setup.

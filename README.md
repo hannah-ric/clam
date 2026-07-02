@@ -11,7 +11,10 @@ layering with an event-set technical premium benchmark, uncertainty bands, and a
 observed-loss backtest with wind-curve calibration.
 
 Built on [CLIMADA](https://github.com/CLIMADA-project/climada_python) 6.1 and
-[CLIMADA Petals](https://github.com/CLIMADA-project/climada_petals) 6.1 (ETH Zurich).
+[CLIMADA Petals](https://github.com/CLIMADA-project/climada_petals) 6.2 (ETH Zurich).
+Petals releases between Core releases and declares an open floor on Core
+(Petals 6.2.0 requires `climada>=6.1`, and there is no Core 6.2.0), so Core 6.1.0
+with Petals 6.2.0 is the current intended pairing: same major, Petals minor ahead.
 
 ## The whole system on one page
 

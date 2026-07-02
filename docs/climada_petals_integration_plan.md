@@ -106,7 +106,7 @@ shared:
 
 Crucial efficiency detail: tc_surge consumes the TropCyclone object tc_wind already downloaded per country/scenario, so the surge layer adds DEM sampling and arithmetic but zero additional API downloads. Cache the downloaded hazards (the API client already caches to ~/climada/data) and the DEM once.
 
-Environment: one mamba env, `climada=6.*` plus `climada_petals=6.*` from conda-forge (Petals pins to matching Core minor versions; keep them in lockstep). The corporate-TLS workaround from diagnose_network.py applies unchanged; the only new network dependency is the one-time SRTM15+/CoastalDEM download and, for heat, CDS/ESGF access, both of which can be done off-network and copied in if needed.
+Environment: one mamba env, `climada=6.*` plus `climada_petals=6.*` from conda-forge (Core and Petals must share a MAJOR version; Petals' minor may lead Core's — Petals releases between Core releases and declares an open floor on Core, e.g. Petals 6.2.0 requires `climada>=6.1` and there is no Core 6.2.0, so `6.*`/`6.*` correctly resolves Core 6.1.0 + Petals 6.2.0). The corporate-TLS workaround from diagnose_network.py applies unchanged; the only new network dependency is the one-time SRTM15+/CoastalDEM download and, for heat, CDS/ESGF access, both of which can be done off-network and copied in if needed.
 
 ### 4.3 Heat row encoding
 

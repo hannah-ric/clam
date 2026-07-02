@@ -7,7 +7,8 @@ flood (surge) layer, and again after any environment or DEM change. It is the
 Phase 1 counterpart to check_climada.py: that script proves CLIMADA Core and
 the Data API work; this one proves the three NEW dependencies do:
 
-  1. climada_petals imports and its version matches climada Core's minor,
+  1. climada_petals imports and its version is compatible with climada Core
+     (same major; Petals minor may lead Core, e.g. Petals 6.2 on Core 6.1),
   2. the DEM GeoTIFF exists, opens, and truly covers your countries,
   3. the distance-to-coast auxiliary data (used by the surge inland decay)
      can be obtained, which on first use downloads through the CLIMADA client.
@@ -61,7 +62,7 @@ def main() -> int:
     except Exception as exc:
         print("  FAILED to import climada_petals / TCSurgeBathtub:", exc)
         print("  Fix: mamba install -c conda-forge climada-petals=6.*  "
-              "(same minor version as climada)")
+              "(same major version as climada; Petals minor may lead Core)")
         return 1
     from importlib.metadata import version
     try:
@@ -71,9 +72,27 @@ def main() -> int:
         except Exception:
             v_pet = version("climada_petals")
         print(f"  climada {v_core}  /  climada_petals {v_pet}")
-        if v_core.split(".")[:2] != v_pet.split(".")[:2]:
-            print("  WARNING: Core and Petals minor versions differ. Petals pins to "
-                  "matching Core minors; align them before a production run.")
+        # The real contract is NOT "matching minor versions": Petals declares an
+        # open-ended floor on Core (e.g. Petals 6.2.0 requires `climada>=6.1`) and
+        # its own minor can LEAD Core's, because Petals ships releases between Core
+        # releases. Petals 6.2.0 on Core 6.1.0 is the intended, supported pairing
+        # (there is no Core 6.2.0). So only the MAJOR must agree; a Petals minor
+        # ahead of Core is normal, not a misconfiguration.
+        core_major, core_minor = (int(x) for x in (v_core.split(".") + ["0", "0"])[:2])
+        pet_major, pet_minor = (int(x) for x in (v_pet.split(".") + ["0", "0"])[:2])
+        if core_major != pet_major:
+            print("  WARNING: Core and Petals MAJOR versions differ "
+                  f"({core_major} vs {pet_major}). These are not compatible; "
+                  "install a matching major (both 6.*).")
+        elif pet_minor < core_minor:
+            print("  WARNING: Petals minor is behind Core minor "
+                  f"({v_pet} < {v_core}). Petals normally leads or matches Core; "
+                  "a Petals older than Core may not support this Core. Upgrade "
+                  "Petals (mamba install -c conda-forge climada-petals=6.*).")
+        else:
+            print("  OK: compatible pair (same major; Petals minor >= Core minor). "
+                  "A Petals minor ahead of Core is expected: Petals releases "
+                  "between Core releases and declares climada>=<its floor>.")
     except Exception:
         print("  imported OK (version metadata unavailable)")
 
