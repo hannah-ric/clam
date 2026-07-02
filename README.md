@@ -49,13 +49,22 @@ python pipeline/convert_dem.py SRTM15_V2.7.nc
 python pipeline/check_phase1.py --smoke
 ```
 
-The quarterly refresh (details in `docs/RUNBOOK.md`):
+The quarterly refresh is one command, run from `pipeline/` (details in `docs/RUNBOOK.md`;
+the scripts reference each other by bare name, so run them from that directory):
 
 ```bash
-python pipeline/refresh_hazard.py   # tc + cflood + rflood
-python pipeline/refresh_heat.py     # heat
-python pipeline/merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
-python pipeline/validate_grid.py hazard_grid.csv hazard_grid_meta.json
+cd pipeline
+bash run_pipeline.sh                # full run; --fast / --preflight / --no-heat / --dry-run
+```
+
+Or the four steps it wraps, individually:
+
+```bash
+cd pipeline
+python refresh_hazard.py            # tc + cflood + rflood
+python refresh_heat.py              # heat
+python merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
+python validate_grid.py hazard_grid.csv hazard_grid_meta.json
 ```
 
 Then open the app and drop both `hazard_grid.csv` and `hazard_grid_meta.json` onto the
@@ -87,18 +96,14 @@ Run them after any code change; run `test_frontend.py` after any app edit.
 
 ## PENDING: files not yet imported
 
-This repository holds 17 of the working system's files. The remaining 7 exist in the
+This repository holds 21 of the working system's files. The remaining 3 exist in the
 operator's working folder (`rtv/`) and should be committed here verbatim, with no edits,
 before any refactor.
 
 | File | Role |
 |---|---|
-| `run_pipeline.sh` | quarterly orchestrator (`--fast`, `--preflight`, `--no-heat`, `--dry-run`) |
-| `check_climada.py` | Core + Data API preflight (operator original) |
-| `diagnose_network.py` | corporate TLS fixer (operator original) |
 | `patch_frontend.py` | lineage: built v1.6 from the v1.5 app |
 | `patch_frontend_p4.py` | lineage: built v1.7 from v1.6 |
-| `TNL_Resort_Climate_Risk_Explorer_v16.html` | patch lineage |
 | `TNL_Resort_Climate_Risk_Explorer.html` (v1.5) | patch source, keep for regeneration |
 
 ## Where this is going

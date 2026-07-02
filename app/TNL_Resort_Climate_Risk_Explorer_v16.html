@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Resort Portfolio Risk-to-Value</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,420;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F6F3; --surface:#FFFFFF; --surface-2:#FBFBF9;
+    --ink:#15202B; --ink-2:#43535F; --muted:#7A8893;
+    --line:#E4E7E2; --line-2:#EEF0EC;
+    --primary:#0F3A4B; --primary-2:#12586F; --focus:#1E7FA6;
+    --r-min:#8AA0AC; --r-low:#2E8B6F; --r-mod:#E0A43B; --r-high:#D9772F; --r-sev:#B23A32;
+    --shadow:0 1px 2px rgba(21,32,43,.05), 0 8px 24px rgba(21,32,43,.06);
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;min-height:100vh;
+  }
+  .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer}
+  a{color:var(--primary-2)}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+
+  header.topbar{
+    display:flex;align-items:center;gap:16px;padding:10px 18px;
+    background:var(--primary);color:#EAF1F2;border-bottom:1px solid #0a2a37;flex:none;flex-wrap:wrap;
+  }
+  .brand{display:flex;flex-direction:column;line-height:1.05}
+  .brand .kicker{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#8FB6BF}
+  .brand .name{font-family:Fraunces,serif;font-size:19px;font-weight:560;color:#fff}
+  .brand .name b{color:#7FD0C4;font-weight:560}
+  .topbar .spacer{flex:1}
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .searchwrap{position:relative;display:flex;align-items:center}
+  .searchwrap input{
+    width:260px;max-width:44vw;padding:8px 12px 8px 32px;border-radius:8px;border:1px solid #14495d;
+    background:#0c3242;color:#eaf1f2;font-size:13px;
+  }
+  .searchwrap input::placeholder{color:#84a7b1}
+  .searchwrap .ic{position:absolute;left:11px;color:#84a7b1;font-size:12px;pointer-events:none}
+  .search-results{
+    position:absolute;top:40px;left:0;right:0;background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);z-index:1200;
+    max-height:280px;overflow:auto;display:none;
+  }
+  .search-results.open{display:block}
+  .search-results .r{padding:8px 12px;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13px}
+  .search-results .r:hover{background:var(--surface-2)}
+  .search-results .r small{color:var(--muted)}
+
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;
+    border:1px solid #1c566b;font-size:13px;font-weight:500;white-space:nowrap;
+  }
+  .btn{border:1px solid #1c566b;background:#0d3646;color:#dCEbee}
+  .btn:hover{background:#0f4256}
+  .btn.solid{background:#7FD0C4;border-color:#7FD0C4;color:#08323c}
+  .btn.solid:hover{background:#93d9ce}
+  .btn.ghost{background:transparent;border-color:#2a6076;color:#cfe3e7}
+
+  /* scenario selector */
+  select.scen{
+    padding:8px 12px;border-radius:8px;border:1px solid #14495d;background:#0c3242;
+    color:#eaf1f2;font-size:13px;font-family:inherit;
+  }
+
+  .haz-badge{
+    display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+    font-size:12px;font-weight:500;border:1px solid #2a6076;background:#0c3242;color:#cfe3e7;
+  }
+  .haz-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--r-mod)}
+  .haz-badge.authoritative .dot{background:#7FD0C4}
+
+  /* map */
+  #map{height:42vh;min-height:320px;width:100%;flex:none;z-index:1;background:#dfe6e2}
+  .leaflet-popup-content{font-family:Inter,sans-serif;margin:12px 14px}
+  .leaflet-popup-content b{font-family:Fraunces,serif}
+
+  /* tabs */
+  nav.tabs{
+    display:flex;gap:2px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:400;overflow-x:auto;flex:none;
+  }
+  nav.tabs button{
+    padding:13px 16px;border:none;background:none;color:var(--ink-2);font-size:13.5px;font-weight:500;
+    border-bottom:2.5px solid transparent;white-space:nowrap;
+  }
+  nav.tabs button:hover{color:var(--ink)}
+  nav.tabs button[aria-selected="true"]{color:var(--primary);border-bottom-color:var(--primary)}
+
+  main{padding:20px;max-width:1220px;margin:0 auto;width:100%;flex:1}
+  .tabpane{display:none}
+  .tabpane.active{display:block;animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.tabpane.active{animation:none}}
+
+  h2.sec{font-family:Fraunces,serif;font-size:20px;font-weight:560;margin:0 0 4px;color:var(--primary)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+        padding:16px 18px;box-shadow:var(--shadow)}
+  .card .l{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .card .v{font-family:Fraunces,serif;font-size:26px;font-weight:560;color:var(--primary);line-height:1.1}
+  .card .foot{font-size:12px;color:var(--ink-2);margin-top:5px}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+         padding:18px 20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .panel h3{font-family:Fraunces,serif;font-weight:560;font-size:16px;margin:0 0 2px;color:var(--primary)}
+  .panel h3 + .hint{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.tbl th{text-align:left;font-weight:600;color:var(--ink-2);border-bottom:1.5px solid var(--line);
+               padding:8px 10px;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;cursor:pointer;user-select:none}
+  table.tbl th.num,table.tbl td.num{text-align:right}
+  table.tbl td{padding:9px 10px;border-bottom:1px solid var(--line-2)}
+  table.tbl tr:hover td{background:var(--surface-2)}
+  table.tbl tr.sel td{background:#eef6f4}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+  .pill.Minimal{background:var(--r-min)} .pill.Low{background:var(--r-low)}
+  .pill.Moderate{background:var(--r-mod)} .pill.High{background:var(--r-high)} .pill.Severe{background:var(--r-sev)}
+  .pill.mini{padding:1px 6px;font-size:10px;margin-right:3px;min-width:20px;text-align:center}
+  .ratecell{white-space:nowrap;display:flex;gap:0}
+  .hazgroup{display:flex;align-items:center;gap:6px}
+  .hazgroup .seg{display:flex;align-items:center;gap:2px}
+  .hazgroup label.mini-l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#84a7b1;margin-right:2px}
+  select.scen:disabled{opacity:.45;cursor:not-allowed}
+  .maplegend{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;box-shadow:var(--shadow);font-size:11px;color:var(--ink-2);line-height:1.6}
+  .maplegend .lh{font-weight:600;color:var(--primary);margin-bottom:4px;font-size:11px}
+  .maplegend .li{display:flex;align-items:center;gap:6px}
+  .maplegend .li i{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .driverwrap{display:flex;flex-direction:column;gap:2px}
+  .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;font-weight:700;
+    line-height:1;margin-left:5px;padding:0;cursor:pointer;vertical-align:middle;font-style:italic;font-family:Georgia,serif}
+  .info:hover,.info[aria-expanded="true"]{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .info.on-dark{border-color:#2a6076;background:#0c3242;color:#9fc3cd}
+  .info.on-dark:hover,.info.on-dark[aria-expanded="true"]{background:#7FD0C4;color:#08323c;border-color:#7FD0C4}
+  th .info{margin-left:4px}
+  .infopop{position:absolute;z-index:1700;width:min(330px,90vw);background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:14px 16px 13px;
+    font-size:12.5px;line-height:1.55;display:none}
+  .infopop.open{display:block;animation:fade .14s ease}
+  @media(prefers-reduced-motion:reduce){.infopop.open{animation:none}}
+  .infopop h4{font-family:Fraunces,serif;font-weight:560;color:var(--primary);margin:0 0 6px;font-size:14px;padding-right:18px}
+  .infopop p{margin:0 0 8px}
+  .infopop p:last-child{margin:0}
+  .infopop code{font-family:"IBM Plex Mono",monospace;font-size:11.5px;background:var(--surface-2);
+    border:1px solid var(--line-2);border-radius:4px;padding:1px 5px;color:var(--ink-2)}
+  .infopop .src{color:var(--muted);font-size:11px;margin-top:9px;border-top:1px solid var(--line-2);padding-top:7px}
+  .infopop .close{position:absolute;top:9px;right:10px;width:20px;height:20px;border:none;background:none;
+    color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0}
+  .infopop .close:hover{color:var(--ink)}
+
+  .rowclick{cursor:pointer}
+  .narrative{font-size:14.5px;line-height:1.6;color:var(--ink)}
+  .narrative b{color:var(--primary)}
+
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+  .field label{font-size:12px;font-weight:500;color:var(--ink-2)}
+  .field input[type=number],.field input[type=text]{
+    padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;width:100%;
+  }
+  input[type=range]{width:100%}
+  .measure{border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-bottom:12px;background:var(--surface-2)}
+  .measure .mh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+  .measure .mh .nm{font-weight:600;color:var(--primary)}
+  .measure .mh .bcr{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:500}
+  .measure .stat{display:flex;gap:20px;font-size:12.5px;color:var(--ink-2);margin-top:8px;flex-wrap:wrap}
+  .measure .stat b{color:var(--ink);font-weight:600}
+
+  .drop{
+    border:1.5px dashed #9fb7bf;border-radius:10px;padding:22px;text-align:center;color:var(--ink-2);
+    background:var(--surface-2);cursor:pointer;transition:all .15s;
+  }
+  .drop:hover,.drop.over{border-color:var(--focus);background:#eef6f9;color:var(--primary)}
+  .drop .big{font-weight:600;color:var(--primary);margin-bottom:3px}
+  .drop small{color:var(--muted)}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px}
+  .kv .k{color:var(--muted)}
+  .kv .v{color:var(--ink)}
+  .note{font-size:12.5px;color:var(--ink-2);background:#f4f8f7;border-left:3px solid #7FD0C4;
+        padding:10px 13px;border-radius:0 7px 7px 0;margin:10px 0}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--primary);
+         color:#fff;padding:11px 18px;border-radius:9px;box-shadow:var(--shadow);font-size:13px;
+         z-index:2000;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .modal-bg{position:fixed;inset:0;background:rgba(21,32,43,.4);display:none;align-items:center;
+            justify-content:center;z-index:1500}
+  .modal-bg.open{display:flex}
+  .modal{background:var(--surface);border-radius:12px;padding:22px 24px;width:min(440px,92vw);box-shadow:var(--shadow)}
+  .modal h3{font-family:Fraunces,serif;margin:0 0 14px;color:var(--primary)}
+  .modal .row{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+  .lightbtn{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:13px}
+  .lightbtn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .foot-legal{max-width:1220px;margin:0 auto;padding:6px 20px 26px;color:var(--muted);font-size:11.5px}
+  svg text{font-family:Inter,sans-serif}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="kicker">Travel + Leisure Co. &middot; Corporate Responsibility</span>
+    <span class="name">Resort Portfolio <b>Risk-to-Value</b></span>
+  </div>
+  <div class="searchwrap">
+    <span class="ic">&#9906;</span>
+    <input id="geo" type="text" placeholder="Search a place to add a site..." autocomplete="off" aria-label="Search for a place to add as a site" />
+    <div class="search-results" id="geoResults" role="listbox"></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="toolbar">
+    <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
+    <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
+    <div class="hazgroup">
+      <div class="seg"><label class="mini-l">Peril</label>
+        <select class="scen" id="hazSel" title="Hazard" aria-label="Hazard">
+          <option value="tc">Tropical cyclone</option>
+          <option value="cflood">Coastal flood</option>
+          <option value="rflood">Riverine flood</option>
+          <option value="heat">Extreme heat</option>
+        </select>
+      </div>
+      <div class="seg"><label class="mini-l">Pathway</label>
+        <select class="scen" id="pathSel" title="Emissions pathway" aria-label="Emissions pathway">
+          <option value="present">Present day</option>
+          <option value="ssp126">SSP1-2.6</option>
+          <option value="ssp245">SSP2-4.5</option>
+          <option value="ssp585">SSP5-8.5</option>
+        </select>
+      </div>
+      <div class="seg"><label class="mini-l">Horizon</label>
+        <select class="scen" id="horSel" title="Time horizon" aria-label="Time horizon">
+          <option value="2030">2030</option>
+          <option value="2050">2050</option>
+          <option value="2080">2080</option>
+        </select>
+      </div>
+      <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
+    </div>
+    <button class="btn ghost" id="sampleBtn">Load sample</button>
+    <button class="btn" id="exportBtn">Export CSV</button>
+    <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="summary">Summary</button>
+  <button role="tab" aria-selected="false" data-tab="overview">By peril</button>
+  <button role="tab" aria-selected="false" data-tab="sites">Sites</button>
+  <button role="tab" aria-selected="false" data-tab="adaptation">Adaptation</button>
+  <button role="tab" aria-selected="false" data-tab="scenarios">Scenarios</button>
+  <button role="tab" aria-selected="false" data-tab="finance">Financial impact</button>
+  <button role="tab" aria-selected="false" data-tab="method">Method &amp; data</button>
+</nav>
+
+<main>
+  <!-- SUMMARY -->
+  <section class="tabpane active" id="tab-summary" role="tabpanel" aria-label="Summary">
+    <div id="sumEmpty" class="panel" style="text-align:center;padding:40px">
+      <h3>Start with your portfolio</h3>
+      <p class="sub" style="margin:6px 0 16px">Load the sample to explore, drop in a site CSV, or search a place above to add sites. The app scores every peril immediately with a built-in interim model and sharpens to CLIMADA when you load a hazard grid.</p>
+      <button class="btn solid" id="sampleBtn4" style="color:#08323c">Load sample portfolio</button>
+    </div>
+    <div id="summaryBody" style="display:none">
+      <h2 class="sec">Portfolio climate risk at a glance</h2>
+      <p class="sub" id="sumSub"></p>
+      <div class="cards" id="sumKpis"></div>
+      <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
+        <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>Cost by peril<button type="button" class="info" data-info="aggPeril" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">Every peril in one currency: expected annual cost, all four hazards, damage plus interruption.</div>
+          <div id="sumByPeril"></div>
+        </div>
+        <div class="panel">
+          <h3>Cost by type<button type="button" class="info" data-info="aggType" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">The same total split into physical damage, business interruption, and heat.</div>
+          <div id="sumByType"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>Trajectory<button type="button" class="info" data-info="aggTraj" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">Expected annual cost today and under the selected pathway. This is the delta that climate adds.</div>
+          <div id="sumTraj"></div>
+        </div>
+        <div class="panel">
+          <h3>Portfolio risk mix<button type="button" class="info" data-info="aggBands" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">How many sites sit in each combined physical-risk band at the selected scenario.</div>
+          <div id="sumBands"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h3>Most exposed sites<button type="button" class="info" data-info="aggSites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">Where the expected annual cost concentrates.</div>
+          <div id="sumTopSites"></div>
+        </div>
+        <div class="panel">
+          <h3>By brand<button type="button" class="info" data-info="aggBrand" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+          <div class="hint">Expected annual cost rolled up to each brand.</div>
+          <div id="sumByBrand"></div>
+        </div>
+      </div>
+      <div class="note" id="sumNote"></div>
+    </div>
+  </section>
+
+  <!-- OVERVIEW -->
+  <section class="tabpane" id="tab-overview" role="tabpanel" aria-label="By peril">
+    <div id="emptyState" class="panel" style="text-align:center;padding:40px">
+      <h3>Start with your portfolio</h3>
+      <p class="sub" style="margin:6px 0 16px">Load the sample to explore, drop in a site CSV, or search a place above to add sites one at a time. No setup needed: the app scores risk immediately with a built-in interim hazard model, and sharpens to CLIMADA when you load a hazard grid.</p>
+      <button class="btn solid" id="sampleBtn2" style="color:#08323c">Load sample portfolio</button>
+    </div>
+    <div id="overviewBody" style="display:none">
+      <h2 class="sec">Portfolio risk overview</h2>
+      <p class="sub" id="ovSub"></p>
+      <div class="cards" id="kpiCards"></div>
+      <div class="grid2">
+        <div class="panel">
+          <h3 id="epTitle">Loss exceedance</h3>
+          <div class="hint" id="epHint">Portfolio loss by return period, current horizon.</div>
+          <div id="epCurve"></div>
+        </div>
+        <div class="panel">
+          <h3 id="brandTitle">Expected annual damage by brand</h3>
+          <div class="hint" id="brandHint">Where the expected loss concentrates across the portfolio.</div>
+          <div id="brandBars"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Risk drivers<button type="button" class="info" data-info="drivers" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">Which perils drive portfolio expected annual damage at the selected horizon. Heat is tracked as indicators, not direct damage.</div>
+        <div id="riskDrivers"></div>
+      </div>
+      <div class="panel">
+        <h3>Read-out</h3>
+        <div class="hint">Plain-language summary for the CR report or a leadership note.</div>
+        <p class="narrative" id="narrative"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SITES -->
+  <section class="tabpane" id="tab-sites" role="tabpanel" aria-label="Sites">
+    <h2 class="sec">Sites</h2>
+    <p class="sub">Ranked by expected annual damage. Click a row for detail, or add a site.</p>
+    <div class="grid2" style="grid-template-columns:1.4fr 1fr">
+      <div class="panel" style="overflow:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h3 style="margin:0">Portfolio</h3>
+          <button class="lightbtn" id="addSiteBtn">+ Add site</button>
+        </div>
+        <table class="tbl" id="siteTbl">
+          <thead><tr>
+            <th data-sort="name">Site</th>
+            <th data-sort="brand">Brand</th>
+            <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">EAD $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">EAD %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat">W&nbsp;F&nbsp;R&nbsp;H<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+          </tr></thead>
+          <tbody id="siteBody"></tbody>
+        </table>
+      </div>
+      <div class="panel" id="siteDetail">
+        <h3>Site detail</h3>
+        <p class="hint" id="detailHint">Select a site to see its return-period losses and scenario shift.</p>
+        <div id="detailBody" style="display:none"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADAPTATION -->
+  <section class="tabpane" id="tab-adaptation" role="tabpanel" aria-label="Adaptation">
+    <h2 class="sec">Adaptation intelligence</h2>
+    <p class="sub">Every measure is appraised against the full climate cost: direct damage, business interruption, and heat. Toggle measures into the portfolio, then read the cost curve, the waterfall, and the insurance layer together: reduce what is cheap to reduce, insure the middle, retain the rest.</p>
+    <div class="grid2" style="grid-template-columns:0.8fr 1.2fr">
+      <div class="panel">
+        <h3>Appraisal settings<button type="button" class="info" data-info="levers" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">Shared by every measure. Everything recomputes live.</div>
+        <div class="field">
+          <label>Appraisal horizon (years) <span class="mono" id="horizonVal">20</span></label>
+          <input type="range" id="horizon" min="5" max="40" step="5" value="20">
+        </div>
+        <div class="field">
+          <label>Discount rate <span class="mono" id="discVal">2.0%</span></label>
+          <input type="range" id="disc" min="0" max="6" step="0.5" value="2">
+        </div>
+        <div class="field">
+          <label>Exposure growth (value &amp; revenue, %/yr) <span class="mono" id="growthVal">2.0%</span><button type="button" class="info" data-info="growth" aria-label="How this is used" aria-expanded="false">i</button></label>
+          <input type="range" id="growth" min="0" max="5" step="0.5" value="2">
+        </div>
+        <div class="note" id="portfolioSummary" style="margin-top:14px"></div>
+      </div>
+      <div class="panel">
+        <h3>Measure library<button type="button" class="info" data-info="measLib" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">Check a measure to add it to the adaptation portfolio. Each declares which perils and cost types it reduces.</div>
+        <div id="measuresHost"></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Adaptation cost curve<button type="button" class="info" data-info="costCurve" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">Bar width is averted annual cost, height is the benefit-cost ratio. Fund left to right while bars clear the 1.0 line.</div>
+        <div id="costCurve"></div>
+      </div>
+      <div class="panel">
+        <h3>Total climate risk waterfall<button type="button" class="info" data-info="waterfall" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint" id="wfHint">From today's cost to residual risk at the selected future.</div>
+        <div id="waterfallChart"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Risk layering &amp; insurance<button type="button" class="info" data-info="layering" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">The acute loss curve split into what you retain, what a policy transfers, and the tail beyond the limit. Chronic heat is not insurable here and sits outside this panel.</div>
+      <div class="grid2" style="grid-template-columns:0.8fr 1.2fr">
+        <div>
+          <div class="field">
+            <label>Attachment point (return period)</label>
+            <select class="scen" id="attachSel" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);width:100%">
+              <option value="10">1-in-10</option><option value="25" selected>1-in-25</option>
+              <option value="50">1-in-50</option><option value="100">1-in-100</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Exhaustion point (return period)</label>
+            <select class="scen" id="exhaustSel" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);width:100%">
+              <option value="50">1-in-50</option><option value="100">1-in-100</option>
+              <option value="250" selected>1-in-250</option><option value="500">1-in-500</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Premium loading factor <span class="mono" id="loadVal">1.5x</span><button type="button" class="info" data-info="loading" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="load" min="1" max="3" step="0.1" value="1.5">
+          </div>
+          <div class="kv" id="layerStats" style="margin-top:8px"></div>
+        </div>
+        <div id="layerChart"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Where to act first<button type="button" class="info" data-info="recommend" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">Each site's best single measure by benefit-cost ratio at the selected scenario.</div>
+      <table class="tbl" id="recTbl">
+        <thead><tr><th>Site</th><th class="num">Climate cost $/yr</th><th>Best measure</th>
+        <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">BCR</th></tr></thead>
+        <tbody id="recBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SCENARIOS -->
+  <section class="tabpane" id="tab-scenarios" role="tabpanel" aria-label="Scenarios">
+    <h2 class="sec">Climate horizons<button type="button" class="info" data-info="scenarios" aria-label="How this is calculated" aria-expanded="false">i</button></h2>
+    <p class="sub">Combined physical risk across all modeled perils, from present day through the SSP pathways at the horizon selected in the top bar.</p>
+    <div class="cards" id="scenCards"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Expected annual damage by pathway</h3>
+        <div class="hint">Wind and both floods summed, current adaptation posture.</div>
+        <div id="scenBars"></div>
+      </div>
+      <div class="panel">
+        <h3>Band migration</h3>
+        <div class="hint">How many sites sit in each combined-risk band under each pathway.</div>
+        <div id="bandMig"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINANCIAL IMPACT -->
+  <section class="tabpane" id="tab-finance" role="tabpanel" aria-label="Financial impact">
+    <h2 class="sec">Financial impact</h2>
+    <p class="sub">Hazard translated into money: direct damage, business interruption, and heat-driven revenue at risk, as an expected annual cost and a tail Value at Risk. Figures use the interim model unless a CLIMADA grid is loaded.</p>
+    <div class="cards" id="finKpis"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Where the cost comes from<button type="button" class="info" data-info="costsplit" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">Expected annual cost split into direct damage, business interruption, and heat revenue at risk.</div>
+        <div id="finBreakdown"></div>
+      </div>
+      <div class="panel">
+        <h3>Acute vs chronic<button type="button" class="info" data-info="acuteChronic" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+        <div class="hint">TCFD and ISSB separate event-driven (acute) from gradual (chronic) physical risk.</div>
+        <div id="finAcuteChronic"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Uncertainty &amp; sensitivity<button type="button" class="info" data-info="unc" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">How confident to be in the central number, and which input moves it most. Each bar sweeps one input across its plausible range while the others hold.</div>
+      <div class="grid2" style="grid-template-columns:1.3fr 0.7fr">
+        <div id="tornado"></div>
+        <div>
+          <div class="kv" id="uncStats"></div>
+          <div class="note" id="uncNote" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Assumptions<button type="button" class="info" data-info="assumptions" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">Every financial figure above is driven by these. Adjust them to your portfolio; everything recomputes live. Per-site <span class="mono">annual_revenue_usd</span> in the upload overrides the revenue assumption.</div>
+      <div class="grid2">
+        <div>
+          <div class="field">
+            <label>Annual revenue as % of asset value <span class="mono" id="revRatioVal">35%</span><button type="button" class="info" data-info="revRatio" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="revRatio" min="10" max="80" step="5" value="35">
+          </div>
+          <div class="field">
+            <label>Gross operating margin <span class="mono" id="gopVal">30%</span><button type="button" class="info" data-info="gop" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="gop" min="10" max="60" step="5" value="30">
+          </div>
+        </div>
+        <div>
+          <div class="field">
+            <label>Months to reopen at total loss <span class="mono" id="reopenVal">12</span><button type="button" class="info" data-info="reopen" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="reopen" min="1" max="24" step="1" value="12">
+          </div>
+          <div class="field">
+            <label>Profit lost per extreme-heat day <span class="mono" id="heatDropVal">12%</span><button type="button" class="info" data-info="heatDrop" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="heatDrop" min="0" max="30" step="1" value="12">
+          </div>
+          <div class="field">
+            <label>Hazard correlation across sites <span class="mono" id="corrVal">0.30</span><button type="button" class="info" data-info="corr" aria-label="How this is used" aria-expanded="false">i</button></label>
+            <input type="range" id="corr" min="0" max="100" step="5" value="30">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Climate-related financial disclosure<button type="button" class="info" data-info="disclosure" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">TCFD and ISSB (IFRS S2) physical-risk summary, present through the selected pathway. All figures are a share of asset value.</div>
+      <table class="tbl" id="finDisclosure">
+        <thead><tr><th>Horizon</th><th class="num">Acute AAL</th><th class="num">Chronic AAL</th><th class="num">Total AAL</th><th class="num">1-in-100 VaR</th></tr></thead>
+        <tbody id="finDiscBody"></tbody>
+      </table>
+      <div class="note" id="finDiscNote"></div>
+    </div>
+    <div class="panel">
+      <h3>Most exposed sites<button type="button" class="info" data-info="finsites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">Ranked by total expected annual climate cost at the selected scenario.</div>
+      <table class="tbl" id="finSiteTbl">
+        <thead><tr><th>Site</th><th class="num">Value</th><th class="num">Revenue</th><th class="num">Direct</th><th class="num">Business interruption</th><th class="num">Heat</th><th class="num">Total $/yr</th><th class="num">% rev</th></tr></thead>
+        <tbody id="finSiteBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- METHOD -->
+  <section class="tabpane" id="tab-method" role="tabpanel" aria-label="Method and data">
+    <h2 class="sec">Method &amp; data</h2>
+    <p class="sub">What the numbers mean and how to make them authoritative. Built to be audit-ready.</p>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Hazard source</h3>
+        <div class="hint">The app runs on one of two hazard sources. This is the current one.</div>
+        <div class="kv" id="hazProv"></div>
+        <div id="hazDrop" class="drop" style="margin-top:14px">
+          <div class="big">Load CLIMADA hazard grid</div>
+          <small>Drop <span class="mono">hazard_grid.csv</span> from refresh_hazard.py, or click to browse. Schema: <span class="mono">lat, lon, scenario, hazard, v10..v500</span></small>
+        </div>
+        <input type="file" id="hazFile" accept=".csv" hidden>
+        <div class="note" id="hazNote">Until a grid is loaded, hazard comes from a built-in interim model spanning four perils. Good for exploration, not for disclosure. A CLIMADA grid supersedes any peril it carries; perils absent from the grid stay on the interim model.</div>
+      </div>
+      <div class="panel">
+        <h3>Sites data</h3>
+        <div class="hint">Load or replace the portfolio.</div>
+        <div id="siteDrop" class="drop">
+          <div class="big">Load site CSV</div>
+          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, coastal, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended.</small>
+        </div>
+        <input type="file" id="siteFile" accept=".csv" hidden>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="lightbtn" id="tmplBtn">Download site template</button>
+          <button class="lightbtn" id="sampleBtn3">Load sample portfolio</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Model definition</h3>
+      <div class="grid2">
+        <div>
+          <div class="kv">
+            <span class="k">Perils</span><span class="v">Tropical-cyclone wind, coastal flood and surge, riverine flood, extreme heat</span>
+            <span class="k">Wind vulnerability</span><span class="v">Emanuel (2011) curve &middot; <span class="mono">v_thresh 25.7, v_half 74.7 m/s</span></span>
+            <span class="k">Flood vulnerability</span><span class="v">Concave depth-damage curve with a finished-floor freeboard (coastal 1.1 m, riverine 0.6 m): frequent shallow floods do no damage, only deep rare floods bite. Capped at 75%</span>
+            <span class="k">Heat</span><span class="v">Indicators (days over 32/35&deg;C, cooling degree-days) plus a dollar cost: operating profit lost on dangerous-heat days (over 35&deg;C) above a comfort baseline</span>
+            <span class="k">CLIMADA equivalent</span><span class="v mono">ImpfTropCyclone.from_emanuel_usa (+ flood impf)</span>
+            <span class="k">Return periods</span><span class="v mono">10, 25, 50, 100, 250, 500 yr</span>
+          </div>
+        </div>
+        <div>
+          <div class="kv">
+            <span class="k">Scenario framework</span><span class="v">CMIP6 SSP-RCP: SSP1-2.6, SSP2-4.5, SSP5-8.5 at 2030, 2050, 2080</span>
+            <span class="k">Warming / SLR basis</span><span class="v">Screening-grade central estimates consistent with IPCC AR6 ranges</span>
+            <span class="k">Portfolio EAD</span><span class="v">Exact sum of site EAD per peril; combined physical risk sums wind and both floods</span>
+            <span class="k">Portfolio RP loss</span><span class="v">Co-occurrence upper bound; the CLIMADA event set gives the true curve</span>
+            <span class="k">Scenarios (interim)</span><span class="v">Intensity, sea-level, and temperature uplifts, illustrative only</span>
+            <span class="k">Grid schema</span><span class="v mono">lat, lon, scenario, hazard, v10..v500</span>
+            <span class="k">Financial impact</span><span class="v">Direct damage + business interruption (GOP-based) + heat revenue at risk = expected annual cost (AAL)</span>
+            <span class="k">Tail / Value at Risk</span><span class="v">1-in-100 and 1-in-250 direct+BI loss, diversified across sites by a correlation assumption</span>
+            <span class="k">Disclosure</span><span class="v">Acute vs chronic split aligned to TCFD and ISSB (IFRS S2) physical-risk reporting</span>
+            <span class="k">Calibration</span><span class="v">Tuned so per-peril AAL lands in published screening ranges: wind 0.3-1.0%, coastal 0.3-1.0% beachfront and near-zero inland, riverine 0.05-0.3%, portfolio total ~0.6-1.5% of value</span>
+            <span class="k">Aggregate summary</span><span class="v">One expected-annual-cost total, decomposed consistently by peril and by cost type; both sum to the same figure</span>
+            <span class="k">Adaptation appraisal</span><span class="v">Measures modify the risk chain (damage multiplier, freeboard, surge depth, reopen time, heat loss); benefit is jointly-computed averted AAL capitalised by an annuity at the discount rate</span>
+            <span class="k">Waterfall</span><span class="v">Risk today + exposure-growth increment + climate increment = future risk; minus portfolio averted = residual (after CLIMADA's CostBenefit decomposition)</span>
+            <span class="k">Risk layering</span><span class="v">Transferred share of the diversified acute loss curve between attachment and exhaustion; premium = transferred loss x loading</span>
+            <span class="k">Vulnerability attributes</span><span class="v">Optional per-site modifiers: construction frame x1.3 / masonry x1.0 / engineered x0.75 on wind damage; pre-1995 x1.15, post-2010 x0.9; defended adds 0.5 m flood freeboard</span>
+            <span class="k">Uncertainty</span><span class="v">One-at-a-time sweeps over hazard intensity, damage steepness, exposure, revenue, and reopen time, combined by root-sum-square (screening unsequa)</span>
+            <span class="k">Backtest</span><span class="v">Observed annual losses vs modeled present-day damage AAL; portfolio bias flags systematic mis-calibration</span>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="margin-bottom:8px"><b>Known interim limits.</b> Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level basins (for example New Orleans behind levees) are understated, and the latitude-based heat proxy underrepresents arid inland microclimates. These resolve when a CLIMADA hazard grid is loaded. Measure costs and strengths are planning-grade defaults drawn from published mitigation studies; replace them with engineering estimates before committing capital. Treat figures as screening estimates, not disclosure, until then.</div>
+      <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
+    </div>
+    <div class="panel">
+      <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
+      <div class="hint">CLIMADA's calibration loop: compare modeled expected damage against your own loss history. Site names must match the loaded portfolio.</div>
+      <div class="grid2" style="grid-template-columns:0.9fr 1.1fr">
+        <div>
+          <div id="btDrop" class="drop">
+            <div class="big">Load observed losses CSV</div>
+            <small>Columns: <span class="mono">name, observed_annual_loss_usd</span> (average yearly physical-damage loss over your records)</small>
+          </div>
+          <input type="file" id="btFile" accept=".csv" hidden>
+          <div class="kv" id="btStats" style="margin-top:12px"></div>
+        </div>
+        <div id="btChart"></div>
+      </div>
+      <div id="btTableWrap" style="display:none;margin-top:12px">
+        <table class="tbl"><thead><tr><th>Site</th><th class="num">Modeled damage AAL</th><th class="num">Observed $/yr</th><th class="num">Observed / modeled</th></tr></thead>
+        <tbody id="btBody"></tbody></table>
+      </div>
+      <div class="note" id="btNote" style="margin-top:12px">No observed losses loaded. When loaded, the scatter compares modeled direct-damage AAL against your history; the 1:1 line is a perfect match. Even a decade of records is a noisy sample of catastrophe risk, so read systematic bias, not single-site scatter.</div>
+    </div>
+  </section>
+</main>
+
+<div class="foot-legal">
+  Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v1.6 petals data layers &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="addModal">
+  <div class="modal">
+    <h3>Add a site</h3>
+    <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
+      <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
+    </div>
+    <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <div class="row">
+      <button class="lightbtn" id="mCancel">Cancel</button>
+      <button class="lightbtn primary" id="mAdd">Add site</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="focusBg">
+  <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div id="focusHead"></div>
+      <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+    </div>
+    <div id="focusBody"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+/* ============================================================
+   RtV risk engine (validated; mirrors CLIMADA emanuel_usa)
+   ============================================================ */
+const V_THRESH=25.7, V_HALF=74.7;
+const RPS=[10,25,50,100,250,500];
+// Scenario keys are "present" or "<pathway>_<horizon>" on the CMIP6 SSP-RCP
+// framework. Warming (deg C above present) and sea-level rise (m) are
+// screening-grade central estimates consistent with IPCC AR6 ranges.
+const PATHWAYS=["ssp126","ssp245","ssp585"];
+const HORIZONS=[2030,2050,2080];
+const PATHWAY_LABEL={present:"Present day",ssp126:"SSP1-2.6",ssp245:"SSP2-4.5",ssp585:"SSP5-8.5"};
+const WARMING={present:0,
+  ssp126_2030:0.6,ssp126_2050:1.0,ssp126_2080:1.3,
+  ssp245_2030:0.7,ssp245_2050:1.4,ssp245_2080:2.3,
+  ssp585_2030:0.8,ssp585_2050:2.0,ssp585_2080:3.6};
+const SLR={present:0,
+  ssp126_2030:0.09,ssp126_2050:0.19,ssp126_2080:0.34,
+  ssp245_2030:0.10,ssp245_2050:0.22,ssp245_2080:0.44,
+  ssp585_2030:0.11,ssp585_2050:0.27,ssp585_2080:0.62};
+function warming(sc){return WARMING[sc]||0;}
+function slrOf(sc){return SLR[sc]||0;}
+const SCEN_KEYS=["present"].concat([].concat(...HORIZONS.map(h=>PATHWAYS.map(p=>p+"_"+h))));
+const SCEN_LABEL=(()=>{const o={present:"Present day"};
+  for(const p of PATHWAYS)for(const h of HORIZONS)o[p+"_"+h]=PATHWAY_LABEL[p]+" \u00b7 "+h;return o;})();
+// Wind intensity uplift for the interim TC field: ~2% per deg C of warming.
+const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+0.02*warming(k);return o;})();
+
+function emanuelMdd(v){const vt=Math.max((v-V_THRESH)/(V_HALF-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
+  const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+
+const ANCHORS=[
+  [25.8,-80.2,62,7.5],[24.5,-81.8,64,7.7],[30.0,-90.1,58,7.2],[29.3,-94.8,56,7.0],
+  [18.4,-66.1,62,7.6],[18.3,-64.9,62,7.6],[27.0,-82.6,60,7.4],[26.1,-80.1,61,7.5],
+  [32.8,-79.9,52,6.9],[33.7,-78.9,50,6.8],[35.2,-75.5,54,7.0],[34.2,-77.9,51,6.8],[30.3,-81.4,48,6.7],
+  [36.8,-76.0,44,6.4],[40.7,-74.0,40,6.0],[41.7,-70.3,42,6.2],
+  [21.3,-157.8,42,5.8],[19.7,-155.1,46,6.1],[22.1,-159.4,44,6.0],
+  [28.5,-81.4,41,6.0],[29.4,-98.5,30,5.2],[33.7,-84.4,26,4.8],[30.3,-97.7,27,5.0],
+  [33.8,-116.5,15,3.6],[36.2,-115.1,14,3.4],[39.7,-105.0,12,3.2],[34.0,-118.2,14,3.4],[37.8,-122.4,13,3.3],
+];
+const IDW_SCALE=380;
+function interimVector(lat,lon,scenario){
+  let wSum=0,v100=0,b=0;
+  for(const [alat,alon,av,ab] of ANCHORS){const d=haversine(lat,lon,alat,alon);const w=Math.exp(-((d/IDW_SCALE)**2));wSum+=w;v100+=w*av;b+=w*ab;}
+  if(wSum<1e-6){v100=13;b=3.2;}else{v100/=wSum;b/=wSum;}
+  v100*=(SCEN_UPLIFT[scenario]||1);
+  const a=v100-b*Math.log(100);const vec={};
+  for(const rp of RPS)vec[rp]=Math.max(a+b*Math.log(rp),0);
+  return {vec,meta:{v100,b,source:"interim"}};
+}
+function makeGridProvider(rows){
+  const byScen={};for(const row of rows){(byScen[row.scenario]||(byScen[row.scenario]=[])).push(row);}
+  return function(lat,lon,scenario,maxKm){maxKm=maxKm||200;
+    const list=byScen[scenario]||byScen.present||[];let best=null,bestD=Infinity;
+    for(const row of list){const d=haversine(lat,lon,row.lat,row.lon);if(d<bestD){bestD=d;best=row;}}
+    if(!best||bestD>maxKm){const z={};for(const rp of RPS)z[rp]=0;return {vec:z,meta:{source:"grid",outside:true,dist:bestD}};}
+    const vec={};for(const rp of RPS)vec[rp]=Math.max(+best["v"+rp]||0,0);
+    return {vec,meta:{source:"grid",dist:bestD}};
+  };
+}
+function siteEad(vec,value,opts){
+  opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
+  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v)*dmgMult,1)};});
+  if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
+  const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
+  for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
+  eadFrac+=s[s.length-1].frac*s[s.length-1].f;
+  const curve=pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
+  return {eadUsd:eadFrac*value,eadFrac,curve};
+}
+function bandOf(pct){if(pct>=1.5)return"Severe";if(pct>=0.75)return"High";if(pct>=0.25)return"Moderate";if(pct>0.001)return"Low";return"Minimal";}
+function brandRollup(rows){
+  const m={};for(const r of rows){const k=r.brand||"Unbranded";(m[k]||(m[k]={brand:k,tiv:0,ead:0,n:0}));m[k].tiv+=r.asset_value_usd;m[k].ead+=r.eadUsd;m[k].n++;}
+  return Object.values(m).map(x=>Object.assign({},x,{eadPct:x.tiv?x.ead/x.tiv*100:0})).sort((a,b)=>b.ead-a.ead);
+}
+
+/* ============================================================
+   Multi-hazard interim layer
+   Adds coastal flood, riverine flood, and extreme heat alongside the
+   wind model. Every proxy here is screening-grade and clearly labelled;
+   an extended CLIMADA grid (with a `hazard` column) supersedes any peril
+   per-hazard, exactly as the wind grid already supersedes the wind field.
+   ============================================================ */
+const HAZARDS=[
+  {key:"tc",     label:"Tropical cyclone", short:"W", color:"#12586F", type:"damage",    unit:"m/s"},
+  {key:"cflood", label:"Coastal flood",    short:"F", color:"#2C7DA0", type:"damage",    unit:"m"},
+  {key:"rflood", label:"Riverine flood",   short:"R", color:"#6A8CAF", type:"damage",    unit:"m"},
+  {key:"heat",   label:"Extreme heat",     short:"H", color:"#C06B2E", type:"indicator", unit:"days"},
+];
+const HAZARD_LABEL={};HAZARDS.forEach(h=>HAZARD_LABEL[h.key]=h.label);
+const HAZARD_BY={};HAZARDS.forEach(h=>HAZARD_BY[h.key]=h);
+
+// Coast-proximity proxy: distance to the nearest anchor on a coastline the
+// portfolio actually touches. Interim only; replaced by a coastal-flood grid.
+const COAST_ANCHORS=[
+  [29.3,-94.8],[29.0,-90.1],[27.8,-82.7],[25.8,-80.1],[29.9,-81.3],
+  [32.8,-79.9],[33.7,-78.9],[36.8,-76.0],[18.4,-66.1],[18.3,-64.9],
+  [18.0,-63.1],[21.3,-157.9],[19.7,-156.0],[22.1,-159.3],[33.7,-118.2],
+  [37.8,-122.5],[32.7,-117.2],
+];
+function coastKm(la,lo){let b=Infinity;for(const [a,o] of COAST_ANCHORS){const d=haversine(la,lo,a,o);if(d<b)b=d;}return b;}
+function continentality(la,lo){return Math.min(coastKm(la,lo),400)/400;}
+// flood stage-damage: no damage until water clears the finished-floor
+// elevation / defenses (freeboard), then concave and capped. Different
+// freeboard for coastal vs river-adjacent structures.
+const FB_COAST=1.1, FB_RIVER=0.6;
+/* Phase 2: if the loaded rflood grid already embeds flood protection
+   (FLOPROS-style ISIMIP sets), the interim riverine freeboard must not
+   double-count it. Flip to true ONLY after confirming the served dataset's
+   protection assumption (see hazard_grid_meta.json and the runbook). */
+const RFLOOD_GRID_INCLUDES_PROTECTION=false;
+function fbRiver(){return (gridByHazard.rflood&&RFLOOD_GRID_INCLUDES_PROTECTION)?0:FB_RIVER;}
+function floodMdd(d,fb){const e=d-(fb||0);return e<=0?0:Math.min(0.75,1-Math.exp(-0.6*e));}
+
+function coastalFloodVector(la,lo,sc){
+  const near=Math.exp(-coastKm(la,lo)/40);
+  const surge=(interimVector(la,lo,"present").vec[100])/74.7;
+  const base100=1.8*near*(0.5+0.5*surge);
+  const rise=slrOf(sc)*near;                                   // SLR lifts the curve
+  const shape={10:0.35,25:0.55,50:0.78,100:1.0,250:1.25,500:1.45};
+  const vec={};for(const rp of RPS)vec[rp]=Math.max(0,base100*shape[rp]+rise);return vec;
+}
+function riverineFloodVector(la,lo,sc){
+  const inland=continentality(la,lo);
+  const base100=0.8*(0.3+0.7*inland);
+  const uplift=1+0.05*warming(sc);
+  const shape={10:0.30,25:0.55,50:0.80,100:1.0,250:1.30,500:1.55};
+  const vec={};for(const rp of RPS)vec[rp]=base100*shape[rp]*uplift;return vec;
+}
+function heatIndicators(la,lo,sc){
+  /* Phase 3: prefer the data-driven heat grid (observed daily climatology
+     shifted by AR6-consistent warming; see refresh_heat.py), encoded as
+     v10=days over 32C, v25=days over 35C, v50=cooling degree days. The
+     latitude formula remains the fallback when no heat rows are loaded or
+     a site sits outside grid coverage, so behaviour never degrades to zero. */
+  const g=gridByHazard.heat;
+  if(g){const r=g(la,lo,sc);
+    if(!(r.meta&&r.meta.outside)){
+      const d32=Math.round(r.vec[10]||0),d35=Math.round(r.vec[25]||0),cdd=Math.round(r.vec[50]||0);
+      const p=Math.min(Math.max(d35,0.5),199.5)/200;
+      const effT=+(35+1.6*Math.log(p/(1-p))).toFixed(1);
+      return {effT,daysOver32:d32,daysOver35:d35,cdd,source:"grid"};
+    }}
+  const baseT=34-0.35*(Math.abs(la)-18)+6*continentality(la,lo);
+  const T=baseT+warming(sc);
+  const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
+  return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
+}
+// flood EAD, same frequency integration as siteEad (f descending, tail closed)
+function floodEad(vec,value,fb,dmgScale){
+  const k=dmgScale==null?1:dmgScale;
+  const pts=RPS.map(rp=>{const d=Math.max(vec[rp]||0,0);return {rp,v:d,f:1/rp,frac:Math.min(floodMdd(d,fb)*k,1)};});
+  const s=pts.slice().sort((x,y)=>y.f-x.f);let ef=0;
+  for(let i=0;i<s.length-1;i++)ef+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
+  ef+=s[s.length-1].frac*s[s.length-1].f;
+  return {eadUsd:ef*value,eadFrac:ef,curve:pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
+}
+function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate","High","Severe"];let i=0;while(i<t.length&&days32>t[i])i++;return n[i];}
+
+/* Vulnerability attributes (Phase B): optional per-site construction,
+   year_built, and defended flags modify the damage curves with simple,
+   documented factors. Absent attributes leave the baseline untouched. */
+const CONSTR_FACTOR={frame:1.3,masonry:1.0,engineered:0.75};
+function vulnOf(site){
+  let w=1;
+  const c=String(site.construction||"").toLowerCase();
+  if(CONSTR_FACTOR[c]!=null)w*=CONSTR_FACTOR[c];
+  const y=+site.year_built;
+  if(isFinite(y)&&y>1800){ if(y<1995)w*=1.15; else if(y>=2010)w*=0.9; }
+  return {windMult:Math.min(Math.max(w,0.5),1.6), fbBonus:site.defended?0.5:0};
+}
+
+// per-hazard vector for a site: grid for that hazard if loaded, else interim
+function hzVector(hz,la,lo,sc){
+  if(hz==="tc") return provider()(la,lo,sc).vec;
+  const g=gridByHazard[hz];
+  if(g){ const r=g(la,lo,sc); if(!(r.meta&&r.meta.outside)) return r.vec; }
+  /* outside grid coverage (>200 km from any cell): fall back to the interim
+     model rather than silently scoring zero (Phase 2) */
+  if(hz==="cflood") return coastalFloodVector(la,lo,sc);
+  if(hz==="rflood") return riverineFloodVector(la,lo,sc);
+  return {};
+}
+// per-hazard result for a site, in a shape the renderers can consume
+function hzSite(site,hz,sc){
+  const la=site.latitude,lo=site.longitude,val=site.asset_value_usd;
+  const vuln=vulnOf(site);
+  if(hz==="heat"){
+    const ind=heatIndicators(la,lo,sc);
+    return {ead:0,eadPct:0,band:heatBand(ind.daysOver32),curve:[],vec:null,indicators:ind,isHeat:true};
+  }
+  if(hz==="tc"){
+    const {vec,meta}=provider()(la,lo,sc);
+    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult});
+    return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec,hazardMeta:meta};
+  }
+  const vec=hzVector(hz,la,lo,sc);
+  const {eadUsd,eadFrac,curve}=floodEad(vec,val,(hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus);
+  return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
+}
+function scoreHazard(sites,hz,sc){
+  const rows=sites.map(s=>Object.assign({},s,hzSite(s,hz,sc)));
+  const tiv=rows.reduce((a,r)=>a+r.asset_value_usd,0);
+  const ead=rows.reduce((a,r)=>a+(r.ead||0),0);
+  const rpLoss={};for(const rp of RPS)rpLoss[rp]=rows.reduce((a,r)=>{const c=(r.curve||[]).find(x=>x.rp===rp);return a+(c?c.loss:0);},0);
+  return {rows,tiv,ead,eadPct:tiv?ead/tiv*100:0,rpLoss,hazardKey:hz};
+}
+// combined physical risk across all damage perils (wind + both floods)
+function scorePhysTotal(sites,sc){
+  const rows=sites.map(s=>{
+    const tc=hzSite(s,"tc",sc),cf=hzSite(s,"cflood",sc),rf=hzSite(s,"rflood",sc);
+    const ead=tc.ead+cf.ead+rf.ead,pct=s.asset_value_usd?ead/s.asset_value_usd*100:0;
+    return Object.assign({},s,{ead,eadPct:pct,band:bandOf(pct),parts:{tc:tc.ead,cflood:cf.ead,rflood:rf.ead}});
+  });
+  const tiv=rows.reduce((a,r)=>a+r.asset_value_usd,0);
+  const ead=rows.reduce((a,r)=>a+r.ead,0);
+  return {rows,tiv,ead,eadPct:tiv?ead/tiv*100:0};
+}
+// portfolio EAD split by peril, for the risk-driver panel
+function riskDrivers(sites,sc){
+  const t={tc:0,cflood:0,rflood:0};
+  for(const s of sites){t.tc+=hzSite(s,"tc",sc).ead;t.cflood+=hzSite(s,"cflood",sc).ead;t.rflood+=hzSite(s,"rflood",sc).ead;}
+  const sum=t.tc+t.cflood+t.rflood||1;
+  return {byHazard:t,total:t.tc+t.cflood+t.rflood,share:{tc:t.tc/sum,cflood:t.cflood/sum,rflood:t.rflood/sum}};
+}
+// all four hazard ratings for a site (for the Sites ratings column)
+function siteRatings(site,sc){
+  const o={};for(const h of HAZARDS)o[h.key]=hzSite(site,h.key,sc).band;return o;}
+
+/* ============================================================
+   Financial impact layer (Phase 2)
+   Turns hazard into money a CFO can read: direct asset damage, business
+   interruption, and heat-driven revenue at risk, summed into an expected
+   annual cost (AAL) and a tail Value at Risk. Acute perils (wind, coastal
+   flood, riverine flood) are event-driven; heat is the chronic peril.
+   Every figure is driven by three transparent, adjustable assumptions.
+   ============================================================ */
+const ACUTE=["tc","cflood","rflood"];
+const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
+let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
+function finSite(s,sc){
+  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;
+  const maxDownDays=finAssume.reopenMonths/12*365, dailyGop=gop/365;
+  const directByRp={},biByRp={}; RPS.forEach(rp=>{directByRp[rp]=0;biByRp[rp]=0;});
+  let directEad=0,biEad=0;
+  for(const hz of ACUTE){
+    const r=hzSite(s,hz,sc);                              // direct damage for this peril
+    directEad+=r.ead;
+    biEad+=gop*(finAssume.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
+    r.curve.forEach(c=>{ directByRp[c.rp]+=c.loss; biByRp[c.rp]+=dailyGop*maxDownDays*(value?c.loss/value:0); });
+  }
+  // chronic heat: profit at risk from dangerous-heat days (over 35C) above a comfort baseline
+  const ind=heatIndicators(s.latitude,s.longitude,sc);
+  const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
+  const heatCost=dailyGop*excess*finAssume.heatDrop;
+  const totalAal=directEad+biEad+heatCost;
+  return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
+    acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
+}
+function finPortfolio(sites,sc){
+  const rows=sites.map(s=>Object.assign({name:s.name,brand:s.brand,id:s.id},finSite(s,sc)));
+  const sum=k=>rows.reduce((a,r)=>a+r[k],0);
+  const value=sum("value"),revenue=sum("revenue");
+  // diversified tail: sites rarely share one event, so blend fully-correlated
+  // (sum) and independent (root-sum-square) via the correlation assumption.
+  const rho=finAssume.corr;
+  const varByRp={};RPS.forEach(rp=>{
+    let sv=0,sq=0;rows.forEach(r=>{const v=r.directByRp[rp]+r.biByRp[rp];sv+=v;sq+=v*v;});
+    varByRp[rp]=Math.sqrt(Math.max(0,(1-rho)*sq+rho*sv*sv));
+  });
+  const directEad=sum("directEad"),biEad=sum("biEad"),heatCost=sum("heatCost"),totalAal=sum("totalAal");
+  return {rows,value,revenue,directEad,biEad,heatCost,totalAal,
+    acuteAal:directEad+biEad,chronicAal:heatCost,
+    aalPctValue:value?totalAal/value*100:0,aalPctRev:revenue?totalAal/revenue*100:0,
+    var100:varByRp[100],var250:varByRp[250],varByRp};
+}
+// TCFD/ISSB-style disclosure rows: present plus the selected pathway at 2050 and 2080
+function finDisclosure(sites,pathway){
+  const pw=(pathway&&pathway!=="present")?pathway:"ssp245";
+  const scens=[["Present day","present"],[PATHWAY_LABEL[pw]+" \u00b7 2050",pw+"_2050"],[PATHWAY_LABEL[pw]+" \u00b7 2080",pw+"_2080"]];
+  return scens.map(([label,sc])=>{const f=finPortfolio(sites,sc);
+    return {label,acutePct:f.value?f.acuteAal/f.value*100:0,chronicPct:f.value?f.chronicAal/f.value*100:0,
+      totalPct:f.aalPctValue,var100Pct:f.value?f.var100/f.value*100:0};});
+}
+/* Aggregate across every risk: one expected-annual-cost total, decomposed two
+   consistent ways (by peril and by cost type), plus the portfolio band mix.
+   This is the single all-risk picture the Summary tab is built on. */
+function aggregatePortfolio(sites,sc){
+  const f=finPortfolio(sites,sc);
+  const gopShare=finAssume.reopenMonths/12;
+  const byPeril={tc:0,cflood:0,rflood:0,heat:f.heatCost};
+  sites.forEach(s=>{
+    const gop=siteRevenue(s)*finAssume.gopMargin;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,sc);byPeril[hz]+=r.ead+gop*gopShare*(r.eadPct/100);});
+  });
+  const byType={direct:f.directEad,bi:f.biEad,heat:f.heatCost};
+  const perSite=f.rows.map(r=>({name:r.name,brand:r.brand,total:r.totalAal,value:r.value,revenue:r.revenue}));
+  const byBrand={};perSite.forEach(r=>{const b=r.brand||"Unbranded";byBrand[b]=(byBrand[b]||0)+r.total;});
+  const bands={Minimal:0,Low:0,Moderate:0,High:0,Severe:0};
+  scorePhysTotal(sites,sc).rows.forEach(r=>bands[r.band]=(bands[r.band]||0)+1);
+  return {total:f.total||f.totalAal,f,byPeril,byType,perSite,byBrand,bands};
+}
+
+/* ============================================================
+   Adaptation intelligence (Phase A)
+   Measures are appraised against the FULL climate cost (direct damage +
+   business interruption + heat). Each measure declares a mechanism: a
+   modifier on one part of the risk chain. Modifiers compose, so the
+   combined portfolio of measures never double-counts averted loss.
+   ============================================================ */
+let adapt={growth:2.0,attach:25,exhaust:250,load:1.5,
+  m:{wind:{on:true,strength:65,cost:1.0},
+     flood:{on:true,fb:0.5,cost:0.6},
+     buffer:{on:false,red:0.3,cost:0.4},
+     ops:{on:true,fast:30,cost:300},
+     cool:{on:false,red:40,cost:0.5}}};
+
+// scope predicates: which sites a measure can act on (and be costed on)
+function siteAcuteParts(s,sc){return {cf:hzSite(s,"cflood",sc).ead,rf:hzSite(s,"rflood",sc).ead};}
+function isFloodExposed(s,sc){const p=siteAcuteParts(s,sc);return p.cf+p.rf>100;}
+function isCoastalExposed(s,sc){return hzSite(s,"cflood",sc).ead>100;}
+function isHeatExposed(s,sc){return heatIndicators(s.latitude,s.longitude,sc).daysOver35>HEAT_COMFORT_DAYS;}
+
+const MEASURES=[
+  {key:"wind",name:"Wind hardening (roofs & openings)",info:"mWind",target:"Wind damage + its BI",
+   sliders:[{p:"strength",label:"Residual wind damage",min:40,max:100,step:5,fmt:v=>v+"%"},
+            {p:"cost",label:"Cost, % of site value",min:0.2,max:3,step:0.1,fmt:v=>(+v).toFixed(1)+"%"}],
+   mods:st=>({tcDmgMult:st.strength/100}),
+   inScope:()=>true,
+   siteCost:(s,st)=>s.asset_value_usd*st.cost/100},
+  {key:"flood",name:"Dry floodproofing & utility elevation",info:"mFlood",target:"Flood damage + its BI",
+   sliders:[{p:"fb",label:"Added freeboard",min:0.2,max:1.5,step:0.1,fmt:v=>(+v).toFixed(1)+" m"},
+            {p:"cost",label:"Cost, % of site value",min:0.1,max:2,step:0.1,fmt:v=>(+v).toFixed(1)+"%"}],
+   mods:st=>({fbBonus:st.fb}),
+   inScope:isFloodExposed,
+   siteCost:(s,st)=>s.asset_value_usd*st.cost/100},
+  {key:"buffer",name:"Coastal buffer (dune & mangrove)",info:"mBuffer",target:"Coastal-flood depth",
+   sliders:[{p:"red",label:"Surge depth reduction",min:0.1,max:0.8,step:0.1,fmt:v=>(+v).toFixed(1)+" m"},
+            {p:"cost",label:"Cost, % of site value",min:0.1,max:1.5,step:0.1,fmt:v=>(+v).toFixed(1)+"%"}],
+   mods:st=>({cfDepthRed:st.red}),
+   inScope:isCoastalExposed,
+   siteCost:(s,st)=>s.asset_value_usd*st.cost/100},
+  {key:"ops",name:"Resilient operations (backup power, rapid reopen)",info:"mOps",target:"Business interruption",
+   sliders:[{p:"fast",label:"Reopen time reduction",min:10,max:50,step:5,fmt:v=>v+"%"},
+            {p:"cost",label:"Cost per site",min:100,max:1000,step:50,fmt:v=>"$"+v+"k"}],
+   mods:st=>({reopenMult:1-st.fast/100}),
+   inScope:()=>true,
+   siteCost:(s,st)=>st.cost*1000},
+  {key:"cool",name:"Cooling & shading retrofit",info:"mCool",target:"Heat revenue at risk",
+   sliders:[{p:"red",label:"Heat-loss reduction",min:10,max:60,step:5,fmt:v=>v+"%"},
+            {p:"cost",label:"Cost, % of site value",min:0.1,max:1.5,step:0.1,fmt:v=>(+v).toFixed(1)+"%"}],
+   mods:st=>({heatMult:1-st.red/100}),
+   inScope:isHeatExposed,
+   siteCost:(s,st)=>s.asset_value_usd*st.cost/100},
+];
+function measureCost(m,sitesArr,sc){
+  const st=adapt.m[m.key];
+  return sitesArr.reduce((a,s)=>a+(m.inScope(s,sc)?m.siteCost(s,st):0),0);
+}
+/* finSite with mechanism modifiers. With no mods this reproduces finSite
+   exactly (validated), so base and adapted figures share one formula. */
+function adaptedFinSite(s,sc,mods){
+  mods=mods||{};
+  const vuln=vulnOf(s);
+  const exp=mods.expMult==null?1:mods.expMult;             // exposure uncertainty: scales value and revenue
+  const haz=mods.hazMult==null?1:mods.hazMult;             // hazard-intensity uncertainty: scales wind speed and flood depth
+  const dmgK=mods.dmgScale==null?1:mods.dmgScale;          // damage-curve steepness uncertainty
+  const value=s.asset_value_usd*exp;
+  const revenue=siteRevenue(s)*exp*(mods.revMult==null?1:mods.revMult);
+  const gop=revenue*finAssume.gopMargin;
+  const reopenShare=(finAssume.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
+  const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
+  let directEad=0,biEad=0;
+  const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
+    {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK});
+  directEad+=w.eadUsd; biEad+=gop*reopenShare*w.eadFrac;
+  let cvec=scaleVec(hzVector("cflood",s.latitude,s.longitude,sc));
+  if(mods.cfDepthRed){const nv={};RPS.forEach(rp=>nv[rp]=Math.max(0,(cvec[rp]||0)-mods.cfDepthRed));cvec=nv;}
+  const cf=floodEad(cvec,value,FB_COAST+vuln.fbBonus+(mods.fbBonus||0),dmgK);
+  directEad+=cf.eadUsd; biEad+=gop*reopenShare*cf.eadFrac;
+  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,fbRiver()+vuln.fbBonus+(mods.fbBonus||0),dmgK);
+  directEad+=rf.eadUsd; biEad+=gop*reopenShare*rf.eadFrac;
+  const ind=heatIndicators(s.latitude,s.longitude,sc);
+  const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
+  const heatCost=(gop/365)*excess*finAssume.heatDrop*(mods.heatMult==null?1:mods.heatMult);
+  return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
+}
+function adaptedTotal(sitesArr,sc,mods){
+  let d=0,b=0,h=0;
+  sitesArr.forEach(s=>{const r=adaptedFinSite(s,sc,mods);d+=r.directEad;b+=r.biEad;h+=r.heatCost;});
+  return {directEad:d,biEad:b,heatCost:h,totalAal:d+b+h};
+}
+// merge the modifiers of all enabled measures (fields are disjoint by design)
+function enabledMods(){
+  const out={};
+  MEASURES.forEach(m=>{if(adapt.m[m.key].on)Object.assign(out,m.mods(adapt.m[m.key]));});
+  return out;
+}
+function annuity(years,rate){let a=0;for(let t=1;t<=years;t++)a+=1/Math.pow(1+rate,t);return a;}
+/* CLIMADA-style waterfall: risk today, plus exposure growth, plus climate
+   change, minus the enabled measure portfolio, equals residual. AAL is
+   linear in value and revenue, so growth scales it by (1+g)^years. */
+function waterfallData(sitesArr,futureSc){
+  const yearMatch=String(futureSc).match(/_(\d{4})$/);
+  const years=Math.max((yearMatch?+yearMatch[1]:2050)-2026,1);
+  const g=Math.pow(1+adapt.growth/100,years);
+  const today=adaptedTotal(sitesArr,"present",{}).totalAal;
+  const futBase=adaptedTotal(sitesArr,futureSc,{}).totalAal;
+  const futAdapted=adaptedTotal(sitesArr,futureSc,enabledMods()).totalAal;
+  const growthInc=today*(g-1);
+  const climateInc=g*(futBase-today);
+  const future=g*futBase;                 // = today+growthInc+climateInc exactly
+  const averted=g*(futBase-futAdapted);
+  return {today,growthInc,climateInc,future,averted,residual:future-averted,years,g};
+}
+/* Risk layering on the diversified acute loss curve. The transferred share
+   of the curve integral is applied to acute AAL so retained + transferred
+   always reconcile. */
+function layerStatsCalc(varByRp,acuteAal){
+  const A=varByRp[adapt.attach]||0, E=varByRp[adapt.exhaust]||0;
+  const integ=tr=>{
+    const pts=RPS.map(rp=>({f:1/rp,L:tr(varByRp[rp]||0)})).sort((a,b)=>b.f-a.f);
+    let s2=0;for(let i=0;i<pts.length-1;i++)s2+=0.5*(pts[i].L+pts[i+1].L)*(pts[i].f-pts[i+1].f);
+    return s2+pts[pts.length-1].L*pts[pts.length-1].f;
+  };
+  const tot=integ(L=>L)||1;
+  const lay=integ(L=>Math.min(Math.max(L-A,0),Math.max(E-A,0)));
+  const frac=Math.min(lay/tot,1);
+  const transferred=acuteAal*frac;
+  return {A,E,limit:Math.max(E-A,0),transferred,retained:acuteAal-transferred,premium:transferred*adapt.load,frac};
+}
+
+/* ============================================================
+   Uncertainty & sensitivity (Phase B)
+   A screening-grade take on CLIMADA's unsequa: perturb the most uncertain
+   inputs one at a time over plausible ranges, then combine the deltas by
+   root-sum-square (independence assumed) into a low/central/high band.
+   The per-factor deltas are the sensitivity tornado.
+   ============================================================ */
+const UNC_FACTORS=[
+  {key:"haz",label:"Hazard intensity \u00b18%",lo:{hazMult:0.92},hi:{hazMult:1.08}},
+  {key:"dmg",label:"Damage-curve steepness \u221230/+40%",lo:{dmgScale:0.70},hi:{dmgScale:1.40}},
+  {key:"exp",label:"Asset values \u00b115%",lo:{expMult:0.85},hi:{expMult:1.15}},
+  {key:"rev",label:"Revenue basis \u00b120%",lo:{revMult:0.80},hi:{revMult:1.20}},
+  {key:"reopen",label:"Reopen time \u221225/+50%",lo:{reopenMult:0.75},hi:{reopenMult:1.50}},
+];
+function uncRange(sitesArr,sc){
+  const c=adaptedTotal(sitesArr,sc,{});
+  const central=c.totalAal, acuteC=c.directEad+c.biEad;
+  let dn2=0,up2=0,adn2=0,aup2=0;
+  const factors=UNC_FACTORS.map(f=>{
+    const lo=adaptedTotal(sitesArr,sc,f.lo), hi=adaptedTotal(sitesArr,sc,f.hi);
+    const lt=Math.min(lo.totalAal,hi.totalAal), ht=Math.max(lo.totalAal,hi.totalAal);
+    dn2+=Math.pow(Math.max(central-lt,0),2); up2+=Math.pow(Math.max(ht-central,0),2);
+    const la=Math.min(lo.directEad+lo.biEad,hi.directEad+hi.biEad), ha=Math.max(lo.directEad+lo.biEad,hi.directEad+hi.biEad);
+    adn2+=Math.pow(Math.max(acuteC-la,0),2); aup2+=Math.pow(Math.max(ha-acuteC,0),2);
+    return {label:f.label,lo:lt,hi:ht,swing:ht-lt};
+  }).sort((a,b)=>b.swing-a.swing);
+  const low=Math.max(central-Math.sqrt(dn2),0), high=central+Math.sqrt(up2);
+  // acute-based ratios approximate the band on tail VaR (VaR is acute-only)
+  const varLoMult=acuteC?Math.max(acuteC-Math.sqrt(adn2),0)/acuteC:1;
+  const varHiMult=acuteC?(acuteC+Math.sqrt(aup2))/acuteC:1;
+  return {central,low,high,factors,varLoMult,varHiMult};
+}
+/* sensitivity tornado: per-factor low/high totals around the central AAL */
+function tornadoSvg(u){
+  const rows=u.factors;
+  const W=460,rowH=34,H=rows.length*rowH+40,padL=170,padR=14;
+  const xmin=Math.min(u.low,Math.min.apply(null,rows.map(r=>r.lo)))*0.98;
+  const xmax=Math.max(u.high,Math.max.apply(null,rows.map(r=>r.hi)))*1.02;
+  const X=v=>padL+(v-xmin)/(xmax-xmin||1)*(W-padL-padR);
+  let s=svgEl(W,H);
+  rows.forEach((r,i)=>{
+    const y=i*rowH+14;
+    s+='<text x="0" y="'+(y+12)+'" font-size="10.5" fill="#43535F">'+esc(r.label)+'</text>';
+    s+='<rect x="'+X(r.lo)+'" y="'+y+'" width="'+Math.max(X(r.hi)-X(r.lo),1.5)+'" height="16" rx="3" fill="#12586F" opacity="0.85"><title>'+esc(r.label)+': '+fmt$(r.lo)+' to '+fmt$(r.hi)+'</title></rect>';
+    s+='<text x="'+(X(r.hi)+5)+'" y="'+(y+12)+'" font-size="9.5" class="mono" fill="#15202B">'+fmt$(r.swing)+'</text>';
+  });
+  const xc=X(u.central);
+  s+='<line x1="'+xc+'" y1="8" x2="'+xc+'" y2="'+(H-26)+'" stroke="#B23A32" stroke-width="1.5" stroke-dasharray="4 4"/>';
+  s+='<text x="'+xc+'" y="'+(H-14)+'" text-anchor="middle" font-size="10" fill="#B23A32">central '+fmt$(u.central)+'</text>';
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="10" fill="#7A8893">Expected annual cost when each input moves across its plausible range</text>';
+  s+="</svg>";return s;
+}
+
+/* ============================================================
+   App state
+   ============================================================ */
+const SAMPLE=[
+  ["Club Wyndham Ocean Walk","Club Wyndham",29.2247,-81.0068,58000000,{construction:"masonry",year_built:2002}],
+  ["Club Wyndham Sea Gardens","Club Wyndham",26.2731,-80.0906,42000000,{construction:"masonry",year_built:1988}],
+  ["Margaritaville Rio Mar","Margaritaville",18.3797,-65.8083,51000000,{construction:"engineered",year_built:1996,defended:true}],
+  ["Club Wyndham Bonnet Creek","Club Wyndham",28.3402,-81.5460,73000000,{construction:"engineered",year_built:2011}],
+  ["WorldMark New Orleans","WorldMark",29.9536,-90.0653,31000000,{construction:"masonry",year_built:1970,defended:true}],
+  ["Club Wyndham Kona Hawaiian","Club Wyndham",19.6406,-155.9967,39000000,{construction:"frame",year_built:1992}],
+  ["Shell Vacations Kauai Coast","Shell Vacations Club",22.0731,-159.3200,28000000,{construction:"frame",year_built:1987}],
+  ["Club Wyndham Galveston","Club Wyndham",29.2810,-94.7940,34000000,{construction:"masonry",year_built:1999,defended:true}],
+  ["WorldMark San Antonio","WorldMark",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
+  ["Club Wyndham Myrtle Beach","Club Wyndham",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
+  ["Margaritaville St Thomas","Margaritaville",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
+  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999}],
+];
+let sites=[];
+let hazardGrid=null;       // {rows, meta} — badge/provenance for a loaded grid
+let backtest=null;         // {rows:[{name,observed}],loaded} observed-loss history for calibration
+let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is loaded
+let scenario="present";
+let activeHazard="tc";     // peril driving the map, overview, and detail
+let selectedId=null;
+let sortKey="ead", sortDir=-1;
+let nextId=1;
+
+/* hazard provider is built once (not per call) and cached per site+scenario,
+   so the many scoring passes in one render do not repeat spatial lookups. */
+let _baseProvider=(la,lo,sc)=>interimVector(la,lo,sc);
+let _hazCache=new Map();
+function clearHazCache(){ _hazCache=new Map(); }
+function provider(){
+  return function(la,lo,sc){
+    const k=la.toFixed(5)+","+lo.toFixed(5)+","+sc;
+    let hit=_hazCache.get(k);
+    if(hit===undefined){ hit=_baseProvider(la,lo,sc); _hazCache.set(k,hit); }
+    return hit;
+  };
+}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function toNum(v){ if(v==null)return NaN; const s=String(v).replace(/[$,%\s]/g,""); return s===""?NaN:parseFloat(s); }
+function csvCell(s){ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function fmt$(x){ if(!isFinite(x))x=0; if(Math.abs(x)>=1e6)return "$"+(x/1e6).toFixed(2)+"M"; if(Math.abs(x)>=1e3)return "$"+(x/1e3).toFixed(0)+"k"; return "$"+Math.round(x); }
+function fmtFull(x){ return "$"+Math.round(x).toLocaleString(); }
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
+
+/* ============================================================
+   Explain-it info layer
+   Plain-language explanations of every headline number and the
+   assumptions behind it, surfaced as accessible popovers. Any element
+   with data-info="<key>" becomes a trigger. Content is trusted static
+   markup authored below.
+   ============================================================ */
+const INFO={
+  controls:{t:"Peril, pathway and horizon",b:
+    "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, or extreme heat. The Overview risk-driver panel always shows all perils together.</p>"+
+    "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
+    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
+    s:"Framework: IPCC AR6 SSP-RCP scenarios."},
+  interim:{t:"Where the hazard comes from",b:
+    "<p>With no data loaded, the app uses a built-in <b>interim model</b>: transparent regional proxies for each peril. It is good for exploration, not for disclosure.</p>"+
+    "<p>Drop a <b>CLIMADA hazard grid</b> on the Method tab to replace any peril with authoritative values. Perils not in the grid stay on the interim model. The badge in the top bar shows which source is live.</p>"},
+  tiv:{t:"Total insured value",b:
+    "<p>The combined value of every site in the portfolio. All dollar losses are measured against it.</p>"+
+    "<p>Sample values are illustrative and are not actual Travel + Leisure Co. figures.</p>"},
+  ead:{t:"Expected annual damage (EAD)",b:
+    "<p>The <b>average</b> loss per year from this peril, blending frequent-small and rare-large events into one number.</p>"+
+    "<p>We compute the damage at six return periods (1-in-10 up to 1-in-500 years) and take the area under the loss-versus-frequency curve. Shown as dollars per year and as a share of value.</p>",
+    s:"Vulnerability: Emanuel (2011) for wind; stage-damage curve for flood."},
+  eadPct:{t:"EAD as a share of value",b:
+    "<p>Expected annual damage divided by the site's insured value. A site at <code>0.50%</code> loses, on average, half a percent of its value to this peril each year.</p>"+
+    "<p>It puts sites of very different sizes on the same footing.</p>"},
+  rp100:{t:"1-in-100 portfolio loss",b:
+    "<p>The loss the whole portfolio would take from a 1-in-100-year event. We add each site's 1-in-100 loss, which assumes the peril strikes every site at once.</p>"+
+    "<p>Real events rarely hit the whole portfolio together, so treat this as an <b>upper bound</b>. A CLIMADA event set gives the exact combined curve.</p>"},
+  bands:{t:"Risk bands",b:
+    "<p>Five plain-language bands from the annual loss ratio, so you can sort and communicate without reading every number:</p>"+
+    "<p><b>Minimal</b> &middot; <b>Low</b> to 0.25% &middot; <b>Moderate</b> to 0.75% &middot; <b>High</b> to 1.5% &middot; <b>Severe</b> above 1.5%.</p>"},
+  ratings:{t:"Per-peril ratings (W F R H)",b:
+    "<p>Four letters, one per peril: <b>W</b> wind, <b>F</b> coastal flood, <b>R</b> riverine flood, <b>H</b> heat.</p>"+
+    "<p>Each shows the site's risk band for that peril at the selected scenario, so you see the whole risk profile at a glance. Colours follow the same band scale.</p>"},
+  drivers:{t:"Risk drivers",b:
+    "<p>Portfolio expected annual damage split by peril, so you can see what actually drives the loss rather than assuming it is wind.</p>"+
+    "<p>Heat is tracked as indicators, not dollars, so it sits outside this split until a later phase dollarises it.</p>"},
+  epcurve:{t:"Loss exceedance curve",b:
+    "<p>Each point is the portfolio loss at a return period. The curve rising to the right means rarer events cause larger losses.</p>"+
+    "<p>Expected annual damage is the area under this curve.</p>"},
+  brand:{t:"Expected annual damage by brand",b:
+    "<p>Where expected loss concentrates by brand, so you can see which banner carries the exposure.</p>"},
+  tc:{t:"Tropical-cyclone wind",b:
+    "<p>Wind speeds by return period feed the <b>Emanuel (2011)</b> damage curve, the same one CLIMADA uses (<code>emanuel_usa</code>).</p>"+
+    "<p>Damage begins around <code>25.7 m/s</code> and rises steeply toward <code>74.7 m/s</code>.</p>"},
+  cflood:{t:"Coastal flood and surge",b:
+    "<p>Flood depth by return period is driven by how close the site is to the coast and its surge exposure, then raised by <b>sea-level rise</b> under each scenario. Depth feeds a stage-damage curve.</p>"+
+    "<p>Interim proxy until a CLIMADA coastal-flood grid is loaded.</p>"},
+  rflood:{t:"Riverine flood",b:
+    "<p>A deliberately coarse screening proxy that rises with distance inland and with warming.</p>"+
+    "<p>It is the least precise of the four perils and improves the most when a CLIMADA river-flood grid is loaded.</p>"},
+  heat:{t:"Extreme heat",b:
+    "<p>Reported as <b>indicators</b>, not a dollar loss: days per year over 32&deg;C and 35&deg;C, and cooling degree-days.</p>"+
+    "<p>Heat's cost to a resort is mostly business interruption and energy, which a later phase turns into dollars.</p>"},
+  scenShift:{t:"Present to 2080 shift",b:
+    "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
+  value:{t:"Asset value",b:
+    "<p>The site's insured or replacement value. Every dollar loss scales with it. Edit it on any site to test sensitivity.</p>"},
+  scenarios:{t:"Combined physical risk by pathway",b:
+    "<p>Wind and both floods summed into one physical expected-annual-damage figure, compared across emissions pathways at the horizon selected in the top bar.</p>"+
+    "<p><b>Band migration</b> shows how many sites move into higher bands as the climate warms.</p>"},
+  bcr:{t:"Benefit-cost ratio",b:
+    "<p>Benefit is the <b>averted</b> expected annual climate cost (direct damage plus business interruption plus heat), capitalised over the appraisal horizon at the discount rate. Cost is the up-front spend.</p>"+
+    "<p>Above <code>1.0</code> the measure returns more than it costs. Published mitigation studies typically find 2 to 6x for wind and flood retrofits in high-hazard zones.</p>"},
+  levers:{t:"Appraisal settings",b:
+    "<p><b>Horizon</b> is how many years of averted loss you count. The <b>discount rate</b> converts future averted losses to today's dollars. <b>Exposure growth</b> scales asset values and revenue into the future for the waterfall.</p>"+
+    "<p>Together they set how much a measure's benefits are worth now, and how large future risk grows.</p>"},
+  growth:{t:"Exposure growth",b:
+    "<p>Annual growth in asset values and revenue, from refurbishment, densification, and inflation. Because expected loss scales with what is exposed, growth alone raises future risk even with no climate change.</p>"+
+    "<p>The waterfall separates this growth increment from the climate increment, so each driver is visible on its own.</p>"},
+  measLib:{t:"Measure library",b:
+    "<p>Each measure works through one mechanism in the risk chain: reducing damage, reducing depth, shortening downtime, or cutting heat losses. Checked measures form the adaptation portfolio.</p>"+
+    "<p>The portfolio's combined benefit is computed jointly on the modified risk chain, so overlapping measures are never double-counted.</p>"},
+  mWind:{t:"Wind hardening",b:
+    "<p>Roof tie-downs, impact-rated openings, and secondary water barriers. Modeled as a multiplier on wind damage: residual damage 65% means one third of wind loss is averted, and the business interruption that damage would have caused falls with it.</p>"},
+  mFlood:{t:"Dry floodproofing & utility elevation",b:
+    "<p>Sealing lower levels, flood barriers, and lifting electrical, mechanical, and IT plant above flood level. Modeled as added freeboard: the water must rise further before damage begins, for both coastal and riverine flooding.</p>"},
+  mBuffer:{t:"Coastal buffer",b:
+    "<p>Dune restoration and mangrove or reef planting in front of coastal sites. Modeled as a reduction in storm-surge depth reaching the building. Nature-based coastal measures report benefit-cost ratios above 3.5 in Gulf Coast studies.</p>"},
+  mOps:{t:"Resilient operations",b:
+    "<p>Backup power, pre-negotiated restoration contracts, and rapid-reopen playbooks. These do not reduce damage; they shorten the closed period, so the measure acts only on business interruption.</p>"+
+    "<p>On a pure profit basis this often lands below 1.0x. It still carries option value (guest safety, brand protection) the ratio does not capture.</p>"},
+  mCool:{t:"Cooling & shading retrofit",b:
+    "<p>High-efficiency HVAC, shaded outdoor areas, and misting or pool capacity. Modeled as a percentage cut in the profit lost on dangerous-heat days. Its ratio improves under warmer scenarios as heat costs grow.</p>"},
+  costCurve:{t:"Adaptation cost curve",b:
+    "<p>The classic economics-of-climate-adaptation chart. Measures are sorted by benefit-cost ratio; each bar's width is the annual cost it averts, its height the ratio. Fund from the left until bars drop below the 1.0 breakeven line.</p>"+
+    "<p>Dimmed bars are measures not currently in the portfolio. Together the bars show how much of total risk can be bought down cost-effectively.</p>"},
+  waterfall:{t:"Total climate risk waterfall",b:
+    "<p>CLIMADA's signature decomposition. Start from today's expected annual cost, add the increment from exposure growth, add the increment from climate change, and you have future risk. Subtract what the selected measures avert and the remainder is <b>residual risk</b>: what you retain, insure, or accept.</p>"+
+    "<p>The bars reconcile exactly: today + growth + climate = future, and future - adaptation = residual.</p>"},
+  layering:{t:"Risk layering & insurance",b:
+    "<p>Standard catastrophe practice splits the loss curve into layers: <b>retain</b> frequent small losses, <b>transfer</b> the middle to insurance between an attachment and an exhaustion point, and hold the extreme tail beyond the limit.</p>"+
+    "<p>Transferred expected loss is the slice of the diversified loss curve inside the layer, applied to acute expected loss so retained plus transferred always reconcile. Chronic heat cost is operational, not insurable here.</p>"},
+  loading:{t:"Premium loading factor",b:
+    "<p>Insurers charge more than the expected loss they take on; the loading covers capital, expenses, and profit. A loading of 1.5x means the premium is one and a half times the transferred expected annual loss.</p>"+
+    "<p>The difference between premium and transferred loss is the annual cost of certainty: what you pay to cap volatility.</p>"},
+  recommend:{t:"Where to act first",b:
+    "<p>For each site, every in-scope measure is appraised individually and the best benefit-cost ratio wins. Sites are ranked by that ratio, so the cheapest risk reduction in the portfolio rises to the top.</p>"+
+    "<p>Site-level cost uses the same rates as the portfolio appraisal, so the two views stay consistent. Click a row to open the site's full scorecard.</p>"},
+  unc:{t:"Uncertainty & sensitivity",b:
+    "<p>A screening version of CLIMADA's unsequa analysis. Each input is swept across a plausible range while the others hold; the per-input swings form the tornado and are combined by root-sum-square (assuming independence) into the low-to-high band.</p>"+
+    "<p>The band is asymmetric upward because damage curves are convex: the same hazard uncertainty costs more on the upside. The tallest bar is where better data most improves the estimate.</p>"},
+  backtest:{t:"Backtest against observed losses",b:
+    "<p>CLIMADA pairs modeled impacts with observed disaster data for calibration; this does the same with your loss history. Modeled present-day direct-damage AAL is compared to average observed annual losses per site.</p>"+
+    "<p>Read the portfolio-level bias, not single-site scatter: catastrophe losses are so volatile that even a decade of clean records is a small sample. Bias outside roughly 0.5 to 2x is a signal to revisit hazard intensity, damage steepness, or the vulnerability attributes.</p>"},
+  prio:{t:"Harden these first",b:
+    "<p>Sites ranked by averted expected annual damage per dollar of hardening spend, so the cheapest risk reduction rises to the top.</p>"},
+  exportInfo:{t:"Export schema",b:
+    "<p>Writes one row per site with per-peril EAD and rating, combined physical EAD and %, heat indicators, and combined return-period losses.</p>"+
+    "<p>The column layout matches the Power BI model, so it drops straight into the RtV pipeline.</p>"},
+  totalAal:{t:"Expected annual cost (AAL)",b:
+    "<p>The average total climate cost per year: direct asset damage plus business interruption plus heat-driven revenue at risk, summed across all perils.</p>"+
+    "<p>Insurers call this the annual average loss (AAL). Shown as dollars per year and as a share of both asset value and annual revenue.</p>"},
+  indirect:{t:"Indirect share",b:
+    "<p>The part of the annual cost that is not physical damage: business interruption while a site is closed, plus heat's drag on revenue.</p>"+
+    "<p>Indirect losses are often overlooked and can rival the damage bill for a hospitality portfolio.</p>"},
+  var100:{t:"1-in-100 Value at Risk",b:
+    "<p>The total loss (direct damage plus business interruption) the portfolio would face from a 1-in-100-year year, the standard tail-risk yardstick.</p>"+
+    "<p>It is diversified across sites using the hazard-correlation assumption, so it is not a naive sum. A CLIMADA event set gives the exact combined tail.</p>"},
+  var250:{t:"1-in-250 Value at Risk",b:
+    "<p>The same tail measure at a rarer 1-in-250-year severity, a common capital and stress-test threshold.</p>"+
+    "<p>Diversified across sites; treat as a screening estimate until a CLIMADA event set is loaded.</p>"},
+  costsplit:{t:"Where the cost comes from",b:
+    "<p><b>Direct damage</b> is repair and replacement of the building. <b>Business interruption</b> is lost operating profit while the site is closed. <b>Heat revenue at risk</b> is the profit shed on extreme-heat days.</p>"+
+    "<p>All three are expected annual figures and add up to the total cost above.</p>"},
+  acuteChronic:{t:"Acute vs chronic",b:
+    "<p><b>Acute</b> risk is event-driven: wind, coastal flood, riverine flood, and the business interruption they cause. <b>Chronic</b> risk is gradual: heat's steady drag on operations.</p>"+
+    "<p>TCFD and ISSB ask for physical risk reported in exactly this split.</p>"},
+  assumptions:{t:"Assumptions",b:
+    "<p>These five levers turn hazard into money. They are deliberately visible and adjustable so the logic is auditable and you can fit them to your own portfolio.</p>"+
+    "<p>A per-site <code>annual_revenue_usd</code> column in the upload overrides the revenue lever for that site.</p>"},
+  revRatio:{t:"Revenue as % of asset value",b:
+    "<p>Sets each site's annual revenue as a share of its value, used for business interruption and heat costs when no per-site revenue is supplied.</p>"+
+    "<p>Hospitality real estate commonly runs 25 to 45%.</p>"},
+  gop:{t:"Gross operating margin",b:
+    "<p>The share of revenue that is operating profit. Business interruption and heat losses are measured on this profit, not on gross revenue, matching how business-interruption insurance is written.</p>"},
+  reopen:{t:"Months to reopen at total loss",b:
+    "<p>How long a totally destroyed site takes to rebuild and reopen. Downtime for a given event scales with its damage, so this sets the ceiling on business-interruption loss.</p>"},
+  heatDrop:{t:"Profit lost per extreme-heat day",b:
+    "<p>The share of a day's operating profit lost on each day above 35&deg;C beyond a 15-day comfort baseline: softer demand, cancellations, and higher cooling load.</p>"+
+    "<p>Days over 35&deg;C (dangerous heat) are the driver because they are where guest comfort and outdoor operations genuinely degrade.</p>"},
+  corr:{t:"Hazard correlation across sites",b:
+    "<p>How much perils strike sites together. At <code>1.0</code> the portfolio tail is a full sum (every site hit at once); at <code>0</code> sites are independent and the tail is far smaller.</p>"+
+    "<p>A spread portfolio sits in between. This is a screening stand-in for the spatial correlation a CLIMADA event set captures exactly.</p>"},
+  disclosure:{t:"Climate-related financial disclosure",b:
+    "<p>A TCFD and ISSB (IFRS S2) physical-risk summary: expected annual loss split into acute and chronic, plus a 1-in-100 tail, as a share of value, across time horizons.</p>"+
+    "<p>This is the shape of table those frameworks ask for. Load a CLIMADA grid before using it for filing.</p>"},
+  finsites:{t:"Most exposed sites",b:
+    "<p>Sites ranked by total expected annual climate cost (direct plus business interruption plus heat) at the selected scenario, so capital and adaptation attention goes where the money is.</p>"},
+  premium:{t:"Climate premium",b:
+    "<p>The increase in expected annual cost from today to the selected future, the part of the bill that warming adds on top of present-day risk.</p>"+
+    "<p>If the scenario selector is on present day, this compares against the mid-century pathway.</p>"},
+  aggPeril:{t:"Cost by peril",b:
+    "<p>The total expected annual cost split across all four perils. Each acute peril carries its own direct damage plus the business interruption it causes; heat carries its revenue-at-risk.</p>"+
+    "<p>The four shares add up to the same total as the cost-by-type view.</p>"},
+  aggType:{t:"Cost by type",b:
+    "<p>The same total split a second way: physical damage to buildings, business interruption while sites are closed, and heat's drag on operating profit.</p>"+
+    "<p>Two lenses on one number, so you can see both what is at risk and why.</p>"},
+  aggTraj:{t:"Trajectory",b:
+    "<p>Expected annual cost today and under the selected pathway at 2050 and 2080. The rise is the climate signal, independent of any single year's weather.</p>"},
+  aggBands:{t:"Portfolio risk mix",b:
+    "<p>How many sites fall into each combined physical-risk band (wind plus both floods) at the selected scenario. A quick read on how concentrated the exposure is.</p>"},
+  aggSites:{t:"Most exposed sites",b:
+    "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
+  aggBrand:{t:"By brand",b:
+    "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+};
+let _infoPop=null,_infoBtn=null;
+function ensureInfoPop(){
+  if(_infoPop)return _infoPop;
+  _infoPop=document.createElement("div");
+  _infoPop.className="infopop";_infoPop.setAttribute("role","dialog");_infoPop.setAttribute("aria-label","Explanation");
+  document.body.appendChild(_infoPop);
+  return _infoPop;
+}
+function showInfo(btn){
+  const c=INFO[btn.dataset.info];if(!c)return;
+  const pop=ensureInfoPop();
+  pop.innerHTML='<button class="close" aria-label="Close explanation">&times;</button><h4>'+esc(c.t)+'</h4>'+c.b+(c.s?'<div class="src">'+c.s+'</div>':"");
+  pop.classList.add("open");
+  const r=btn.getBoundingClientRect();
+  const pw=pop.offsetWidth,ph=pop.offsetHeight,vw=document.documentElement.clientWidth,vh=document.documentElement.clientHeight;
+  let left=r.left+window.scrollX;
+  left=Math.min(left,window.scrollX+vw-pw-10);left=Math.max(left,window.scrollX+8);
+  let top=r.bottom+window.scrollY+6;
+  if(r.bottom+ph+10>vh){ top=r.top+window.scrollY-ph-6; }        // flip above if no room below
+  if(top<window.scrollY+6)top=window.scrollY+6;
+  pop.style.left=left+"px";pop.style.top=top+"px";
+  btn.setAttribute("aria-expanded","true");_infoBtn=btn;
+  pop.querySelector(".close").onclick=()=>{hideInfo();btn.focus();};
+}
+function hideInfo(){ if(_infoPop)_infoPop.classList.remove("open"); if(_infoBtn){_infoBtn.setAttribute("aria-expanded","false");_infoBtn=null;} }
+function infoBtn(key,dark){ return '<button type="button" class="info'+(dark?" on-dark":"")+'" data-info="'+key+'" aria-label="How this is calculated" aria-expanded="false">i</button>'; }
+function wireInfo(){
+  document.addEventListener("click",e=>{
+    const b=e.target.closest(".info");
+    if(b){ e.preventDefault();e.stopPropagation(); if(_infoBtn===b){hideInfo();} else {hideInfo();showInfo(b);} return; }
+    if(_infoPop&&!e.target.closest(".infopop"))hideInfo();
+  });
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&_infoBtn){const b=_infoBtn;hideInfo();b.focus();} });
+  window.addEventListener("scroll",()=>{ if(_infoBtn)hideInfo(); },true);
+  window.addEventListener("resize",()=>{ if(_infoBtn)hideInfo(); });
+}
+
+/* ---- map (degrades gracefully if Leaflet CDN or tiles are blocked) ---- */
+let map, markers=[], mapOk=false, _lastFitKey="";
+function showMapUnavailable(){
+  const el=document.getElementById("map");
+  el.style.height="auto";el.style.minHeight="0";el.style.padding="16px 18px";
+  el.style.display="flex";el.style.alignItems="center";el.style.justifyContent="center";
+  el.style.background="#eef2f1";el.style.borderBottom="1px solid var(--line)";
+  el.innerHTML='<div style="color:#43535F;font-size:13px;text-align:center">Map is unavailable on this network. Every analysis below is fully functional without it.</div>';
+}
+function initMap(){
+  if(typeof L==="undefined"){ showMapUnavailable(); return; }
+  try{
+    map=L.map("map",{scrollWheelZoom:true}).setView([27,-84],4);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      {attribution:"&copy; OpenStreetMap &copy; CARTO",subdomains:"abcd",maxZoom:19}).addTo(map);
+    map.on("click",e=>{ openAdd(e.latlng.lat,e.latlng.lng); });
+    mapOk=true;
+  }catch(err){ showMapUnavailable(); }
+}
+const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+let legendCtl=null;
+function updateLegend(){
+  if(!mapOk)return;
+  if(legendCtl){try{map.removeControl(legendCtl);}catch(e){}}
+  legendCtl=L.control({position:"bottomright"});
+  legendCtl.onAdd=function(){
+    const d=L.DomUtil.create("div","maplegend");
+    const bands=["Minimal","Low","Moderate","High","Severe"];
+    d.innerHTML='<div class="lh">'+HAZARD_LABEL[activeHazard]+' rating</div>'+
+      bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    return d;
+  };
+  legendCtl.addTo(map);
+}
+function drawMarkers(scored){
+  if(!mapOk)return;
+  markers.forEach(m=>map.removeLayer(m));markers=[];
+  if(!scored.rows.length){_lastFitKey="";updateLegend();return;}
+  const heat=activeHazard==="heat";
+  const maxV=Math.max.apply(null,scored.rows.map(r=>r.asset_value_usd))||1;
+  scored.rows.forEach(r=>{
+    const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
+    const m=L.circleMarker([r.latitude,r.longitude],{
+      radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
+    }).addTo(map);
+    const metric=heat
+      ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
+      : fmt$(r.ead)+"/yr &middot; "+r.eadPct.toFixed(2)+"%";
+    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>");
+    m.on("click",()=>{ selectedId=r.id; switchTab("sites"); renderSites(); });
+    markers.push(m);
+  });
+  updateLegend();
+  // only re-frame the map when the set of sites changes, not on every recompute
+  const key=scored.rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
+  if(key!==_lastFitKey){ try{ map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25)); }catch(e){} _lastFitKey=key; }
+}
+
+/* ---- SVG helpers ---- */
+function svgEl(w,h){return '<svg viewBox="0 0 '+w+' '+h+'" width="100%" height="'+h+'" preserveAspectRatio="xMidYMid meet">';}
+function epCurveSvg(rpLoss){
+  const W=460,H=210,pad=44;
+  const xs=RPS.map(rp=>Math.log(rp));
+  const xmin=Math.min.apply(null,xs),xmax=Math.max.apply(null,xs);
+  const vals=RPS.map(rp=>rpLoss[rp]);const ymax=Math.max(1,Math.max.apply(null,vals));
+  const X=lx=>pad+(lx-xmin)/(xmax-xmin)*(W-pad-14);
+  const Y=v=>H-30-(v/ymax)*(H-30-14);
+  let s=svgEl(W,H);
+  [0,.25,.5,.75,1].forEach(t=>{const y=Y(t*ymax);s+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(pad-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
+  let path="";RPS.forEach((rp,i)=>{path+=(i?"L":"M")+X(Math.log(rp))+" "+Y(rpLoss[rp])+" ";});
+  s+='<path d="'+path+'" fill="none" stroke="#0F3A4B" stroke-width="2.5"/>';
+  RPS.forEach(rp=>{s+='<circle cx="'+X(Math.log(rp))+'" cy="'+Y(rpLoss[rp])+'" r="3.5" fill="#12586F"/>';
+    s+='<text x="'+X(Math.log(rp))+'" y="'+(H-12)+'" text-anchor="middle" font-size="10" fill="#7A8893">'+rp+'</text>';});
+  s+='<text x="'+(W/2)+'" y="'+(H-1)+'" text-anchor="middle" font-size="10" fill="#43535F">Return period (years)</text>';
+  s+="</svg>";return s;
+}
+function barsSvg(items,valKey,labKey,color){
+  const W=460,rowH=30,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
+  const lab=120;let s=svgEl(W,H);
+  items.forEach((it,i)=>{const y=i*rowH+10;const w=(it[valKey]/max)*(W-lab-70);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(String(it[labKey]).slice(0,20))+'</text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"/>';
+    s+='<text x="'+(lab+w+6)+'" y="'+(y+13)+'" font-size="11" fill="#15202B" class="mono">'+fmt$(it[valKey])+'</text>';});
+  s+="</svg>";return s;
+}
+function countBarsSvg(items,valKey,labKey,color,suffix){
+  suffix=suffix||"";
+  const W=460,rowH=26,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
+  const lab=150;let s=svgEl(W,H);
+  items.forEach((it,i)=>{const y=i*rowH+8;const w=(it[valKey]/max)*(W-lab-56);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(String(it[labKey]).slice(0,24))+'</text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"/>';
+    s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
+  s+="</svg>";return s;
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function render(){
+  hideInfo();
+  const hasData=sites.length>0;
+  document.getElementById("emptyState").style.display=hasData?"none":"block";
+  document.getElementById("overviewBody").style.display=hasData?"block":"none";
+  document.getElementById("sumEmpty").style.display=hasData?"none":"block";
+  document.getElementById("summaryBody").style.display=hasData?"block":"none";
+  const scored=scoreHazard(sites,activeHazard,scenario);
+  drawMarkers(scored);
+  if(hasData){ renderOverview(scored); }
+  renderSummary();
+  renderSites();
+  renderAdaptation();
+  renderScenarios();
+  renderFinance();
+  renderBacktest();
+  renderHazProv();
+}
+function renderSummary(){
+  const host=document.getElementById("sumKpis"); if(!host)return;
+  if(!sites.length){return;}
+  const f=finPortfolio(sites,scenario);
+  const agg=aggregatePortfolio(sites,scenario);
+  const pathway=currentPathway();
+  const futureSc=(scenario!=="present")?scenario:(pathway+"_2050");
+  const pf=finPortfolio(sites,"present"), ff=finPortfolio(sites,futureSc);
+  const premium=ff.totalAal-pf.totalAal, premiumPct=pf.totalAal?premium/pf.totalAal*100:0;
+  const futLabel=SCEN_LABEL[futureSc]||futureSc, curLabel=SCEN_LABEL[scenario]||scenario;
+  document.getElementById("sumSub").innerHTML="Every peril and every cost type in one view, at "+esc(curLabel)+". "+(hazardGrid?"Using the loaded CLIMADA grid.":"Interim screening model.");
+  const card=(l,v,foot,info)=>'<div class="card"><div class="l">'+l+(info?infoBtn(info):"")+'</div><div class="v" style="font-size:22px">'+v+'</div><div class="foot">'+foot+'</div></div>';
+  const u=uncRange(sites,scenario);
+  host.innerHTML=
+    card("Insured value",fmt$(f.value),sites.length+" site"+(sites.length>1?"s":""),"")+
+    card("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high),"totalAal")+
+    card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value","var100")+
+    card("Climate premium","+"+fmt$(premium)+"/yr","by "+esc(futLabel)+", "+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"% vs today","premium");
+  const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat"};
+  const perilArr=[["tc",agg.byPeril.tc],["cflood",agg.byPeril.cflood],["rflood",agg.byPeril.rflood],["heat",agg.byPeril.heat]].sort((a,b)=>b[1]-a[1]);
+  const dom=perilArr[0], domShare=agg.total?dom[1]/agg.total*100:0;
+  const highSevere=(agg.bands.High||0)+(agg.bands.Severe||0);
+  document.getElementById("sumReadout").innerHTML=
+    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.var100)+"</b> ("+(f.value?f.var100/f.value*100:0).toFixed(0)+"% of value). "+
+    "<b>"+perilName[dom[0]]+"</b> is the largest driver at "+domShare.toFixed(0)+"% of the annual cost. "+
+    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.var100)+"</b>. "+
+    (highSevere?("<b>"+highSevere+"</b> of "+sites.length+" sites sit in High or Severe combined physical risk."):("No sites sit in High or Severe combined physical risk at this scenario."));
+  document.getElementById("sumByPeril").innerHTML=barsSvg(perilArr.map(([k,v])=>({label:perilName[k],ead:v})),"ead","label","#0F3A4B");
+  document.getElementById("sumByType").innerHTML=barsSvg([
+    {label:"Physical damage",ead:agg.byType.direct},
+    {label:"Business interruption",ead:agg.byType.bi},
+    {label:"Extreme heat",ead:agg.byType.heat},
+  ].sort((a,b)=>b.ead-a.ead),"ead","label","#12586F");
+  const traj=[["Present","present"],[PATHWAY_LABEL[pathway]+" 2050",pathway+"_2050"],[PATHWAY_LABEL[pathway]+" 2080",pathway+"_2080"]];
+  document.getElementById("sumTraj").innerHTML=barsSvg(traj.map(([lab,sc])=>({label:lab,ead:finPortfolio(sites,sc).totalAal})),"ead","label","#2C7DA0");
+  const order=["Minimal","Low","Moderate","High","Severe"];
+  const tot=order.reduce((a,b)=>a+(agg.bands[b]||0),0)||1;
+  let bar='<div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line)">';
+  order.forEach(b=>{const n=agg.bands[b]||0;if(n)bar+='<div title="'+b+': '+n+'" style="width:'+(n/tot*100)+'%;background:'+BAND_COLOR[b]+'"></div>';});
+  bar+='</div><div class="hint" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px">'+order.map(b=>'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+BAND_COLOR[b]+';margin-right:5px;vertical-align:middle"></span>'+b+' '+(agg.bands[b]||0)+'</span>').join("")+'</div>';
+  document.getElementById("sumBands").innerHTML=bar;
+  const top=agg.perSite.slice().sort((a,b)=>b.total-a.total).slice(0,6);
+  document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","#B23A32");
+  const brands=Object.keys(agg.byBrand).map(b=>({label:b,ead:agg.byBrand[b]})).sort((a,b)=>b.ead-a.ead);
+  document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
+  document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
+    "Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated, and the heat overlay is indicative; a CLIMADA grid sharpens both. Financial assumptions are set on the Financial impact tab.";
+}
+function renderOverview(scored){
+  const hz=activeHazard, heat=hz==="heat", hazName=HAZARD_LABEL[hz];
+  const src=hazardGrid?"CLIMADA hazard grid":"interim hazard model";
+  document.getElementById("ovSub").textContent=hazName+" \u00b7 "+SCEN_LABEL[scenario]+" \u00b7 "+src+" \u00b7 "+sites.length+" sites";
+  const highSev=scored.rows.filter(r=>r.band==="High"||r.band==="Severe").length;
+  let cards;
+  if(heat){
+    const avg=k=>scored.rows.reduce((a,r)=>a+(r.indicators?r.indicators[k]:0),0)/(scored.rows.length||1);
+    cards=[
+      ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
+      ["Avg days over 32\u00b0C",Math.round(avg("daysOver32"))+"/yr","portfolio mean","heat"],
+      ["Avg days over 35\u00b0C",Math.round(avg("daysOver35"))+"/yr","portfolio mean","heat"],
+      ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
+    ];
+  }else{
+    cards=[
+      ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
+      ["Expected annual damage",fmt$(scored.ead)+"/yr",scored.eadPct.toFixed(2)+"% of value","ead"],
+      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"co-occurrence bound","rp100"],
+      ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
+    ];
+  }
+  document.getElementById("kpiCards").innerHTML=cards.map(c=>
+    '<div class="card"><div class="l">'+c[0]+(c[3]?infoBtn(c[3]):"")+'</div><div class="v">'+c[1]+'</div><div class="foot">'+c[2]+'</div></div>').join("");
+
+  // left panel: EP curve for damage perils, indicator bars for heat
+  if(heat){
+    document.getElementById("epTitle").innerHTML="Heat indicators by site"+infoBtn("heat");
+    document.getElementById("epHint").textContent="Days per year above 32\u00b0C, "+SCEN_LABEL[scenario].toLowerCase()+".";
+    const items=scored.rows.slice().sort((a,b)=>(b.indicators.daysOver32)-(a.indicators.daysOver32))
+      .map(r=>({label:r.name,v:r.indicators.daysOver32}));
+    document.getElementById("epCurve").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
+  }else{
+    document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
+    document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+".";
+    document.getElementById("epCurve").innerHTML=epCurveSvg(scored.rpLoss);
+  }
+
+  // right panel: EAD by brand, or avg hot-days by brand for heat
+  if(heat){
+    document.getElementById("brandTitle").innerHTML="Days over 32\u00b0C by brand"+infoBtn("brand");
+    document.getElementById("brandHint").textContent="Portfolio-average exposure by brand.";
+    const bm={};scored.rows.forEach(r=>{const k=r.brand||"Unbranded";(bm[k]||(bm[k]={label:k,sum:0,n:0}));bm[k].sum+=r.indicators.daysOver32;bm[k].n++;});
+    const items=Object.values(bm).map(x=>({label:x.label,v:Math.round(x.sum/x.n)})).sort((a,b)=>b.v-a.v);
+    document.getElementById("brandBars").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
+  }else{
+    document.getElementById("brandTitle").innerHTML="Expected annual damage by brand"+infoBtn("brand");
+    document.getElementById("brandHint").textContent="Where "+hazName.toLowerCase()+" loss concentrates across the portfolio.";
+    const br=brandRollup(scored.rows.map(r=>Object.assign({},r,{eadUsd:r.ead})));
+    document.getElementById("brandBars").innerHTML=barsSvg(br,"ead","brand","#12586F");
+  }
+
+  // risk drivers: portfolio EAD split across perils (always all perils)
+  const rd=riskDrivers(sites,scenario);
+  const items=[
+    {label:"Tropical cyclone",ead:rd.byHazard.tc},
+    {label:"Coastal flood",ead:rd.byHazard.cflood},
+    {label:"Riverine flood",ead:rd.byHazard.rflood},
+  ].sort((a,b)=>b.ead-a.ead);
+  const heatDays=Math.round(sites.reduce((a,s)=>a+heatIndicators(s.latitude,s.longitude,scenario).daysOver32,0)/(sites.length||1));
+  document.getElementById("riskDrivers").innerHTML=
+    barsSvg(items,"ead","label","#12586F")+
+    '<div class="hint" style="margin-top:6px">Extreme heat is tracked as indicators (portfolio average '+heatDays+' days over 32\u00b0C), and is dollarised through business interruption in a later phase.</div>';
+
+  // narrative
+  const top=scored.rows.slice().sort((a,b)=>(b.ead||0)-(a.ead||0));
+  const dom=items[0];
+  const domName=dom.label.toLowerCase();
+  const domShare=rd.total>0?(dom.ead/rd.total*100):0;
+  const fut=scorePhysTotal(sites,"ssp585_2080").ead, now=scorePhysTotal(sites,"present").ead;
+  const growth=now>0?((fut/now-1)*100):0;
+  if(heat){
+    document.getElementById("narrative").innerHTML=
+      "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, extreme-heat exposure at "+SCEN_LABEL[scenario].toLowerCase()+" averages <b>"+heatDays+" days per year over 32\u00b0C</b>. "+
+      (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s rate":" rates")+" High or Severe for heat. ":"")+
+      "Across all modeled perils, coastal flood and wind drive the portfolio's physical expected annual damage; the combined figure rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
+  }else{
+    document.getElementById("narrative").innerHTML=
+      "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
+      "Across all modeled perils, <b>"+domName+"</b> is the single largest driver of physical expected annual damage ("+domShare.toFixed(0)+"% of it). "+
+      (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s sit":" sits")+" in the High or Severe band for this peril. ":"All sites fall below the High band for this peril. ")+
+      "Combined physical expected annual damage rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
+  }
+}
+function renderSites(){
+  const heat=activeHazard==="heat";
+  const scored=scoreHazard(sites,activeHazard,scenario);
+  // attach all-peril ratings and a sortable severity for heat
+  scored.rows.forEach(r=>{ r.ratings=siteRatings(r,scenario);
+    r.sev=heat?(r.indicators?r.indicators.daysOver32:0):r.ead; });
+  const key=(heat&&(sortKey==="ead"||sortKey==="eadPct"))?"sev":sortKey;
+  const rows=scored.rows.slice().sort((a,b)=>{
+    let va=a[key],vb=b[key];if(typeof va==="string"){return sortDir*va.localeCompare(vb);}return sortDir*((va||0)-(vb||0));
+  });
+  const ratingCell=r=>'<div class="ratecell">'+HAZARDS.map(h=>
+    '<span class="pill mini '+r.ratings[h.key]+'" title="'+h.label+': '+r.ratings[h.key]+'">'+h.short+'</span>').join("")+'</div>';
+  document.getElementById("siteBody").innerHTML=rows.map(r=>
+    '<tr class="rowclick '+(r.id===selectedId?"sel":"")+'" data-id="'+r.id+'">'+
+    '<td>'+esc(r.name)+'</td><td>'+esc(r.brand||"")+'</td>'+
+    '<td class="num mono">'+fmt$(r.asset_value_usd)+'</td>'+
+    '<td class="num mono">'+(heat?"&mdash;":fmt$(r.ead))+'</td>'+
+    '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
+    '<td>'+ratingCell(r)+'</td></tr>').join("")
+    || '<tr><td colspan="6" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+  document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
+  if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
+}
+function renderDetail(r){
+  if(!r){document.getElementById("detailBody").style.display="none";document.getElementById("detailHint").style.display="block";return;}
+  document.getElementById("detailHint").style.display="none";
+  const body=document.getElementById("detailBody");body.style.display="block";
+  const hz=activeHazard, heat=hz==="heat", H=HAZARD_BY[hz];
+  const ratings=r.ratings||siteRatings(r,scenario);
+  const ratingStrip='<div class="ratecell" style="margin:2px 0 12px">'+HAZARDS.map(h=>
+    '<span class="pill mini '+ratings[h.key]+'" title="'+h.label+': '+ratings[h.key]+'">'+h.short+'</span>').join("")+
+    '<span class="hint" style="margin-left:8px">W wind &middot; F coastal &middot; R riverine &middot; H heat</span></div>';
+  const nowS=hzSite(r,hz,"present"), lateS=hzSite(r,hz,"ssp585_2080");
+
+  let mid, table;
+  if(heat){
+    const ind=r.indicators||heatIndicators(r.latitude,r.longitude,scenario);
+    mid='<div class="cards" style="grid-template-columns:1fr 1fr;margin-bottom:14px">'+
+      '<div class="card"><div class="l">Heat rating '+SCEN_LABEL[scenario]+'</div><div class="v" style="font-size:20px">'+r.band+'</div><div class="foot">'+ind.daysOver32+' days &gt;32&deg;C</div></div>'+
+      '<div class="card"><div class="l">Value</div><div class="v" style="font-size:20px">'+fmt$(r.asset_value_usd)+'</div><div class="foot">days &gt;32&deg;C, present to 2080: '+nowS.indicators.daysOver32+' &rarr; '+lateS.indicators.daysOver32+infoBtn("scenShift")+'</div></div>'+
+    '</div>';
+    table='<table class="tbl"><thead><tr><th>Indicator</th><th class="num">Value / yr</th></tr></thead><tbody>'+
+      '<tr><td>Days over 32&deg;C</td><td class="num mono">'+ind.daysOver32+'</td></tr>'+
+      '<tr><td>Days over 35&deg;C</td><td class="num mono">'+ind.daysOver35+'</td></tr>'+
+      '<tr><td>Cooling degree-days</td><td class="num mono">'+ind.cdd+'</td></tr>'+
+      '<tr><td>Effective warm-season index</td><td class="num mono">'+ind.effT+' &deg;C</td></tr></tbody></table>';
+  }else{
+    const rpRows=RPS.map(rp=>{const c=r.curve.find(x=>x.rp===rp);return '<tr><td class="mono">1 in '+rp+'</td><td class="num mono">'+c.v.toFixed(hz==="tc"?0:2)+' '+H.unit+'</td><td class="num mono">'+fmt$(c.loss)+'</td></tr>';}).join("");
+    mid='<div class="cards" style="grid-template-columns:1fr 1fr;margin-bottom:14px">'+
+      '<div class="card"><div class="l">EAD '+SCEN_LABEL[scenario]+'</div><div class="v" style="font-size:20px">'+fmt$(r.ead)+'</div><div class="foot">'+r.eadPct.toFixed(2)+'% · '+r.band+'</div></div>'+
+      '<div class="card"><div class="l">Value</div><div class="v" style="font-size:20px">'+fmt$(r.asset_value_usd)+'</div><div class="foot">present to 2080: '+fmt$(nowS.ead)+' &rarr; '+fmt$(lateS.ead)+'/yr'+infoBtn("scenShift")+'</div></div>'+
+    '</div>';
+    table='<table class="tbl"><thead><tr><th>Return period</th><th class="num">Intensity</th><th class="num">Loss</th></tr></thead><tbody>'+rpRows+'</tbody></table>';
+  }
+  body.innerHTML=
+    '<div style="font-family:Fraunces,serif;font-size:17px;color:var(--primary);margin-bottom:2px">'+esc(r.name)+'</div>'+
+    '<div class="hint" style="margin-bottom:6px">'+esc(r.brand||"")+' · '+r.latitude.toFixed(3)+', '+r.longitude.toFixed(3)+' · '+H.label+infoBtn(hz)+(r.hazardMeta&&r.hazardMeta.outside?' · <span style="color:var(--r-high)">outside hazard grid</span>':'')+'</div>'+
+    ratingStrip+mid+table+
+    '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
+      '<button class="lightbtn" id="editVal">Edit value</button>'+
+      '<button class="lightbtn" id="toggleCoast">'+(r.coastal?"Coastal ✓":"Mark coastal")+'</button>'+
+      '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
+    '</div>';
+  document.getElementById("openCard").onclick=()=>openScorecard(r.id);
+  document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
+  document.getElementById("toggleCoast").onclick=()=>{const s=sites.find(x=>x.id===r.id);s.coastal=!s.coastal;persist();render();};
+  document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
+}
+function interimOrGrid(r,sc){ return provider()(r.latitude,r.longitude,sc).vec; }
+
+function renderAdaptation(){
+  const host=document.getElementById("measuresHost"); if(!host)return;
+  if(!sites.length){
+    host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
+    ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary"].forEach(id=>document.getElementById(id).innerHTML="");
+    return;
+  }
+  // read shared settings
+  const horizon=+document.getElementById("horizon").value;
+  const disc=+document.getElementById("disc").value/100;
+  adapt.growth=+document.getElementById("growth").value;
+  adapt.load=+document.getElementById("load").value;
+  adapt.attach=+document.getElementById("attachSel").value;
+  adapt.exhaust=+document.getElementById("exhaustSel").value;
+  if(adapt.exhaust<=adapt.attach){adapt.exhaust=RPS.find(rp=>rp>adapt.attach)||500;document.getElementById("exhaustSel").value=adapt.exhaust;}
+  document.getElementById("horizonVal").textContent=horizon;
+  document.getElementById("discVal").textContent=(disc*100).toFixed(1)+"%";
+  document.getElementById("growthVal").textContent=adapt.growth.toFixed(1)+"%";
+  document.getElementById("loadVal").textContent=adapt.load.toFixed(1)+"x";
+  const af=annuity(horizon,disc);
+  const base=adaptedTotal(sites,scenario,{});
+
+  // per-measure appraisal at the selected scenario
+  const appraised=MEASURES.map(m=>{
+    const st=adapt.m[m.key];
+    const averted=base.totalAal-adaptedTotal(sites,scenario,m.mods(st)).totalAal;
+    const cost=measureCost(m,sites,scenario);
+    const scopeN=sites.filter(s=>m.inScope(s,scenario)).length;
+    return {m,st,averted,cost,benefit:averted*af,bcr:cost>0?averted*af/cost:0,scopeN};
+  });
+
+  // measure cards with enable checkbox and sliders
+  host.innerHTML=appraised.map(a=>{
+    const sliders=a.m.sliders.map(sl=>{
+      const v=a.st[sl.p];
+      return '<div class="field" style="margin-bottom:8px"><label>'+sl.label+' <span class="mono" id="mv_'+a.m.key+'_'+sl.p+'">'+sl.fmt(v)+'</span></label>'+
+        '<input type="range" data-mkey="'+a.m.key+'" data-mp="'+sl.p+'" min="'+sl.min+'" max="'+sl.max+'" step="'+sl.step+'" value="'+v+'"></div>';
+    }).join("");
+    return '<div class="measure" style="'+(a.st.on?"":"opacity:.62")+'">'+
+      '<div class="mh"><span class="nm"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-mtoggle="'+a.m.key+'" '+(a.st.on?"checked":"")+'> '+esc(a.m.name)+infoBtn(a.m.info)+'</label></span>'+
+      '<span class="bcr" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">BCR '+a.bcr.toFixed(2)+'x</span></div>'+
+      '<div class="hint" style="margin:0 0 8px">Targets: '+a.m.target+' · applies to '+a.scopeN+' of '+sites.length+' sites</div>'+
+      sliders+
+      '<div class="stat"><span>Cost <b>'+fmt$(a.cost)+'</b></span><span>Averted <b>'+fmt$(a.averted)+'/yr</b></span><span>Benefit ('+horizon+'y) <b>'+fmt$(a.benefit)+'</b></span></div></div>';
+  }).join("");
+  // wire dynamic inputs
+  host.querySelectorAll("input[type=range][data-mkey]").forEach(inp=>inp.oninput=()=>{
+    adapt.m[inp.dataset.mkey][inp.dataset.mp]=+inp.value;persist();renderAdaptation();
+  });
+  host.querySelectorAll("input[type=checkbox][data-mtoggle]").forEach(cb=>cb.onchange=()=>{
+    adapt.m[cb.dataset.mtoggle].on=cb.checked;persist();renderAdaptation();
+  });
+
+  // enabled portfolio (combined mods, so overlaps never double-count)
+  const enabled=appraised.filter(a=>a.st.on);
+  const combAverted=base.totalAal-adaptedTotal(sites,scenario,enabledMods()).totalAal;
+  const combCost=enabled.reduce((s,a)=>s+a.cost,0);
+  const combBcr=combCost>0?combAverted*af/combCost:0;
+  document.getElementById("portfolioSummary").innerHTML=enabled.length?
+    "<b>Selected portfolio ("+enabled.length+" measure"+(enabled.length>1?"s":"")+"):</b> averts <b>"+fmt$(combAverted)+"/yr</b> of "+fmt$(base.totalAal)+" ("+(base.totalAal?combAverted/base.totalAal*100:0).toFixed(0)+"%) for "+fmt$(combCost)+" upfront. Portfolio BCR <b>"+combBcr.toFixed(2)+"x</b>. Combined benefit is computed jointly, so overlapping measures are never double-counted.":
+    "No measures selected. Check measures in the library to build the adaptation portfolio.";
+
+  // adaptation cost curve
+  document.getElementById("costCurve").innerHTML=costCurveSvg(appraised);
+  // waterfall
+  const futureSc=(scenario!=="present")?scenario:(currentPathway()+"_2050");
+  const wf=waterfallData(sites,futureSc);
+  document.getElementById("wfHint").textContent="Present to "+(SCEN_LABEL[futureSc]||futureSc)+", exposure growth "+adapt.growth.toFixed(1)+"%/yr over "+wf.years+" years, minus the selected measure portfolio.";
+  document.getElementById("waterfallChart").innerHTML=waterfallSvg(wf);
+  // risk layering
+  const f=finPortfolio(sites,scenario);
+  const ls=layerStatsCalc(f.varByRp,f.acuteAal);
+  document.getElementById("layerStats").innerHTML=
+    '<span class="k">Attachment (1-in-'+adapt.attach+')</span><span class="v mono">'+fmt$(ls.A)+'</span>'+
+    '<span class="k">Limit</span><span class="v mono">'+fmt$(ls.limit)+'</span>'+
+    '<span class="k">Transferred</span><span class="v mono">'+fmt$(ls.transferred)+'/yr ('+(ls.frac*100).toFixed(0)+'% of acute)</span>'+
+    '<span class="k">Retained</span><span class="v mono">'+fmt$(ls.retained)+'/yr</span>'+
+    '<span class="k">Indicative premium</span><span class="v mono">'+fmt$(ls.premium)+'/yr</span>'+
+    '<span class="k">Cost of certainty</span><span class="v mono">'+fmt$(ls.premium-ls.transferred)+'/yr</span>';
+  document.getElementById("layerChart").innerHTML=layerSvg(f.varByRp,ls);
+  // per-site recommendations: best measure by site BCR
+  const rec=sites.map(s=>{
+    const sBase=adaptedFinSite(s,scenario,{}).totalAal;
+    let best=null;
+    MEASURES.forEach(m=>{
+      if(!m.inScope(s,scenario))return;
+      const st=adapt.m[m.key];
+      const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
+      const cost=m.siteCost(s,st);
+      const bcr=cost>0?averted*af/cost:0;
+      if(!best||bcr>best.bcr)best={name:m.name,averted,cost,bcr};
+    });
+    return {site:s.name,id:s.id,aal:sBase,best};
+  }).sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
+  document.getElementById("recBody").innerHTML=rec.map(r=>
+    '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
+    (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
+  document.querySelectorAll("#recBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* ECA-style adaptation cost curve: width = averted AAL, height = BCR */
+function costCurveSvg(appraised){
+  const items=appraised.slice().sort((a,b)=>b.bcr-a.bcr);
+  const W=460,H=230,padL=44,padB=54,padT=12;
+  const totAvert=Math.max(items.reduce((s,a)=>s+a.averted,0),1);
+  const maxBcr=Math.max(1.5,Math.min(Math.max.apply(null,items.map(a=>a.bcr)),8));
+  const X=v=>padL+(v/totAvert)*(W-padL-14);
+  const Y=b=>padT+(1-Math.min(b,maxBcr)/maxBcr)*(H-padT-padB);
+  const colors=["#0F3A4B","#12586F","#2C7DA0","#6A8CAF","#7FD0C4"];
+  let s=svgEl(W,H),x=0,legend="";
+  [0.25,0.5,0.75,1].forEach(t=>{const y=Y(t*maxBcr);
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+(t*maxBcr).toFixed(1)+'x</text>';});
+  items.forEach((a,i)=>{
+    const w=(a.averted/totAvert)*(W-padL-14);
+    const y=Y(a.bcr), h=(H-padB)-y;
+    s+='<rect x="'+(X(x/ (totAvert) * totAvert)+0)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" fill="'+colors[i%colors.length]+'" opacity="'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
+    legend+='<span style="margin-right:12px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+colors[i%colors.length]+';margin-right:5px;vertical-align:middle;opacity:'+(a.st.on?1:0.4)+'"></span>'+esc(a.m.name.split("(")[0].trim())+' '+a.bcr.toFixed(1)+'x</span>';
+    x+=a.averted;
+  });
+  const y1=Y(1);
+  s+='<line x1="'+padL+'" y1="'+y1+'" x2="'+(W-14)+'" y2="'+y1+'" stroke="#B23A32" stroke-width="1.5" stroke-dasharray="5 4"/>';
+  s+='<text x="'+(W-16)+'" y="'+(y1-5)+'" text-anchor="end" font-size="10" fill="#B23A32">breakeven 1.0x</text>';
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-padB+16)+'" text-anchor="middle" font-size="10" fill="#43535F">Averted expected annual cost (bar width, total '+fmt$(totAvert)+'/yr)</text>';
+  s+="</svg>";
+  return s+'<div class="hint" style="margin-top:6px;display:flex;flex-wrap:wrap;row-gap:4px">'+legend+'</div>';
+}
+/* CLIMADA-style waterfall bridge */
+function waterfallSvg(wf){
+  const W=460,H=240,padL=48,padB=40,padT=14;
+  const cols=[
+    {lab:"Today",v:wf.today,base:0,color:"#0F3A4B",solid:true},
+    {lab:"+ Growth",v:wf.growthInc,base:wf.today,color:"#7A8893"},
+    {lab:"+ Climate",v:wf.climateInc,base:wf.today+wf.growthInc,color:"#D9772F"},
+    {lab:"Future",v:wf.future,base:0,color:"#12586F",solid:true},
+    {lab:"- Adaptation",v:-wf.averted,base:wf.future,color:"#2E8B6F"},
+    {lab:"Residual",v:wf.residual,base:0,color:"#2C7DA0",solid:true},
+  ];
+  const ymax=Math.max(wf.future,1)*1.12;
+  const Y=v=>padT+(1-v/ymax)*(H-padT-padB);
+  const bw=(W-padL-16)/cols.length;
+  let s=svgEl(W,H);
+  [0.25,0.5,0.75,1].forEach(t=>{const y=Y(t*ymax);
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
+  cols.forEach((c,i)=>{
+    const x=padL+i*bw+6, w=bw-12;
+    const top=c.solid?Y(c.v):Y(Math.max(c.base,c.base+c.v));
+    const bot=c.solid?Y(0):Y(Math.min(c.base,c.base+c.v));
+    s+='<rect x="'+x+'" y="'+top+'" width="'+w+'" height="'+Math.max(bot-top,1.5)+'" rx="2" fill="'+c.color+'"><title>'+c.lab+': '+fmt$(Math.abs(c.v))+'</title></rect>';
+    if(!c.solid){ // connector from previous level
+      const lev=Y(c.base);
+      s+='<line x1="'+(x-6)+'" y1="'+lev+'" x2="'+x+'" y2="'+lev+'" stroke="#C4CCC7" stroke-width="1"/>';
+    }
+    s+='<text x="'+(x+w/2)+'" y="'+(top-4)+'" text-anchor="middle" font-size="9.5" class="mono" fill="#15202B">'+fmt$(Math.abs(c.v))+'</text>';
+    s+='<text x="'+(x+w/2)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#43535F">'+c.lab+'</text>';
+  });
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="#7A8893">Expected annual climate cost, $/yr</text>';
+  s+="</svg>";return s;
+}
+/* loss-exceedance curve with retain / transfer / tail shading */
+function layerSvg(varByRp,ls){
+  const W=460,H=230,padL=54,padB=34,padT=12;
+  const xs=RPS.map(rp=>Math.log(rp));
+  const xmin=xs[0],xmax=xs[xs.length-1];
+  const ymax=Math.max(varByRp[500]||1,1)*1.06;
+  const X=rp=>padL+(Math.log(rp)-xmin)/(xmax-xmin)*(W-padL-14);
+  const Y=v=>padT+(1-v/ymax)*(H-padT-padB);
+  let s=svgEl(W,H);
+  // layer bands (horizontal, in loss space)
+  s+='<rect x="'+padL+'" y="'+Y(ls.A)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(0)-Y(ls.A),0)+'" fill="#8AA0AC" opacity="0.13"/>';
+  s+='<rect x="'+padL+'" y="'+Y(ls.E)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.A)-Y(ls.E),0)+'" fill="#7FD0C4" opacity="0.28"/>';
+  s+='<rect x="'+padL+'" y="'+padT+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.E)-padT,0)+'" fill="#B23A32" opacity="0.10"/>';
+  [ [ls.A,"attach "+fmt$(ls.A),"#43535F"], [ls.E,"exhaust "+fmt$(ls.E),"#43535F"] ].forEach(([v,lab,col])=>{
+    s+='<line x1="'+padL+'" y1="'+Y(v)+'" x2="'+(W-14)+'" y2="'+Y(v)+'" stroke="'+col+'" stroke-width="1" stroke-dasharray="4 4"/>';
+    s+='<text x="'+(W-16)+'" y="'+(Y(v)-4)+'" text-anchor="end" font-size="9.5" fill="'+col+'">'+lab+'</text>';});
+  // EP curve
+  let path="";RPS.forEach((rp,i)=>{path+=(i?"L":"M")+X(rp)+" "+Y(varByRp[rp]||0)+" ";});
+  s+='<path d="'+path+'" fill="none" stroke="#0F3A4B" stroke-width="2.5"/>';
+  RPS.forEach(rp=>{s+='<circle cx="'+X(rp)+'" cy="'+Y(varByRp[rp]||0)+'" r="3" fill="#12586F"/>';
+    s+='<text x="'+X(rp)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="10" fill="#7A8893">'+rp+'</text>';});
+  [0.5,1].forEach(t=>{const y=Y(t*ymax);s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Return period (years) &middot; grey retained &middot; teal transferred &middot; red tail beyond limit</text>';
+  s+="</svg>";return s;
+}
+function renderScenarios(){
+  if(!sites.length){document.getElementById("scenCards").innerHTML="";document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
+  const hz=+(document.getElementById("horSel").value||2050);
+  const keys=["present","ssp126_"+hz,"ssp245_"+hz,"ssp585_"+hz];
+  const runs=keys.map(sc=>({sc,r:scorePhysTotal(sites,sc)}));
+  const present=runs[0].r.ead;
+  document.getElementById("scenCards").innerHTML=runs.map(x=>
+    '<div class="card"><div class="l">'+SCEN_LABEL[x.sc]+'</div><div class="v" style="font-size:21px">'+fmt$(x.r.ead)+'</div>'+
+    '<div class="foot">'+x.r.eadPct.toFixed(2)+'% of value'+(x.sc!=="present"&&present>0?' · +'+((x.r.ead/present-1)*100).toFixed(0)+'% vs present':'')+'</div></div>').join("");
+  document.getElementById("scenBars").innerHTML=barsSvg(runs.map(x=>({label:SCEN_LABEL[x.sc],ead:x.r.ead})),"ead","label","#0F3A4B");
+  // band migration on combined physical risk
+  const bands=["Severe","High","Moderate","Low","Minimal"];
+  let s='<table class="tbl"><thead><tr><th>Horizon</th>'+bands.map(b=>'<th class="num">'+b+'</th>').join("")+'</tr></thead><tbody>';
+  runs.forEach(x=>{const counts={};bands.forEach(b=>counts[b]=0);x.r.rows.forEach(r=>counts[r.band]++);
+    s+='<tr><td>'+SCEN_LABEL[x.sc]+'</td>'+bands.map(b=>'<td class="num mono">'+(counts[b]||"·")+'</td>').join("")+'</tr>';});
+  s+="</tbody></table>";document.getElementById("bandMig").innerHTML=s;
+}
+function currentPathway(){const p=document.getElementById("pathSel");return (p&&p.value&&p.value!=="present")?p.value:"ssp245";}
+function syncFinAssume(){
+  const g=id=>document.getElementById(id);
+  finAssume.revRatio=+g("revRatio").value/100;
+  finAssume.gopMargin=+g("gop").value/100;
+  finAssume.reopenMonths=+g("reopen").value;
+  finAssume.heatDrop=+g("heatDrop").value/100;
+  finAssume.corr=+g("corr").value/100;
+  g("revRatioVal").textContent=g("revRatio").value+"%";
+  g("gopVal").textContent=g("gop").value+"%";
+  g("reopenVal").textContent=g("reopen").value;
+  g("heatDropVal").textContent=g("heatDrop").value+"%";
+  g("corrVal").textContent=(+g("corr").value/100).toFixed(2);
+  persist();renderFinance();
+}
+function renderFinance(){
+  const kpis=document.getElementById("finKpis"); if(!kpis)return;
+  if(!sites.length){
+    kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
+    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats"].forEach(id=>document.getElementById(id).innerHTML="");
+    document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
+  }
+  const f=finPortfolio(sites,scenario);
+  const u=uncRange(sites,scenario);
+  const indirect=f.biEad+f.heatCost;
+  const card=(l,v,foot,info)=>'<div class="card"><div class="l">'+l+(info?infoBtn(info):"")+'</div><div class="v" style="font-size:22px">'+v+'</div><div class="foot">'+foot+'</div></div>';
+  kpis.innerHTML=
+    card("Expected annual cost",fmt$(f.totalAal)+"/yr","range "+fmt$(u.low)+" to "+fmt$(u.high)+" \u00b7 "+f.aalPctValue.toFixed(2)+"% of value","totalAal")+
+    card("Indirect share",(f.totalAal?indirect/f.totalAal*100:0).toFixed(0)+"%",fmt$(f.biEad)+" BI + "+fmt$(f.heatCost)+" heat","indirect")+
+    card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult),"var100")+
+    card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value","var250");
+  document.getElementById("finBreakdown").innerHTML=barsSvg([
+    {label:"Direct damage",ead:f.directEad},
+    {label:"Business interruption",ead:f.biEad},
+    {label:"Heat revenue at risk",ead:f.heatCost},
+  ].sort((a,b)=>b.ead-a.ead),"ead","label","#12586F");
+  document.getElementById("finAcuteChronic").innerHTML=barsSvg([
+    {label:"Acute (damage + BI)",ead:f.acuteAal},
+    {label:"Chronic (heat)",ead:f.chronicAal},
+  ],"ead","label","#0F3A4B")+
+    '<div class="hint" style="margin-top:6px">Acute '+(f.totalAal?f.acuteAal/f.totalAal*100:0).toFixed(0)+'% \u00b7 chronic '+(f.totalAal?f.chronicAal/f.totalAal*100:0).toFixed(0)+'% of expected annual cost.</div>';
+  // uncertainty & sensitivity
+  document.getElementById("tornado").innerHTML=tornadoSvg(u);
+  document.getElementById("uncStats").innerHTML=
+    '<span class="k">Central estimate</span><span class="v mono">'+fmt$(u.central)+'/yr</span>'+
+    '<span class="k">Plausible low</span><span class="v mono">'+fmt$(u.low)+'/yr</span>'+
+    '<span class="k">Plausible high</span><span class="v mono">'+fmt$(u.high)+'/yr</span>'+
+    '<span class="k">Largest driver</span><span class="v">'+esc(u.factors[0].label)+'</span>'+
+    '<span class="k">1-in-100 VaR band</span><span class="v mono">'+fmt$(f.var100*u.varLoMult)+' to '+fmt$(f.var100*u.varHiMult)+'</span>';
+  document.getElementById("uncNote").innerHTML="Deltas are combined by root-sum-square assuming independent inputs, a screening stand-in for CLIMADA's unsequa Monte Carlo. The band widens upward because damage curves are convex. Better data on the top bar buys the most accuracy.";
+  const disc=finDisclosure(sites,currentPathway());
+  document.getElementById("finDiscBody").innerHTML=disc.map(r=>
+    '<tr><td>'+esc(r.label)+'</td><td class="num mono">'+r.acutePct.toFixed(2)+'%</td><td class="num mono">'+r.chronicPct.toFixed(2)+'%</td>'+
+    '<td class="num mono">'+r.totalPct.toFixed(2)+'%</td><td class="num mono">'+r.var100Pct.toFixed(1)+'%</td></tr>').join("");
+  document.getElementById("finDiscNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim model and are for exploration, not disclosure. ")+
+    "Value at Risk is diversified across sites at correlation "+finAssume.corr.toFixed(2)+"; a CLIMADA event set gives the exact combined tail. Total AAL today: central "+fmt$(u.central)+", plausible range "+fmt$(u.low)+" to "+fmt$(u.high)+".";
+  const rows=f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal);
+  document.getElementById("finSiteBody").innerHTML=rows.map(r=>
+    '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td><td class="num mono">'+fmt$(r.value)+'</td><td class="num mono">'+fmt$(r.revenue)+'</td>'+
+    '<td class="num mono">'+fmt$(r.directEad)+'</td><td class="num mono">'+fmt$(r.biEad)+'</td><td class="num mono">'+fmt$(r.heatCost)+'</td>'+
+    '<td class="num mono">'+fmt$(r.totalAal)+'</td><td class="num mono">'+(r.revenue?r.totalAal/r.revenue*100:0).toFixed(1)+'%</td></tr>').join("");
+  document.querySelectorAll("#finSiteBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* ============================================================
+   Site scorecard (Phase B): the full portfolio-to-asset drill-down.
+   One overlay tells a single site's complete story: perils, money,
+   trajectory, and its best adaptation actions.
+   ============================================================ */
+function openScorecard(id){
+  const s=sites.find(x=>x.id===id); if(!s)return;
+  renderScorecard(s);
+  document.getElementById("focusBg").classList.add("open");
+}
+function closeScorecard(){document.getElementById("focusBg").classList.remove("open");}
+function renderScorecard(s){
+  const fin=finSite(s,scenario);
+  const fPort=finPortfolio(sites,scenario);
+  const vuln=vulnOf(s);
+  const gop=fin.gop, dailyGop=gop/365, maxDown=finAssume.reopenMonths/12*365;
+  const perils=ACUTE.map(hz=>{
+    const r=hzSite(s,hz,scenario);
+    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(finAssume.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
+  });
+  const heatR=hzSite(s,"heat",scenario);
+  const phys=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?c.loss:0);},0);
+  const bi100=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?dailyGop*maxDown*(s.asset_value_usd?c.loss/s.asset_value_usd:0):0);},0);
+  const physPct=s.asset_value_usd?perils.reduce((a,p)=>a+p.cost,0)/s.asset_value_usd:0;
+  const combined=scorePhysTotal([s],scenario).rows[0];
+  const costShare=fPort.totalAal?fin.totalAal/fPort.totalAal*100:0;
+  const valShare=fPort.value?s.asset_value_usd/fPort.value*100:0;
+  const pathway=currentPathway();
+  const traj=[["Present","present"],[PATHWAY_LABEL[pathway]+" 2050",pathway+"_2050"],[PATHWAY_LABEL[pathway]+" 2080",pathway+"_2080"]]
+    .map(([lab,sc])=>({label:lab,ead:finSite(s,sc).totalAal}));
+  const rise2080=traj[0].ead?((traj[2].ead/traj[0].ead-1)*100):0;
+  // best measures for this site
+  const af=annuity(+document.getElementById("horizon").value,+document.getElementById("disc").value/100);
+  const sBase=adaptedFinSite(s,scenario,{}).totalAal;
+  const acts=MEASURES.filter(m=>m.inScope(s,scenario)).map(m=>{
+    const st=adapt.m[m.key];
+    const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
+    const cost=m.siteCost(s,st);
+    return {name:m.name,averted,cost,bcr:cost>0?averted*af/cost:0};
+  }).sort((a,b)=>b.bcr-a.bcr).slice(0,3);
+  const attrs=[];
+  if(s.construction)attrs.push(s.construction);
+  if(s.year_built)attrs.push("built "+s.year_built);
+  if(s.defended)attrs.push("defended");
+  attrs.push("wind vulnerability x"+vuln.windMult.toFixed(2));
+  document.getElementById("focusHead").innerHTML=
+    '<div style="font-family:Fraunces,serif;font-size:21px;color:var(--primary)">'+esc(s.name)+'</div>'+
+    '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>';
+  const card=(l,v,foot)=>'<div class="card"><div class="l">'+l+'</div><div class="v" style="font-size:19px">'+v+'</div><div class="foot">'+foot+'</div></div>';
+  const pills=perils.map(p=>'<span class="pill '+p.band+'" title="'+esc(p.label)+'">'+HAZARD_BY[p.hz].short+'</span>').join(" ")+' <span class="pill '+heatR.band+'" title="Extreme heat">H</span>';
+  document.getElementById("focusBody").innerHTML=
+    '<div class="cards" style="margin:16px 0 14px">'+
+      card("Climate cost",fmt$(fin.totalAal)+"/yr",(fin.revenue?fin.totalAal/fin.revenue*100:0).toFixed(1)+"% of revenue \u00b7 "+(physPct*100).toFixed(2)+"% of value")+
+      card("Portfolio share",costShare.toFixed(0)+"%","of climate cost on "+valShare.toFixed(0)+"% of value")+
+      card("Combined physical band",combined.band,pills)+
+      card("1-in-100 loss",fmt$(phys+bi100),fmt$(phys)+" damage + "+fmt$(bi100)+" BI")+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Cost by peril</h3><div class="hint">Direct damage plus attributed interruption; heat is its revenue at risk.</div>'+
+        barsSvg(perils.map(p=>({label:p.label,ead:p.cost})).concat([{label:"Extreme heat",ead:fin.heatCost}]).sort((a,b)=>b.ead-a.ead),"ead","label","#0F3A4B")+'</div>'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Cost by type</h3><div class="hint">The same total split by mechanism.</div>'+
+        barsSvg([{label:"Direct damage",ead:fin.directEad},{label:"Business interruption",ead:fin.biEad},{label:"Heat revenue at risk",ead:fin.heatCost}].sort((a,b)=>b.ead-a.ead),"ead","label","#12586F")+'</div>'+
+    '</div>'+
+    '<div class="grid2">'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Trajectory</h3><div class="hint">Climate cost under '+esc(PATHWAY_LABEL[pathway])+'.</div>'+barsSvg(traj,"ead","label","#2C7DA0")+'</div>'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Return-period losses</h3><div class="hint">Combined physical damage plus interruption.</div>'+
+        '<table class="tbl"><thead><tr><th>Return period</th><th class="num">Damage</th><th class="num">Interruption</th><th class="num">Total</th></tr></thead><tbody>'+
+        RPS.map(rp=>{const d=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===rp);return a+(c?c.loss:0);},0);
+          const bi=dailyGop*maxDown*(s.asset_value_usd?d/s.asset_value_usd:0);
+          return '<tr><td class="mono">1 in '+rp+'</td><td class="num mono">'+fmt$(d)+'</td><td class="num mono">'+fmt$(bi)+'</td><td class="num mono">'+fmt$(d+bi)+'</td></tr>';}).join("")+
+        '</tbody></table></div>'+
+    '</div>'+
+    '<div class="panel" style="margin-bottom:14px"><h3>Best actions for this site</h3><div class="hint">Top in-scope measures at current library settings.</div>'+
+      '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
+      (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
+      '</tbody></table></div>'+
+    '<div class="panel" style="margin-bottom:4px;border-left:3px solid var(--primary)"><div style="font-size:14px;line-height:1.6">'+scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway)+'</div></div>';
+}
+function scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway){
+  const all=perils.map(p=>({label:p.label,cost:p.cost})).concat([{label:"extreme heat",cost:fin.heatCost}]).sort((a,b)=>b.cost-a.cost);
+  const dom=all[0], domShare=fin.totalAal?dom.cost/fin.totalAal*100:0;
+  const conc=costShare>valShare*1.5?" It carries well more than its share of portfolio risk: "+costShare.toFixed(0)+"% of climate cost on "+valShare.toFixed(0)+"% of value.":
+             (costShare<valShare*0.6?" It is a portfolio diversifier, carrying "+costShare.toFixed(0)+"% of climate cost on "+valShare.toFixed(0)+"% of value.":"");
+  const act=acts.length&&acts[0].bcr>=1?" Best value action: "+esc(acts[0].name)+" at "+acts[0].bcr.toFixed(1)+"x.":
+            (acts.length?" No measure clears breakeven here at current settings; risk transfer or acceptance may be the right posture.":"");
+  return "<b>"+esc(s.name)+"</b> runs an expected climate cost of <b>"+fmt$(fin.totalAal)+" per year</b>, led by <b>"+esc(dom.label.toLowerCase())+"</b> at "+domShare.toFixed(0)+"% of its total."+conc+
+    " Under "+esc(PATHWAY_LABEL[pathway])+", its cost rises about <b>"+rise2080.toFixed(0)+"%</b> by 2080."+act;
+}
+function renderBacktest(){
+  const stats=document.getElementById("btStats"); if(!stats)return;
+  if(!backtest||!sites.length){
+    stats.innerHTML="";document.getElementById("btChart").innerHTML="";
+    document.getElementById("btTableWrap").style.display="none";
+    document.getElementById("btNote").textContent="No observed losses loaded. When loaded, the scatter compares modeled direct-damage AAL against your history; the 1:1 line is a perfect match. Even a decade of records is a noisy sample of catastrophe risk, so read systematic bias, not single-site scatter.";
+    return;
+  }
+  const byName={};sites.forEach(s=>byName[s.name.trim().toLowerCase()]=s);
+  const pairs=[],unmatched=[];
+  backtest.rows.forEach(r=>{
+    const s=byName[r.name.trim().toLowerCase()];
+    if(!s){unmatched.push(r.name);return;}
+    const modeled=ACUTE.reduce((a,hz)=>a+hzSite(s,hz,"present").ead,0);   // present-day damage AAL, the claims-like quantity
+    pairs.push({name:s.name,modeled,observed:r.observed});
+  });
+  if(!pairs.length){
+    stats.innerHTML='<span class="k">Matched sites</span><span class="v">0 of '+backtest.rows.length+'</span>';
+    document.getElementById("btChart").innerHTML="";document.getElementById("btTableWrap").style.display="none";
+    document.getElementById("btNote").textContent="No site names matched the loaded portfolio. Names must match exactly (case-insensitive).";
+    return;
+  }
+  const sumM=pairs.reduce((a,p)=>a+p.modeled,0), sumO=pairs.reduce((a,p)=>a+p.observed,0);
+  const bias=sumM>0?sumO/sumM:0;
+  stats.innerHTML=
+    '<span class="k">Matched sites</span><span class="v mono">'+pairs.length+' of '+backtest.rows.length+'</span>'+
+    '<span class="k">Modeled damage AAL</span><span class="v mono">'+fmt$(sumM)+'/yr</span>'+
+    '<span class="k">Observed losses</span><span class="v mono">'+fmt$(sumO)+'/yr</span>'+
+    '<span class="k">Bias (observed / modeled)</span><span class="v mono" style="color:'+(bias>0.5&&bias<2?"#2E8B6F":"#B23A32")+'">'+bias.toFixed(2)+'x</span>';
+  document.getElementById("btChart").innerHTML=scatterSvg(pairs);
+  document.getElementById("btTableWrap").style.display="block";
+  document.getElementById("btBody").innerHTML=pairs.slice().sort((a,b)=>b.observed-a.observed).map(p=>
+    '<tr><td>'+esc(p.name)+'</td><td class="num mono">'+fmt$(p.modeled)+'</td><td class="num mono">'+fmt$(p.observed)+'</td>'+
+    '<td class="num mono">'+(p.modeled>0?(p.observed/p.modeled).toFixed(2)+"x":"\u2014")+'</td></tr>').join("");
+  document.getElementById("btNote").innerHTML="Portfolio bias of <b>"+bias.toFixed(2)+"x</b>"+
+    (bias>0.5&&bias<2?" is within the noise a short loss history carries; the model is broadly consistent with experience.":
+     bias>=2?" suggests the model understates risk for this portfolio; consider raising hazard intensity or damage steepness within their uncertainty ranges.":
+     " suggests the model overstates risk; consider your defenses and construction attributes, or lower damage steepness.")+
+    (unmatched.length?" Unmatched names: "+esc(unmatched.slice(0,4).join(", "))+(unmatched.length>4?" +"+(unmatched.length-4)+" more":"")+".":"")+
+    " Comparison is against present-day modeled damage AAL; single sites scatter widely by nature.";
+}
+function scatterSvg(pairs){
+  const W=460,H=240,pad=52;
+  const maxV=Math.max.apply(null,pairs.map(p=>Math.max(p.modeled,p.observed)))*1.1||1;
+  const X=v=>pad+(v/maxV)*(W-pad-16);
+  const Y=v=>H-34-(v/maxV)*(H-34-14);
+  let s=svgEl(W,H);
+  [0.25,0.5,0.75,1].forEach(t=>{const v=t*maxV;
+    s+='<line x1="'+pad+'" y1="'+Y(v)+'" x2="'+(W-16)+'" y2="'+Y(v)+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(pad-6)+'" y="'+(Y(v)+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+fmt$(v)+'</text>';
+    s+='<text x="'+X(v)+'" y="'+(H-20)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(v)+'</text>';});
+  s+='<line x1="'+X(0)+'" y1="'+Y(0)+'" x2="'+X(maxV)+'" y2="'+Y(maxV)+'" stroke="#B23A32" stroke-width="1.2" stroke-dasharray="5 4"/>';
+  s+='<text x="'+(X(maxV)-4)+'" y="'+(Y(maxV)+12)+'" text-anchor="end" font-size="9.5" fill="#B23A32">1:1</text>';
+  pairs.forEach(p=>{
+    s+='<circle cx="'+X(p.modeled)+'" cy="'+Y(p.observed)+'" r="5" fill="#12586F" opacity="0.85"><title>'+esc(p.name)+': modeled '+fmt$(p.modeled)+', observed '+fmt$(p.observed)+'</title></circle>';});
+  s+='<text x="'+((pad+W-16)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Modeled damage AAL</text>';
+  s+='<text x="12" y="'+((H-34+14)/2)+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 12 '+((H-34+14)/2)+')">Observed $/yr</text>';
+  s+="</svg>";return s;
+}
+function renderHazProv(){
+  const badge=document.getElementById("hazBadge"),text=document.getElementById("hazText");
+  if(hazardGrid){
+    badge.classList.add("authoritative");text.textContent="CLIMADA grid";
+    document.getElementById("hazProv").innerHTML=
+      '<span class="k">Source</span><span class="v">CLIMADA hazard grid (loaded)</span>'+
+      '<span class="k">File</span><span class="v mono">'+esc(hazardGrid.meta.name)+'</span>'+
+      '<span class="k">Grid cells</span><span class="v mono">'+hazardGrid.meta.cells+'</span>'+
+      '<span class="k">Perils</span><span class="v mono">'+((hazardGrid.meta.hazards||["tc"]).join(", "))+'</span>'+
+      '<span class="k">Scenarios</span><span class="v mono">'+hazardGrid.meta.scenarios.join(", ")+'</span>'+
+      '<span class="k">Loaded</span><span class="v mono">'+hazardGrid.meta.loaded+'</span>';
+    document.getElementById("hazNote").textContent="Authoritative hazard is active for the perils in the grid. Any peril without grid cells still uses the interim model. Each site snaps to the nearest cell for the selected peril and scenario.";
+  }else{
+    badge.classList.remove("authoritative");text.textContent="Interim model";
+    document.getElementById("hazProv").innerHTML=
+      '<span class="k">Source</span><span class="v">Built-in interim model</span>'+
+      '<span class="k">Perils</span><span class="v">Wind, coastal flood, riverine flood, extreme heat</span>'+
+      '<span class="k">Basis</span><span class="v">Regional wind anchors, coast-distance flood proxies, latitude-and-continentality heat</span>'+
+      '<span class="k">Status</span><span class="v">Exploration only, not for disclosure</span>';
+  }
+}
+
+/* ============================================================
+   Data intake
+   ============================================================ */
+function addSites(arr){
+  arr.forEach(a=>sites.push(Object.assign({id:nextId++},a)));
+  persist();render();
+}
+function loadSample(){ sites=[]; nextId=1; clearHazCache();
+  addSites(SAMPLE.map(s=>Object.assign({name:s[0],brand:s[1],latitude:s[2],longitude:s[3],asset_value_usd:s[4]},s[5]||{})));
+  toast("Sample portfolio loaded (illustrative values)");
+}
+/* quote-aware CSV line splitter: handles "quoted, fields" and "" escapes */
+function splitCsvLine(line){
+  const out=[];let cur="",q=false;
+  for(let i=0;i<line.length;i++){const ch=line[i];
+    if(q){ if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch==='"')q=true; else if(ch===",")  {out.push(cur);cur="";} else cur+=ch; }
+  }
+  out.push(cur);return out;
+}
+function parseCsv(text){
+  text=(text||"").replace(/^\uFEFF/,"");                       // strip Excel BOM
+  const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(!lines.length)return {head:[],out:[]};
+  const head=splitCsvLine(lines[0]).map(h=>h.trim().toLowerCase());
+  const idx=n=>head.indexOf(n);
+  const out=[];
+  for(let i=1;i<lines.length;i++){
+    const c=splitCsvLine(lines[i]).map(x=>x.trim());
+    out.push({get:n=>{const j=idx(n);return j>=0?c[j]:undefined;}});
+  }
+  return {head,out};
+}
+function truthy(v){ v=String(v==null?"":v).trim().toLowerCase(); return v==="1"||v==="true"||v==="yes"||v==="y"||v==="coastal"; }
+function loadSiteCsv(text){
+  const {head,out}=parseCsv(text);
+  const missing=["name","latitude","longitude","asset_value_usd"].filter(k=>head.indexOf(k)<0);
+  if(missing.length){
+    toast("CSV is missing required column"+(missing.length>1?"s":"")+": "+missing.join(", ")+".");return;
+  }
+  const hasCoastal=head.indexOf("coastal")>=0, hasCountry=head.indexOf("country")>=0, hasRev=head.indexOf("annual_revenue_usd")>=0;
+  const hasConstr=head.indexOf("construction")>=0, hasYear=head.indexOf("year_built")>=0, hasDef=head.indexOf("defended")>=0;
+  const arr=[];let skipped=0;
+  out.forEach(row=>{
+    const lat=toNum(row.get("latitude")),lon=toNum(row.get("longitude")),val=toNum(row.get("asset_value_usd"));
+    if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){skipped++;return;}
+    const rec={name:String(row.get("name")||"Site").slice(0,120),brand:String(row.get("brand")||"").slice(0,80),
+              latitude:lat,longitude:lon,asset_value_usd:val};
+    if(hasCountry){const c=String(row.get("country")||"").slice(0,60);if(c)rec.country=c;}
+    if(hasCoastal){const cv=row.get("coastal");if(cv!==undefined&&String(cv).trim()!=="")rec.coastal=truthy(cv);}
+    if(hasRev){const rv=toNum(row.get("annual_revenue_usd"));if(isFinite(rv)&&rv>=0)rec.annual_revenue_usd=rv;}
+    if(hasConstr){const cs=String(row.get("construction")||"").trim().toLowerCase();if(CONSTR_FACTOR[cs]!=null)rec.construction=cs;}
+    if(hasYear){const yb=toNum(row.get("year_built"));if(isFinite(yb)&&yb>1800&&yb<2100)rec.year_built=Math.round(yb);}
+    if(hasDef){const dv=row.get("defended");if(dv!==undefined&&String(dv).trim()!=="")rec.defended=truthy(dv);}
+    arr.push(rec);
+  });
+  if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
+  sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
+  toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
+}
+function buildGridsFromRows(rows){
+  gridByHazard={};
+  const byHaz={};
+  rows.forEach(r=>{const h=r.hazard||"tc";(byHaz[h]||(byHaz[h]=[])).push(r);});
+  /* Phase 3: heat rows are kept (v10=days>32C, v25=days>35C, v50=CDD);
+     heatIndicators reads them grid-first. */
+  Object.keys(byHaz).forEach(h=>{ gridByHazard[h]=makeGridProvider(byHaz[h]); });
+  const tcGrid=gridByHazard.tc;
+  _baseProvider = tcGrid
+    ? (la,lo,sc)=>{const r=tcGrid(la,lo,sc);return (r.meta&&r.meta.outside)?interimVector(la,lo,sc):r;}
+    : ((la,lo,sc)=>interimVector(la,lo,sc));
+}
+function loadBacktestCsv(text){
+  const {head,out}=parseCsv(text);
+  if(head.indexOf("name")<0||head.indexOf("observed_annual_loss_usd")<0){
+    toast("Backtest CSV needs columns: name, observed_annual_loss_usd.");return;
+  }
+  const rows=[];
+  out.forEach(row=>{
+    const nm=String(row.get("name")||"").trim(), obs=toNum(row.get("observed_annual_loss_usd"));
+    if(nm&&isFinite(obs)&&obs>=0)rows.push({name:nm,observed:obs});
+  });
+  if(!rows.length){toast("No valid backtest rows found.");return;}
+  backtest={rows,loaded:new Date().toISOString().slice(0,16).replace("T"," ")};
+  persist();renderBacktest();
+  toast("Observed losses loaded ("+rows.length+" rows)");
+}
+function loadHazardCsv(text,name){
+  const {head,out}=parseCsv(text);
+  if(["lat","lon","scenario"].some(k=>head.indexOf(k)<0)){
+    toast("Hazard grid needs columns: lat, lon, scenario, v10..v500 (optional: hazard).");return;
+  }
+  const hasHaz=head.indexOf("hazard")>=0;
+  const rows=[];const scens=new Set();const hazSet=new Set();
+  out.forEach(row=>{
+    const lat=toNum(row.get("lat")),lon=toNum(row.get("lon")),sc=row.get("scenario");
+    if(!isFinite(lat)||!isFinite(lon)||!sc)return;
+    const hazard=hasHaz?(String(row.get("hazard")||"tc").trim()||"tc"):"tc";
+    const r={lat,lon,scenario:String(sc).trim(),hazard};
+    RPS.forEach(rp=>{const v=toNum(row.get("v"+rp));r["v"+rp]=isFinite(v)?v:0;});
+    rows.push(r);scens.add(r.scenario);hazSet.add(hazard);
+  });
+  if(!rows.length){toast("Could not read hazard grid. Expect lat, lon, scenario, v10..v500.");return;}
+  buildGridsFromRows(rows);
+  hazardGrid={rows,meta:{name:name||"hazard_grid.csv",cells:rows.length,scenarios:[...scens],hazards:[...hazSet],loaded:new Date().toISOString().slice(0,16).replace("T"," ")}};
+  clearHazCache();persistHazard();
+  toast("CLIMADA hazard grid active ("+rows.length+" cells, "+hazSet.size+" peril"+(hazSet.size>1?"s":"")+")");
+  render();
+}
+function readFile(file,cb){
+  const r=new FileReader();
+  r.onload=()=>{ try{ cb(r.result); }catch(e){ toast("Could not read that file."); } };
+  r.onerror=()=>toast("Could not read that file.");
+  r.readAsText(file);
+}
+
+/* ---- persistence (guarded; safe if storage is unavailable or full) ---- */
+const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1";
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId})); }catch(e){} }
+function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
+function restore(){
+  try{
+    const s=JSON.parse(localStorage.getItem(LS_STATE)||"null");
+    if(s&&Array.isArray(s.sites)&&s.sites.length){
+      sites=s.sites;
+      scenario=SCEN_LABEL[s.scenario]?s.scenario:"present";     // drop legacy RCP keys
+      if(HAZARD_BY[s.activeHazard])activeHazard=s.activeHazard;
+      if(s.finAssume&&typeof s.finAssume==="object")finAssume=Object.assign({},finAssume,s.finAssume);
+      if(s.adapt&&typeof s.adapt==="object"){
+        const mDef=adapt.m;
+        adapt=Object.assign({},adapt,s.adapt);
+        adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
+      }
+      if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
+      nextId=s.nextId||(sites.length+1);
+    }
+    const h=JSON.parse(localStorage.getItem(LS_HAZ)||"null");
+    if(h&&h.rows&&h.rows.length){ hazardGrid=h; buildGridsFromRows(h.rows); }
+  }catch(e){}
+}
+
+/* ---- geocode (external; degrades quietly if blocked) ---- */
+let geoTimer=null;
+function geocode(q){
+  fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&q="+encodeURIComponent(q),{headers:{"Accept-Language":"en"}})
+    .then(r=>r.json()).then(list=>{
+      const box=document.getElementById("geoResults");
+      if(!Array.isArray(list)||!list.length){box.innerHTML='<div class="r"><small>No matches</small></div>';box.classList.add("open");return;}
+      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
+      box.classList.add("open");
+      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{openAdd(+el.dataset.lat,+el.dataset.lon,document.getElementById("geo").value.split(",")[0]);box.classList.remove("open");document.getElementById("geo").value="";});
+    }).catch(()=>toast("Search is unavailable on this network. Add sites by CSV or map click."));
+}
+
+/* ---- add modal ---- */
+function openAdd(lat,lon,name){
+  document.getElementById("mLat").value=lat.toFixed(4);
+  document.getElementById("mLon").value=lon.toFixed(4);
+  document.getElementById("mName").value=name||"";
+  document.getElementById("mBrand").value="";
+  document.getElementById("mVal").value=30000000;
+  document.getElementById("addModal").classList.add("open");
+}
+function closeAdd(){document.getElementById("addModal").classList.remove("open");}
+
+/* ---- export ---- */
+function exportCsv(){
+  if(!sites.length){toast("Load a portfolio first.");return;}
+  const src=hazardGrid?"climada_grid":"interim_model";
+  const cols=["site_id","name","brand","latitude","longitude","asset_value_usd","annual_revenue_usd","construction","year_built","defended","scenario","hazard_source",
+    "ead_tc_usd","ead_cflood_usd","ead_rflood_usd","ead_physical_total_usd","ead_physical_pct",
+    "rating_tc","rating_cflood","rating_rflood","rating_heat",
+    "heat_days_over_32","heat_days_over_35","heat_cdd",
+    "direct_damage_aal_usd","business_interruption_aal_usd","heat_revenue_at_risk_usd","total_climate_aal_usd","total_aal_pct_revenue"]
+    .concat(RPS.map(rp=>"loss_rp"+rp+"_physical_usd"));
+  const g=(cur,rp)=>{const c=(cur||[]).find(x=>x.rp===rp);return c?c.loss:0;};
+  let csv=cols.join(",")+"\n";
+  sites.forEach(s=>{
+    const tc=hzSite(s,"tc",scenario),cf=hzSite(s,"cflood",scenario),rf=hzSite(s,"rflood",scenario),ht=hzSite(s,"heat",scenario);
+    const physEad=tc.ead+cf.ead+rf.ead, physPct=s.asset_value_usd?physEad/s.asset_value_usd*100:0;
+    const fin=finSite(s,scenario);
+    const rpLoss=RPS.map(rp=>(g(tc.curve,rp)+g(cf.curve,rp)+g(rf.curve,rp)).toFixed(0));
+    const row=[s.id,csvCell(s.name),csvCell(s.brand||""),s.latitude,s.longitude,s.asset_value_usd,fin.revenue.toFixed(0),
+      s.construction||"",s.year_built||"",s.defended?"true":"",scenario,src,
+      tc.ead.toFixed(0),cf.ead.toFixed(0),rf.ead.toFixed(0),physEad.toFixed(0),physPct.toFixed(3),
+      tc.band,cf.band,rf.band,ht.band,
+      ht.indicators.daysOver32,ht.indicators.daysOver35,ht.indicators.cdd,
+      fin.directEad.toFixed(0),fin.biEad.toFixed(0),fin.heatCost.toFixed(0),fin.totalAal.toFixed(0),
+      (fin.revenue?fin.totalAal/fin.revenue*100:0).toFixed(3)].concat(rpLoss);
+    csv+=row.join(",")+"\n";
+  });
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_portfolio_multihazard_"+scenario+".csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Exported "+sites.length+" rows (multi-hazard Power BI schema)");
+}
+function downloadTemplate(){
+  // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, coastal.
+  const csv=
+    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true\n";
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Template downloaded (rtv_site_template.csv)");
+}
+
+/* ---- tabs ---- */
+function switchTab(name){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===name));
+  document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
+  if(name==="sites"&&map){setTimeout(()=>map.invalidateSize(),50);}
+}
+
+/* ============================================================
+   Wire up
+   ============================================================ */
+function wire(){
+  restore();
+  initMap();
+  wireInfo();
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  // hazard + scenario controls
+  const hazSel=document.getElementById("hazSel"),pathSel=document.getElementById("pathSel"),horSel=document.getElementById("horSel");
+  function syncScenControls(){
+    const parts=scenario==="present"?["present","2050"]:scenario.split("_");
+    hazSel.value=activeHazard;
+    pathSel.value=parts[0];
+    horSel.value=parts[0]==="present"?horSel.value||"2050":parts[1];
+    horSel.disabled=(pathSel.value==="present");
+  }
+  function composeScenario(){
+    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
+    horSel.disabled=(pathSel.value==="present");
+    persist();render();
+  }
+  syncScenControls();
+  hazSel.onchange=e=>{activeHazard=e.target.value;persist();render();};
+  pathSel.onchange=composeScenario;
+  horSel.onchange=composeScenario;
+  document.getElementById("sampleBtn").onclick=loadSample;
+  document.getElementById("sampleBtn2").onclick=loadSample;
+  document.getElementById("sampleBtn3").onclick=loadSample;
+  document.getElementById("sampleBtn4").onclick=loadSample;
+  document.getElementById("exportBtn").onclick=exportCsv;
+  document.getElementById("tmplBtn").onclick=downloadTemplate;
+  document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
+  // sort
+  document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>th.onclick=e=>{
+    if(e.target.closest(".info"))return;
+    const k=th.dataset.sort;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="name"||k==="brand"||k==="band")?1:-1;}renderSites();
+  });
+  // geocode
+  const geo=document.getElementById("geo");
+  geo.oninput=()=>{clearTimeout(geoTimer);const q=geo.value.trim();if(q.length<3){document.getElementById("geoResults").classList.remove("open");return;}geoTimer=setTimeout(()=>geocode(q),400);};
+  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap"))document.getElementById("geoResults").classList.remove("open");});
+  // modal
+  document.getElementById("mCancel").onclick=closeAdd;
+  document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
+  document.getElementById("focusClose").onclick=closeScorecard;
+  document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();}});
+  document.getElementById("mAdd").onclick=()=>{
+    const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
+    if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
+    addSites([{name:(document.getElementById("mName").value||"New site").slice(0,120),brand:(document.getElementById("mBrand").value||"").slice(0,80),latitude:lat,longitude:lon,asset_value_usd:val}]);
+    closeAdd();toast("Site added");
+  };
+  // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
+  document.getElementById("growth").value=adapt.growth;
+  document.getElementById("load").value=adapt.load;
+  document.getElementById("attachSel").value=adapt.attach;
+  document.getElementById("exhaustSel").value=adapt.exhaust;
+  ["horizon","disc","growth","load"].forEach(id=>document.getElementById(id).oninput=renderAdaptation);
+  document.getElementById("attachSel").onchange=renderAdaptation;
+  document.getElementById("exhaustSel").onchange=renderAdaptation;
+  // finance assumption sliders
+  const finInit={revRatio:Math.round(finAssume.revRatio*100),gop:Math.round(finAssume.gopMargin*100),reopen:finAssume.reopenMonths,heatDrop:Math.round(finAssume.heatDrop*100),corr:Math.round(finAssume.corr*100)};
+  Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});
+  syncFinAssume();
+  // hazard drop
+  const hd=document.getElementById("hazDrop"),hf=document.getElementById("hazFile");
+  hd.onclick=()=>hf.click();hf.onchange=()=>{if(hf.files[0])readFile(hf.files[0],t=>loadHazardCsv(t,hf.files[0].name));};
+  dropZone(hd,f=>readFile(f,t=>loadHazardCsv(t,f.name)));
+  // site drop
+  const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
+  sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};
+  dropZone(sd,f=>readFile(f,loadSiteCsv));
+  // backtest drop
+  const bd=document.getElementById("btDrop"),bf=document.getElementById("btFile");
+  bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
+  dropZone(bd,f=>readFile(f,loadBacktestCsv));
+  render();
+}
+function dropZone(el,cb){
+  el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});
+  el.addEventListener("dragleave",()=>el.classList.remove("over"));
+  el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("over");if(e.dataTransfer.files[0])cb(e.dataTransfer.files[0]);});
+}
+window.addEventListener("DOMContentLoaded",wire);
+</script>
+</body>
+</html>
