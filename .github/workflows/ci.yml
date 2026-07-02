@@ -1,0 +1,44 @@
+# =============================================================================
+# CI : every quality gate, on every push and pull request.
+#
+# Mirrors  bash tests/run_all.sh  exactly (that script is the single source of
+# truth; this workflow just provides the runner). No CLIMADA, no network data,
+# no secrets: pure pandas/numpy plus node, so the whole run takes about a
+# minute and can never flake on external services.
+#
+# Gates: contract tests, pipeline simulation (validator accept/reject),
+# 31 frontend assertions against the v1.7 app, byte-for-byte app lineage
+# regeneration (v1.5 -> v1.6 -> v1.7), and the project style guard.
+# =============================================================================
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: All quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (matches climada_env)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies (pandas, numpy only)
+        run: pip install pandas numpy
+
+      - name: Node version (frontend tests)
+        run: node --version
+
+      - name: Run every gate
+        run: bash tests/run_all.sh

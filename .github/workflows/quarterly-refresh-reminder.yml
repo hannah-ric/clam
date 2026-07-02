@@ -1,0 +1,52 @@
+# =============================================================================
+# Quarterly refresh reminder : opens a pre-filled runbook issue four times a
+# year so the hazard-grid refresh never silently lapses. Costs nothing, needs
+# no secrets beyond the built-in token, and skips itself if the previous
+# quarter's issue is still open (no duplicate nagging).
+#
+# The checklist mirrors docs/RUNBOOK.md and run_pipeline.sh; edit those first
+# and this second if the ritual ever changes.
+# =============================================================================
+name: Quarterly refresh reminder
+
+on:
+  schedule:
+    - cron: "0 13 1 1,4,7,10 *"   # 1 Jan / 1 Apr / 1 Jul / 1 Oct, 13:00 UTC
+  workflow_dispatch: {}            # manual trigger for testing
+
+permissions:
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open the quarterly refresh issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: "open", labels: "quarterly-refresh"});
+            if (open.data.length) {
+              core.notice("Previous quarterly refresh issue still open; not duplicating.");
+              return;
+            }
+            const q = Math.floor(new Date().getUTCMonth() / 3) + 1;
+            const y = new Date().getUTCFullYear();
+            const body = [
+              "The quarterly hazard refresh is due. Full detail in `docs/RUNBOOK.md`;",
+              "the whole ritual is about ten minutes of attention.",
+              "",
+              "- [ ] `cd pipeline && bash run_pipeline.sh` (add `--preflight` after any env change)",
+              "- [ ] Confirm the last line reads `RESULT: grid is shippable`",
+              "- [ ] Open the v1.7 app, Method tab, drop `hazard_grid.csv` + `hazard_grid_meta.json`",
+              "- [ ] Badge reads `CLIMADA x 4/4 perils`; chips green (amber means partial coverage, read the panel)",
+              "- [ ] Commit both files plus the console log as the quarter's provenance record",
+              "- [ ] Skim `meta.skipped` for anything unexpected",
+            ].join("\n");
+            await github.rest.issues.create({
+              owner, repo,
+              title: `Quarterly hazard refresh: Q${q} ${y}`,
+              body, labels: ["quarterly-refresh"]});

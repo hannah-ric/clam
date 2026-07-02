@@ -1,5 +1,7 @@
 # CLAM: Resort Climate Risk Explorer
 
+[![CI](https://github.com/hannah-ric/clam/actions/workflows/ci.yml/badge.svg)](https://github.com/hannah-ric/clam/actions/workflows/ci.yml)
+
 A physical-climate-risk platform for a resort portfolio (US CONUS + Hawaii, Puerto Rico,
 US Virgin Islands). Four perils: tropical-cyclone wind, storm surge, riverine flood, and
 heat, scored across present + SSP1-2.6 / SSP2-4.5 / SSP5-8.5 at 2030 / 2050 / 2080 and
@@ -81,18 +83,27 @@ docs/       the standing documents: execution plan, runbook, novice guide,
 MASTER_PLAN.md   the research synthesis and forward roadmap (start here)
 ```
 
-## Running the tests
+## Quality gates
 
-All four suites run without CLIMADA (the last needs node):
+One command runs every gate, needing only python3 (pandas + numpy) and node,
+no CLIMADA and no network:
 
 ```bash
-PYTHONPATH=pipeline python3 tests/test_gridops.py
-PYTHONPATH=pipeline python3 tests/test_phase23_ops.py
-(cd pipeline && PYTHONPATH=. python3 ../tests/test_pipeline_sim.py)
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v17.html
+bash tests/run_all.sh
 ```
 
-Run them after any code change; run `test_frontend.py` after any app edit.
+That is: the two contract suites, the end-to-end pipeline simulation (which
+exercises the validator's accept and reject paths), the 31 frontend assertions
+against the v1.7 app, byte-for-byte regeneration of the app lineage
+(v1.5 through both patchers to v1.7), and the project style guard.
+
+CI runs the same script on every push and pull request
+(`.github/workflows/ci.yml`), so the badge above is the live answer to "is the
+system intact?". A second workflow opens a pre-filled runbook issue on the
+first of January, April, July, and October so the quarterly refresh never
+silently lapses (it skips itself if the previous quarter's issue is still open).
+
+Run the gates after any code change; `test_frontend.py` after any app edit.
 
 ## App lineage
 
