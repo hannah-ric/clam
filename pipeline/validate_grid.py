@@ -213,7 +213,8 @@ def main(path: str, meta_path: str | None = None) -> int:
         import json
         print("\nProvenance cross-check against", meta_path, ":")
         try:
-            meta = json.loads(open(meta_path).read())
+            with open(meta_path) as f:
+                meta = json.loads(f.read())
         except Exception as exc:
             hard |= fail(f"could not read meta JSON: {exc}")
             meta = None

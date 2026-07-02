@@ -2,8 +2,8 @@
 list_datasets.py
 ================
 
-Generalisation of list_tc_datasets.py: prints every dataset the CLIMADA Data
-API has for a given data_type and country, with the property tags that
+Prints every dataset the CLIMADA Data API has for a given data_type and
+country, with the property tags that
 distinguish them. Use it whenever a fetch in refresh_hazard.py reports
 "no single match": the output shows exactly how the release you are talking
 to tags its datasets, and the candidate list in fetch_wind can be adjusted in

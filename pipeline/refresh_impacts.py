@@ -1092,8 +1092,9 @@ def load_sites(path):
     for c in ("defended", "equipment_elevated", "roof_class_a"):
         if c not in df.columns:
             df[c] = False
+        # accept pandas' float-coerced truthy cells ("1.0") too, not just "1"
         df[c] = df[c].map(
-            lambda x: str(x).strip().lower() in ("true", "1", "yes", "y"))
+            lambda x: str(x).strip().lower() in ("true", "1", "1.0", "yes", "y"))
     return df
 
 
@@ -1211,12 +1212,17 @@ def main(argv=None) -> int:
                                  [len(c["names"]) for c in per_country],
                                  [c["iso3"] for c in per_country], meta)
     # single-country portfolios keep their exact adaptation and uncertainty;
-    # multi-country runs report the value-weighted country with a meta note
-    lead = max(per_country, key=lambda c: float(c["values"].sum()))
+    # multi-country runs report the value-weighted country with a meta note.
+    # Only countries that actually produced hazards can lead: otherwise the
+    # highest-value country whose fetches all failed would empty these
+    # sections while other countries still feed the portfolio numbers.
+    lead_pool = [c for c in per_country if c["scen"]] or per_country
+    lead = max(lead_pool, key=lambda c: float(c["values"].sum()))
     if len(per_country) > 1:
         meta["note_adaptation_uncertainty"] = (
-            "adaptation and uncertainty sections reflect the largest country "
-            "by value; per-country expansion is a step-2 item")
+            "adaptation, uncertainty, capital plan, and measure catalog "
+            "sections reflect the largest country by value; per-country "
+            "expansion is a step-2 item")
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites)

@@ -99,7 +99,7 @@ LAND_AMPLIFICATION = 1.25
 
 
 # ---------------------------------------------------------------------------
-# Pure computation (no IO: unit-tested in test_heatops.py)
+# Pure computation (no IO: unit-tested in test_phase23_ops.py)
 # ---------------------------------------------------------------------------
 
 def scen_deltas(land_amp: float = LAND_AMPLIFICATION) -> dict:

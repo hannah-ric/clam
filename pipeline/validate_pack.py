@@ -59,7 +59,8 @@ def rel_close(a, b, tol=TOL):
 def main(path: str, meta_path: str | None = None) -> int:
     hard = False
     try:
-        pack = json.loads(open(path).read())
+        with open(path) as f:
+            pack = json.loads(f.read())
     except Exception as exc:
         print(f"FAIL  could not read {path}: {exc}")
         return 1
@@ -241,7 +242,8 @@ def main(path: str, meta_path: str | None = None) -> int:
     if meta_path:
         print(f"\nProvenance cross-check against {meta_path}:")
         try:
-            meta = json.loads(open(meta_path).read())
+            with open(meta_path) as f:
+                meta = json.loads(f.read())
         except Exception as exc:
             hard |= fail(f"could not read meta JSON: {exc}")
             meta = None

@@ -3,7 +3,13 @@ app, refresh_heat.py, refresh_wildfire.py, refresh_prain.py). One drifted
 value silently desynchronizes grid scaling from app scaling, so this gate
 extracts the app's table from the DEPLOYABLE HTML (highest version in app/)
 and asserts exact equality with all three producer dicts, plus the SLR table
-against refresh_hazard.py.   python3 test_warming_parity.py
+against refresh_hazard.py.
+
+The same guard covers the vulnerability and damage constants the results
+pack shares with the app (refresh_impacts.py): a one-sided edit to any of
+them would silently diverge pack figures from the live model.
+
+    python3 test_warming_parity.py
 """
 
 import json
@@ -15,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "pipeline"))
 import refresh_hazard as rh
 import refresh_heat as hh
+import refresh_impacts as ri
 import refresh_prain as rp
 import refresh_wildfire as rw
 
@@ -38,6 +45,13 @@ def extract_js_table(html, name):
     return {k: float(v) for k, v in json.loads(body).items()}
 
 
+def extract_js_scalar(html, name):
+    """Parse the first `NAME=<number>` assignment into a float."""
+    m = re.search(r"\b" + re.escape(name) + r"\s*=\s*([0-9]+(?:\.[0-9]+)?)", html)
+    assert m, f"{name} scalar not found in the app"
+    return float(m.group(1))
+
+
 def main():
     app = deployable()
     html = app.read_text()
@@ -56,7 +70,23 @@ def main():
         "SLR drifted between the app and refresh_hazard"
     print("ok  SLR identical: app == refresh_hazard")
 
-    print("\nALL WARMING/SLR PARITY CHECKS PASSED")
+    # vulnerability / damage constants shared with the results pack
+    for name, val in (("V_THRESH", ri.V_THRESH), ("V_HALF", ri.V_HALF),
+                      ("FB_COAST", ri.FB_COAST), ("FB_RIVER", ri.FB_RIVER),
+                      ("FIRE_MDD", ri.FIRE_MDD),
+                      ("PRAIN_DRAIN_MM", ri.PRAIN_DRAIN_MM),
+                      ("PRAIN_POND_COEFF", ri.PRAIN_POND_COEFF),
+                      ("PRAIN_FB", ri.PRAIN_FB)):
+        assert extract_js_scalar(html, name) == float(val), \
+            f"{name} drifted between the app and refresh_impacts"
+        print(f"ok  {name} identical: app == refresh_impacts")
+
+    app_cf = extract_js_table(html, "const CONSTR_FACTOR")
+    assert app_cf == {k: float(v) for k, v in ri.CONSTR_FACTOR.items()}, \
+        "CONSTR_FACTOR drifted between the app and refresh_impacts"
+    print("ok  CONSTR_FACTOR identical: app == refresh_impacts")
+
+    print("\nALL WARMING/SLR/VULNERABILITY PARITY CHECKS PASSED")
 
 
 if __name__ == "__main__":
