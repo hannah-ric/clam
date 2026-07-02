@@ -94,16 +94,16 @@ python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v17.html
 
 Run them after any code change; run `test_frontend.py` after any app edit.
 
-## PENDING: files not yet imported
+## App lineage
 
-This repository holds 22 of the working system's files. The remaining 2 exist in the
-operator's working folder (`rtv/`) and should be committed here verbatim, with no edits,
-before any refactor.
+`app/` carries the full patch chain, verified reproducible: the v1.5 original is the
+patch source, `patch_frontend.py` regenerates v1.6 from it, and `patch_frontend_p4.py`
+regenerates v1.7 from v1.6, byte-identical to the committed files in both steps. Both
+patchers abort with no output if their anchors no longer match. The v1.7 file is the
+deployable; the rest is lineage.
 
-| File | Role |
-|---|---|
-| `patch_frontend.py` | lineage: built v1.6 from the v1.5 app |
-| `patch_frontend_p4.py` | lineage: built v1.7 from v1.6 |
+The working system is fully consolidated in this repository. Next steps are on the
+roadmap in `MASTER_PLAN.md` (Phase A: CI wiring and the one-command container).
 
 ## Where this is going
 
