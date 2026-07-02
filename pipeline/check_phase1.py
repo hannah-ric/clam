@@ -117,9 +117,41 @@ def main() -> int:
         print(f"  OK: dist-to-coast sampled, e.g. {np.round(np.asarray(d)/1000, 1)} km")
     except Exception as exc:
         print("  FAILED:", exc)
-        print("  This usually means the CLIMADA client cannot download the NASA "
-              "dist-to-coast file: same corporate-TLS issue diagnose_network.py "
-              "solves for the Data API. Apply the same cert exports and rerun.")
+        msg = str(exc).lower()
+        if "403" in msg or "forbidden" in msg or "loading page" in msg:
+            # TLS already succeeded (the request reached the server); a
+            # corporate WEB FILTER is refusing this specific file. Cert
+            # exports cannot fix a content block: seed the file off-network.
+            try:
+                from climada.util.constants import SYSTEM_DIR
+                from climada.util.config import CONFIG
+                tif = CONFIG.util.coordinates.dist_to_coast_nasa_tif.str()
+                url = CONFIG.util.coordinates.dist_to_coast_nasa_url.str()
+                dest = SYSTEM_DIR
+            except Exception:
+                tif = "GMT_intermediate_coast_distance_01d.tif"
+                url = "the NASA distfromcoast zip"
+                dest = "~/climada/data"
+            print("  Cause: the download reached the server but was refused "
+                  "(HTTP 403 / block page). A corporate web filter, not a "
+                  "certificate, is blocking this file, so the cert exports "
+                  "cannot help. Seed the ~300 MB file once from OFF the "
+                  "corporate network:")
+            print(f"    - run this check on a hotspot / home wifi so CLIMADA "
+                  f"can fetch {url}, OR")
+            print(f"    - download that zip elsewhere and unzip {tif} into {dest}")
+            print(f"    Once {dest}/{tif} exists, this step never downloads "
+                  "again. refresh_hazard.py --no-surge runs the other layers "
+                  "meanwhile.")
+        elif "certificate" in msg or "ssl" in msg or "verify" in msg:
+            print("  Cause: corporate TLS interception, the same issue "
+                  "diagnose_network.py solves for the Data API. Run it, export "
+                  "REQUESTS_CA_BUNDLE and SSL_CERT_FILE, and rerun.")
+        else:
+            print("  This usually means the CLIMADA client cannot reach the "
+                  "NASA dist-to-coast file. If it is a TLS error, apply the "
+                  "diagnose_network.py cert exports; if it is a 403 / block "
+                  "page, seed the file off-network (see docs/RUNBOOK.md).")
         return 1
 
     if args.smoke:
