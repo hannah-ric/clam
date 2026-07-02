@@ -129,6 +129,20 @@ Goal: the portfolio loss curve, adaptation appraisal, and uncertainty bands beco
 CLIMADA-native, delivered as a second artifact the app displays alongside (not instead
 of) its live interactive model.
 
+STATUS: step 1 shipped. pipeline/refresh_impacts.py produces results_pack.json
+(+ meta sidecar) gated by pipeline/validate_pack.py; contracts pinned by
+tests/test_impactops.py and tests/test_impacts_sim.py. Deliberate step-1 choices,
+revisit in step 2: impact arithmetic implemented directly (identical math to
+ImpactCalc for point exposures, chosen so the parity tests run without CLIMADA);
+uncertainty is seeded joint Monte Carlo over the tornado's three physical factors
+(the unsequa Saltelli/Sobol upgrade slots behind run_uncertainty()); adaptation
+covers the three hazard-touching measures in the direct-damage domain (ops and
+cooling stay app-side); multi-country packs report adaptation and uncertainty for
+the largest country by value. Step 2 remaining: the frontend pack surface
+(patch_frontend_p5.py toward v1.8: routeHaz pack intake, badge-labelled canonical
+figures beside the live model, extended test_frontend assertions) and the
+backtest-driven v_half calibration.
+
 1. New `pipeline/refresh_impacts.py`:
    - Reads the site CSV; builds a point `Exposures` GeoDataFrame (asset values,
      `impf_` id per construction class).

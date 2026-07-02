@@ -72,6 +72,19 @@ python validate_grid.py hazard_grid.csv hazard_grid_meta.json
 Then open the app and drop both `hazard_grid.csv` and `hazard_grid_meta.json` onto the
 hazard zone on the Method & data tab. The badge should read "CLIMADA x 4/4 perils".
 
+The results pack (Phase 5, step 1) runs the impact math over the full event sets and
+ships per-site expected annual damage, the joint portfolio loss-exceedance curve, a
+direct-damage adaptation appraisal, and Monte Carlo uncertainty bands:
+
+```bash
+cd pipeline
+python refresh_impacts.py --sites sites.csv     # schema: sites_template.csv
+python validate_pack.py results_pack.json results_pack_meta.json
+```
+
+Keep real site files out of version control (`sites.csv` is gitignored);
+`sites_template.csv` documents the schema.
+
 ## Repository layout
 
 ```

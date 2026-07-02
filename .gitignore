@@ -24,3 +24,7 @@ node_modules/
 
 # Archive of superseded originals (kept local, per the reconciliation plan)
 archive/
+sites.csv
+sim_sites.csv
+sim_results_pack*.json
+sim_pack_*.json

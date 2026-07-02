@@ -20,13 +20,17 @@ cd "$(dirname "$0")/.."
 echo "== 1  contract tests ==============================================="
 PYTHONPATH=pipeline python3 tests/test_gridops.py
 PYTHONPATH=pipeline python3 tests/test_phase23_ops.py
+python3 tests/test_impactops.py
 
 echo
-echo "== 2  pipeline simulation =========================================="
+echo "== 2  pipeline + results-pack simulations ==========================="
 ( cd pipeline && PYTHONPATH=. python3 ../tests/test_pipeline_sim.py )
+( cd pipeline && PYTHONPATH=. python3 ../tests/test_impacts_sim.py )
 rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_heat_grid.csv pipeline/sim_heat_grid_meta.json \
-      pipeline/sim_ghost_meta.json pipeline/fake_dem.tiff
+      pipeline/sim_ghost_meta.json pipeline/fake_dem.tiff \
+      pipeline/sim_sites.csv pipeline/sim_results_pack*.json \
+      pipeline/sim_pack_*.json
 
 echo
 echo "== 3  frontend functional tests ====================================="
