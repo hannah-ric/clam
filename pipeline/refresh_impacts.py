@@ -90,6 +90,7 @@ V_THRESH, V_HALF = 25.7, 74.7                # m/s, Emanuel-type wind curve
 FB_COAST, FB_RIVER = 1.1, 0.6                # m freeboard by flood peril
 CONSTR_FACTOR = {"frame": 1.3, "masonry": 1.0, "engineered": 0.75}
 MAX_SNAP_KM = 200.0                          # the app's nearest-cell limit
+SNAP_TOL_KM = 10.0                           # cell-scale slack for water layers
 
 DISCOUNT_RATE = 0.03                         # BCR appraisal settings
 HORIZON_YEARS = 25                           # (recorded in the pack)
@@ -150,8 +151,9 @@ def nearest_centroids(site_lat, site_lon, cen_lat, cen_lon, max_km=MAX_SNAP_KM):
     """Nearest-centroid index per site, with the app's distance guard.
 
     Returns (idx array, dist_km array); sites beyond max_km get idx -1 and
-    must be EXCLUDED from that hazard (the app falls back to its interim
-    model there; the pack records them as skipped).
+    score zero for that hazard (for wind, the pack also records them as
+    skipped; for the water layers, zero IS the intended value, exactly the
+    explicit inland zeros align_to_cells writes into the hazard grid).
     """
     sla = np.radians(np.asarray(site_lat, float))[:, None]
     slo = np.radians(np.asarray(site_lon, float))[:, None]
@@ -165,6 +167,26 @@ def nearest_centroids(site_lat, site_lon, cen_lat, cen_lon, max_km=MAX_SNAP_KM):
     dist = d_km[np.arange(len(idx)), idx]
     idx = np.where(dist <= max_km, idx, -1)
     return idx, dist
+
+
+def water_snap(site_lat, site_lon, cen_lat, cen_lon, wind_dist_km):
+    """Snap sites to a WATER layer's centroids (surge or river flood).
+
+    Petals may subset surge centroids to the coastal band, and flood sets
+    can be served wet-cells-only, so the 200 km wind guard is far too loose
+    here: an inland site 100 km from the coast would inherit the nearest
+    coastal cell's depth. The guard the hazard-grid pipeline gets from
+    align_to_cells (explicit zeros on the full wind grid) is reproduced by
+    accepting the snap only within cell scale of where the site's WIND cell
+    is: nearest water centroid no further than the site's wind-centroid
+    distance plus SNAP_TOL_KM. Beyond that, the layer is silent about the
+    site's cell and the correct depth is zero.
+    """
+    idx, dist = nearest_centroids(site_lat, site_lon, cen_lat, cen_lon)
+    ref = np.asarray(wind_dist_km, float) if wind_dist_km is not None \
+        else np.zeros(len(idx))
+    limit = np.maximum(ref + SNAP_TOL_KM, SNAP_TOL_KM)
+    return np.where(dist <= limit, idx, -1)
 
 
 def site_intensity(haz, idx):
@@ -301,6 +323,14 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                                 "ep": ep_curve(sl.sum(axis=1), wnd["freq"]),
                                 "ead": site_ead(sl, wnd["freq"])}))
             combined = wl + sl          # same event catalog: truly joint
+        else:
+            # surge failed or is disabled for this source: the joint carries
+            # it at zero, so the surge blend must carry an explicit zero part
+            # with the SAME weight, or renormalisation would over-weight the
+            # surviving member and tc + cflood would no longer reconcile
+            # with acute
+            s_parts.append((w, {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
+                                "ead": np.zeros_like(vals)}))
         ws_parts.append((w, {"aal": float(site_ead(combined, wnd["freq"]).sum()),
                              "ep": ep_curve(combined.sum(axis=1), wnd["freq"]),
                              "ead": site_ead(combined, wnd["freq"])}))
@@ -345,17 +375,6 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
     for m in MEASURES:
         per_scen = {}
         for app_key, base in base_by_scen.items():
-            kw = {}
-            if "dmg_mult" in m:
-                kw["wind_dmg_mult"] = m["dmg_mult"]
-            if "fb_bonus" in m:
-                kw["fb_bonus"] = m["fb_bonus"]
-            if "depth_red" in m:
-                kw["cf_depth_red"] = m["depth_red"]
-            adapted = eval_scenario(prep, app_key, values, wind_mult,
-                                    fb_coast, fb_river, **kw)
-            if adapted is None:
-                continue
             if m["scope"] == "flood":
                 in_scope = (np.asarray(base["cflood"]["ead"]) +
                             np.asarray(base["rflood"]["ead"])) > SCOPE_EAD_USD
@@ -363,6 +382,19 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
                 in_scope = np.asarray(base["cflood"]["ead"]) > SCOPE_EAD_USD
             else:
                 in_scope = np.ones(len(values), dtype=bool)
+            # the measure acts ONLY on in-scope sites (which are also the
+            # only sites costed), so benefit and cost cover the same assets
+            kw = {}
+            if "dmg_mult" in m:
+                kw["wind_dmg_mult"] = np.where(in_scope, m["dmg_mult"], 1.0)
+            if "fb_bonus" in m:
+                kw["fb_bonus"] = np.where(in_scope, m["fb_bonus"], 0.0)
+            if "depth_red" in m:
+                kw["cf_depth_red"] = np.where(in_scope, m["depth_red"], 0.0)
+            adapted = eval_scenario(prep, app_key, values, wind_mult,
+                                    fb_coast, fb_river, **kw)
+            if adapted is None:
+                continue
             cost = float((values[in_scope] * m["cost_pct_value"] / 100.0).sum())
             averted = max(base["acute"]["aal"] - adapted["acute"]["aal"], 0.0)
             per_scen[app_key] = {
@@ -455,6 +487,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
     prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set()}
+    wind_dist = None                 # per-site km to the wind grid, the
+                                     # reference the water-layer snap guards on
 
     for source in rh.unique_sources(rh.APP_SCENARIOS):
         skey = rh.source_key(source)
@@ -467,6 +501,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
             continue
         idx, dist = nearest_centroids(lat, lon, haz.centroids.lat,
                                       haz.centroids.lon)
+        if wind_dist is None:
+            wind_dist = dist
         for j in np.where(idx < 0)[0]:
             site = str(sites_c.iloc[j]["name"])
             if site not in prep["_outside"]:      # once per site, not per source
@@ -486,9 +522,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
                     continue
                 try:
                     surge = rh.compute_surge(haz, rh.SLR_M[app_key])
-                    sidx, _sd = nearest_centroids(lat, lon,
-                                                  surge.centroids.lat,
-                                                  surge.centroids.lon)
+                    sidx = water_snap(lat, lon, surge.centroids.lat,
+                                      surge.centroids.lon, wind_dist)
                     prep["surge"][(skey, app_key)] = {
                         "int": site_intensity(surge, sidx)}
                     del surge
@@ -514,8 +549,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta):
                                         "reason": str(exc)[:300]})
             packed = []
             for mhaz in members:
-                midx, _md = nearest_centroids(lat, lon, mhaz.centroids.lat,
-                                              mhaz.centroids.lon)
+                midx = water_snap(lat, lon, mhaz.centroids.lat,
+                                  mhaz.centroids.lon, wind_dist)
                 packed.append({"freq": np.asarray(mhaz.frequency, float),
                                "int": site_intensity(mhaz, midx)})
             if packed:

@@ -52,8 +52,8 @@ def test_vuln():
     assert ri.vuln_of("frame", 1980) == (min(1.3 * 1.15, 1.6), 0.0)
     assert ri.vuln_of("frame", 1980, defended=True)[1] == 0.5
     assert ri.vuln_of("masonry", 2000) == (1.0, 0.0)    # 1995..2009: no age factor
-    w, _ = ri.vuln_of("engineered", 2020)
-    assert w >= 0.5                                      # clip floor
+    assert ri.vuln_of("engineered", 2020) == (0.75 * 0.9, 0.0)   # floor of the
+    # reachable range; the 0.5 clamp itself is unreachable by construction
     ok("vuln_of matches the app (construction x age, clip, defended bonus)")
 
 
@@ -175,6 +175,65 @@ def test_uncertainty_deterministic():
     ok("uncertainty: seeded determinism, quantile order, central in band")
 
 
+def test_partial_surge_failure_reconciles():
+    # ssp585_2050 blends rcp85_2040 and rcp85_2060; surge exists for only one
+    # of them (the other failed). The perils must still reconcile with acute.
+    freq = np.array([0.01, 0.02])
+    prep = {"wind": {"rcp85_2040": {"freq": freq,
+                                    "int": np.array([[70.0], [45.0]])},
+                     "rcp85_2060": {"freq": freq,
+                                    "int": np.array([[74.0], [48.0]])}},
+            "surge": {("rcp85_2040", "ssp585_2050"):
+                      {"int": np.array([[2.2], [0.9]])}},
+            "rflood": {}}
+    vals = np.array([2_000_000.0])
+    r = ri.eval_scenario(prep, "ssp585_2050", vals, np.array([1.0]),
+                         np.array([ri.FB_COAST]), np.array([ri.FB_RIVER]))
+    parts = r["tc"]["aal"] + r["cflood"]["aal"] + r["rflood"]["aal"]
+    assert abs(parts - r["acute"]["aal"]) < 1e-6, (parts, r["acute"]["aal"])
+    assert r["cflood"]["aal"] > 0            # surviving member still counts
+    ok("partial surge failure: zero part keeps tc+cflood+rflood == acute")
+
+
+def test_water_snap_guard():
+    # coastal-band-only surge centroids; the coastal site snaps, the site
+    # ~100 km inland must NOT inherit the coastal cell's depth
+    coast_lat, coast_lon = np.array([25.00, 25.05]), np.array([-80.00, -80.05])
+    sites_lat = [25.02, 25.90]               # second site ~97 km from the band
+    sites_lon = [-80.02, -80.02]
+    wind_dist = np.array([2.0, 3.0])         # both sit ON the wind grid
+    idx = ri.water_snap(sites_lat, sites_lon, coast_lat, coast_lon, wind_dist)
+    assert idx[0] >= 0 and idx[1] == -1
+    class H:
+        intensity = np.array([[2.5, 2.4]])
+    got = ri.site_intensity(H(), idx)
+    assert got[0, 0] > 0 and got[0, 1] == 0.0
+    ok("water_snap: inland site scores zero instead of inheriting coastal surge")
+
+
+def test_adaptation_scope_no_free_benefit():
+    # a site below the exposure threshold: flood/buffer must claim NO averted
+    # AAL (nothing was installed) and cost nothing
+    prep = {"wind": {"present": {"freq": np.array([0.001]),
+                                 "int": np.array([[30.0]])}},
+            "surge": {("present", "present"): {"int": np.array([[1.2]])}},
+            "rflood": {}}
+    vals = np.array([1_000_000.0])
+    base = ri.eval_scenario(prep, "present", vals, np.array([1.0]),
+                            np.array([ri.FB_COAST]), np.array([ri.FB_RIVER]))
+    assert base["cflood"]["ead"][0] < ri.SCOPE_EAD_USD   # out of scope by design
+    ad = ri.run_adaptation(prep, vals, np.array([1.0]), np.array([ri.FB_COAST]),
+                           np.array([ri.FB_RIVER]), {"present": base})
+    for mk in ("flood", "buffer"):
+        rec = ad[mk]["per_scenario"]["present"]
+        assert rec["sites_in_scope"] == 0
+        assert rec["cost_usd"] == 0.0
+        assert rec["averted_direct_aal_usd"] == 0.0, \
+            "no benefit may be claimed from a measure installed nowhere"
+        assert rec["bcr"] is None
+    ok("adaptation scope: out-of-scope sites yield zero benefit, zero cost")
+
+
 def test_combine_countries_padding():
     # country A lacks ssp585_2080 entirely (all sources failed there);
     # its 2 sites must appear as explicit zeros, aligned, and recorded
@@ -220,6 +279,9 @@ if __name__ == "__main__":
     test_losses_and_measures()
     test_eval_scenario_and_adaptation()
     test_uncertainty_deterministic()
+    test_partial_surge_failure_reconciles()
+    test_water_snap_guard()
+    test_adaptation_scope_no_free_benefit()
     test_combine_countries_padding()
     test_annuity()
     print("\nALL IMPACT-OP TESTS PASSED")

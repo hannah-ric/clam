@@ -78,6 +78,8 @@ def main(path: str, meta_path: str | None = None) -> int:
     print(f"\nScenarios in pack: {len(scen)}; sites: {pack['sites'].get('count')}")
 
     # B. scenario coverage --------------------------------------------------------
+    if not scen:
+        return int(fail("pack contains no scenarios at all: nothing to ship"))
     bad = sorted(set(scen) - set(APP_KEYS))
     if bad:
         hard |= fail(f"scenario keys the app cannot select: {bad}")
@@ -94,7 +96,12 @@ def main(path: str, meta_path: str | None = None) -> int:
     ep_bad = 0
     for k, s in scen.items():
         ep = s["portfolio"]["ep_usd"]
-        vals = [float(ep.get(str(rp), 0.0)) for rp in RPS]
+        absent = [rp for rp in RPS if str(rp) not in ep]
+        if absent:
+            hard |= fail(f"{k}: exceedance curve missing return periods "
+                         f"{absent} (a truncated curve must not pass as flat)")
+            continue
+        vals = [float(ep[str(rp)]) for rp in RPS]
         if any(v < 0 or v != v for v in vals):
             hard |= fail(f"{k}: negative or non-finite exceedance loss")
         if any(vals[i] > vals[i + 1] + 0.01 for i in range(len(vals) - 1)):
