@@ -261,6 +261,43 @@ def test_combine_countries_padding():
     ok("combine_countries: scenario gaps pad with aligned zeros and are recorded")
 
 
+def test_capital_plan():
+    # two sites, wind + surge; run_adaptation must emit per-site detail and
+    # build_capital_plan must rank in-scope pairs by BCR with exact math
+    prep = {"wind": {"present": {"freq": np.array([0.01, 0.02]),
+                                 "int": np.array([[70.0, 40.0], [45.0, 30.0]])},
+                     "rcp45_2040": {"freq": np.array([0.01, 0.02]),
+                                    "int": np.array([[72.0, 41.0], [46.0, 31.0]])},
+                     "rcp45_2060": {"freq": np.array([0.01, 0.02]),
+                                    "int": np.array([[74.0, 42.0], [47.0, 32.0]])}},
+            "surge": {("present", "present"): {"int": np.array([[2.0, 0.0], [0.8, 0.0]])},
+                      ("rcp45_2040", "ssp245_2050"): {"int": np.array([[2.2, 0.0], [0.9, 0.0]])},
+                      ("rcp45_2060", "ssp245_2050"): {"int": np.array([[2.3, 0.0], [0.95, 0.0]])}},
+            "rflood": {}}
+    vals = np.array([2_000_000.0, 1_500_000.0])
+    wm = np.array([1.0, 1.0])
+    fbc, fbr = np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER)
+    base = {k: ri.eval_scenario(prep, k, vals, wm, fbc, fbr)
+            for k in ("present", "ssp245_2050")}
+    ad = ri.run_adaptation(prep, vals, wm, fbc, fbr, base)
+    ps = ad["wind"]["per_scenario"]["ssp245_2050"]["per_site"]
+    assert len(ps["averted_usd"]) == 2 and all(a >= 0 for a in ps["averted_usd"])
+    plan = ri.build_capital_plan(ad, ["Alpha", "Beta"])
+    assert plan["scenario"] == "ssp245_2050"
+    prj = plan["projects"]
+    assert prj, "in-scope pairs must produce projects"
+    bcrs = [p["bcr"] for p in prj]
+    assert bcrs == sorted(bcrs, reverse=True), "sorted by BCR descending"
+    an = ri.annuity(ri.HORIZON_YEARS, ri.DISCOUNT_RATE)
+    for p in prj:
+        assert abs(p["bcr"] - round(p["averted_direct_aal_usd"] * an
+                                    / p["cost_usd"], 3)) <= 0.001
+    # site Beta is dry (no surge): flood/buffer must not list it
+    assert not any(p["site"] == "Beta" and p["measure_key"] in ("flood", "buffer")
+                   for p in prj)
+    ok("capital plan: per-site detail, BCR-desc ranking, exact math, scoping")
+
+
 def test_vhalf_calibration_roundtrip():
     # generate "observed" losses with a known v_half; the fit must recover it
     wind = {"freq": np.array([0.01, 0.02, 0.005]),
@@ -307,6 +344,7 @@ if __name__ == "__main__":
     test_water_snap_guard()
     test_adaptation_scope_no_free_benefit()
     test_combine_countries_padding()
+    test_capital_plan()
     test_vhalf_calibration_roundtrip()
     test_annuity()
     print("\nALL IMPACT-OP TESTS PASSED")

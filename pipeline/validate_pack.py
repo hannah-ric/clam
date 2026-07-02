@@ -171,8 +171,9 @@ def main(path: str, meta_path: str | None = None) -> int:
     # G2. calibration (optional section) ---------------------------------------------------
     cal = pack.get("calibration")
     if cal:
+        c_bad = False
         if not (40.0 <= cal.get("fitted_v_half", 0) <= 150.0):
-            hard |= fail("calibration: fitted v_half outside its search bounds")
+            c_bad |= fail("calibration: fitted v_half outside its search bounds")
         if cal.get("applied") is not False:
             warn("calibration: 'applied' is not false; pack figures should "
                  "use the published curve until adoption is deliberate")
@@ -181,9 +182,35 @@ def main(path: str, meta_path: str | None = None) -> int:
                  "outside what the wind curve can reproduce, review inputs")
         if cal.get("flag"):
             warn(f"calibration: {cal['flag']}")
-        if not hard:
+        hard |= c_bad
+        if not c_bad:
             ok(f"calibration recorded (fitted v_half "
                f"{cal.get('fitted_v_half')}, not applied)")
+
+    # G3. capital plan (optional section) --------------------------------------------------
+    plan = pack.get("capital_plan")
+    if plan:
+        p_bad = False
+        prj = plan.get("projects", [])
+        bcrs = [p["bcr"] for p in prj]
+        if any(b is None or b < 0 for b in bcrs):
+            p_bad |= fail("capital plan: missing or negative BCR")
+        if any(bcrs[i] < bcrs[i + 1] for i in range(len(bcrs) - 1)):
+            p_bad |= fail("capital plan: projects not sorted by BCR descending")
+        r, h_yr = plan.get("discount_rate"), plan.get("horizon_years")
+        if r and h_yr:
+            an = sum(1.0 / (1.0 + r) ** t for t in range(1, int(h_yr) + 1))
+            bad_bcr = sum(1 for p in prj if p["cost_usd"] > 0 and not rel_close(
+                p["bcr"], p["averted_direct_aal_usd"] * an / p["cost_usd"], 0.02))
+            if bad_bcr:
+                p_bad |= fail(f"capital plan: {bad_bcr} project BCR(s) do not "
+                              f"reconcile with averted x annuity / cost")
+        if plan.get("scenario") not in APP_KEYS:
+            p_bad |= fail("capital plan: appraisal scenario is not an app key")
+        hard |= p_bad
+        if not p_bad:
+            ok(f"capital plan: {len(prj)} project(s), sorted, BCRs reconcile "
+               f"({plan.get('scenario')})")
 
     # H. provenance cross-check ------------------------------------------------------------
     if meta_path:

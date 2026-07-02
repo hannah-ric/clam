@@ -154,6 +154,21 @@ def run():
         assert b["p5"] <= b["p50"] <= b["p95"]
     print("ok  adaptation appraises, uncertainty bands ordered")
 
+    # 5a2. capital plan: present, ranked, and gated
+    plan = pack.get("capital_plan")
+    assert plan and plan["projects"], "capital plan must be present"
+    bcrs = [p["bcr"] for p in plan["projects"]]
+    assert bcrs == sorted(bcrs, reverse=True)
+    assert plan["scenario"] == "ssp245_2050"
+    bad_plan = json.loads(Path("sim_results_pack.json").read_text())
+    bad_plan["capital_plan"]["projects"].reverse()
+    Path("sim_pack_badplan.json").write_text(json.dumps(bad_plan))
+    r_plan = subprocess.run([sys.executable, "validate_pack.py",
+                             "sim_pack_badplan.json"],
+                            capture_output=True, text=True)
+    assert r_plan.returncode == 1 and "not sorted by BCR" in r_plan.stdout
+    print("ok  capital plan: ranked in the pack, unsorted plan rejected")
+
     # 5b. backtest calibration: recorded, sane, and gated
     pd.DataFrame({"name": ["Reef Bay", "Dune Point", "Nowhere Resort"],
                   "observed_annual_loss_usd": [900_000, 400_000, 1]}

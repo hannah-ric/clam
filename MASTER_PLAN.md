@@ -148,6 +148,19 @@ hazard-touching measures in the direct-damage domain (ops and cooling stay
 app-side); multi-country packs report adaptation and uncertainty for the
 largest country by value.
 
+DECISION WORKFLOWS (post-Phase-B increment, shipped): v1.9
+(patch_frontend_p6.py) turns the pack into two decisions. Insurance renewal:
+the risk layering panel and the pack panel both show the event-set technical
+premium for the configured layer (expected annual loss to the layer on the
+pack's joint exceedance curve, times the load slider), the benchmark to judge
+broker quotes against. Capital prioritisation: refresh_impacts.py emits
+per-site adaptation detail and a capital_plan section, every in-scope
+(site, measure) pair ranked by canonical BCR at the middle-pathway 2050
+appraisal; the app renders the top of that list. Both are gated by
+validate_pack (plan sorted, BCRs reconcile with averted x annuity / cost).
+
+The original step-1 design notes, kept for the record:
+
 1. New `pipeline/refresh_impacts.py`:
    - Reads the site CSV; builds a point `Exposures` GeoDataFrame (asset values,
      `impf_` id per construction class).

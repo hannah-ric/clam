@@ -131,10 +131,13 @@ Run the gates after any code change; `test_frontend.py` after any app edit.
 ## App lineage
 
 `app/` carries the full patch chain, verified reproducible: the v1.5 original is the
-patch source; `patch_frontend.py` regenerates v1.6, `patch_frontend_p4.py` regenerates
-v1.7, and `patch_frontend_p5.py` regenerates v1.8, each byte-identical to the committed
-files. Every patcher aborts with no output if its anchors no longer match. The v1.8
-file is the deployable; the rest is lineage.
+patch source; `patch_frontend.py` regenerates v1.6, `patch_frontend_p4.py` v1.7,
+`patch_frontend_p5.py` v1.8, and `patch_frontend_p6.py` v1.9, each byte-identical to
+the committed files. Every patcher aborts with no output if its anchors no longer
+match. The v1.9 file is the deployable; the rest is lineage. v1.9 adds, when a pack
+is loaded: the event-set technical premium benchmark in the risk layering panel (the
+number to judge renewal quotes against) and the pack's canonical capital plan, every
+(site, measure) pair ranked by benefit-cost ratio.
 
 The working system is fully consolidated in this repository. Next steps are on the
 roadmap in `MASTER_PLAN.md` (Phase A: CI wiring and the one-command container).

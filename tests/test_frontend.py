@@ -140,6 +140,11 @@ const goodPack={pack_version:1,kind:"results_pack",
       ep_usd:{"10":1500000,"25":4100000,"50":8600000,"100":17000000,"250":31000000,"500":43000000}},
     per_site:[]}},
   adaptation:{},
+  capital_plan:{scenario:"ssp585_2080",discount_rate:0.03,horizon_years:25,
+    projects:[{site:"Reef Bay",measure:"Wind hardening (roofs & openings)",measure_key:"wind",
+               averted_direct_aal_usd:400000,cost_usd:1200000,bcr:5.804},
+              {site:"Dune Point",measure:"Dry floodproofing & utility elevation",measure_key:"flood",
+               averted_direct_aal_usd:90000,cost_usd:480000,bcr:3.265}]},
   uncertainty:{present:{acute_aal_usd:{p5:1900000,p50:2500000,p95:3400000,central:2500000},
     loss_1in100_usd:{p5:8000000,p50:11000000,p95:15000000,central:11000000},drivers:[]}}};
 
@@ -174,6 +179,19 @@ assert(panel.innerHTML.indexOf("pack has no ssp245_2050")>=0,
 scenario="ssp585_2080";
 renderResultsPack();
 assert(panel.innerHTML.indexOf("$4.40M")>=0,"pack scenario rows resolve per key");
+
+/* ---------------- v1.9: event-set layer benchmark + capital plan ---------- */
+scenario="present";
+const pls=packLayerStats("present");
+assert(pls&&pls.transferred>0&&pls.premium===pls.transferred*adapt.load,
+  "packLayerStats: layer integral on the pack curve, premium = transferred x load");
+renderResultsPack();
+assert(panel.innerHTML.indexOf("Layer benchmark")>=0&&panel.innerHTML.indexOf("technical premium")>=0,
+  "pack panel carries the technical-premium layer benchmark");
+assert(panel.innerHTML.indexOf("Top capital projects")>=0&&panel.innerHTML.indexOf("Reef Bay")>=0
+  &&panel.innerHTML.indexOf("BCR 5.804")>=0,"pack panel ranks the capital plan");
+assert(panel.innerHTML.indexOf("ssp585_2080 appraisal")>=0,
+  "capital plan states its appraisal scenario");
 
 persistPack();
 resultsPack=null;

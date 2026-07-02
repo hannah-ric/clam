@@ -400,12 +400,20 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
                 continue
             cost = float((values[in_scope] * m["cost_pct_value"] / 100.0).sum())
             averted = max(base["acute"]["aal"] - adapted["acute"]["aal"], 0.0)
+            av_site = np.maximum(np.asarray(base["acute"]["ead"], float) -
+                                 np.asarray(adapted["acute"]["ead"], float), 0.0)
+            cost_site = np.where(in_scope,
+                                 values * m["cost_pct_value"] / 100.0, 0.0)
             per_scen[app_key] = {
                 "averted_direct_aal_usd": round(averted, 2),
                 "sites_in_scope": int(in_scope.sum()),
                 "cost_usd": round(cost, 2),
                 "npv_benefit_usd": round(averted * an, 2),
                 "bcr": round(averted * an / cost, 3) if cost > 0 else None,
+                "per_site": {
+                    "averted_usd": [round(float(x), 2) for x in av_site],
+                    "cost_usd": [round(float(x), 2) for x in cost_site],
+                    "in_scope": [bool(b) for b in in_scope]},
             }
         out[m["key"]] = {"name": m["name"], "settings": {
             k: v for k, v in m.items() if k not in ("key", "name", "scope")},
@@ -465,6 +473,44 @@ _MC_KW = {"haz": "haz_mult", "dmg": "dmg_scale", "exp": "exp_mult"}
 # Recorded in the pack as an OPTIONAL vulnerability setting, never silently
 # applied: the pack's headline figures keep the app's published curve.
 # ---------------------------------------------------------------------------
+
+def build_capital_plan(adaptation, names, max_projects=20,
+                       scenario_pref=("ssp245_2050", "present")):
+    """Rank every (site, measure) pair by benefit-cost ratio: the canonical
+    capital plan. Pure: consumes run_adaptation's output plus the site
+    names it was computed over. Appraised on the first scenario every
+    measure carries (the middle pathway at 2050 by default, since capital
+    decisions are about the future), which is recorded in the result.
+    Only in-scope, positively-costed pairs qualify; ties break by site name
+    for determinism.
+    """
+    an = annuity(HORIZON_YEARS, DISCOUNT_RATE)
+    sc = next((s for s in scenario_pref
+               if all(s in m.get("per_scenario", {})
+                      for m in adaptation.values())), None)
+    if sc is None or not adaptation:
+        return None
+    projects = []
+    for mk, m in adaptation.items():
+        rec = m["per_scenario"][sc]
+        ps = rec.get("per_site")
+        if not ps:
+            continue
+        for i, name in enumerate(names):
+            if not ps["in_scope"][i] or ps["cost_usd"][i] <= 0:
+                continue
+            averted = ps["averted_usd"][i]
+            cost = ps["cost_usd"][i]
+            projects.append({"site": str(name), "measure": m["name"],
+                             "measure_key": mk,
+                             "averted_direct_aal_usd": averted,
+                             "cost_usd": cost,
+                             "bcr": round(averted * an / cost, 3)})
+    projects.sort(key=lambda p: (-p["bcr"], p["site"], p["measure_key"]))
+    return {"scenario": sc, "discount_rate": DISCOUNT_RATE,
+            "horizon_years": HORIZON_YEARS,
+            "projects": projects[:max_projects]}
+
 
 VHALF_LO, VHALF_HI = 40.0, 150.0
 
@@ -867,6 +913,9 @@ def main(argv=None) -> int:
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites)
+    plan = build_capital_plan(lead["adaptation"], lead["names"])
+    if plan:
+        pack["capital_plan"] = plan
     if backtest is not None:
         if calib_parts:
             observed_total = float(
