@@ -193,6 +193,22 @@ assert(panel.innerHTML.indexOf("Top capital projects")>=0&&panel.innerHTML.index
 assert(panel.innerHTML.indexOf("ssp585_2080 appraisal")>=0,
   "capital plan states its appraisal scenario");
 
+/* ---------------- v1.10: profile v2 parity with the pipeline ---------------- */
+let v=vulnOf({construction:"masonry",year_built:1980,roof_type:"metal",roof_year:2020,opening_protection:"impact"});
+assert(Math.abs(v.windMult-0.85*0.9*0.85)<1e-12,"vulnOf v2: roof detail supersedes year-built (pipeline parity)");
+v=vulnOf({construction:"frame",year_built:2015,roof_type:"shingle",roof_year:2000,opening_protection:"none"});
+assert(v.windMult===1.6,"vulnOf v2: clipped at 1.6 (1.3x1.1x1.2x1.05)");
+v=vulnOf({construction:"masonry",roof_type:"tile"});
+assert(Math.abs(v.windMult-0.95)<1e-12,"vulnOf v2: single field present, others neutral");
+v=vulnOf({construction:"frame",year_built:1980});
+assert(Math.abs(v.windMult-1.3*1.15)<1e-12&&v.floodCap===0.75,"vulnOf v2: no v2 fields -> exact legacy factors, cap 0.75");
+v=vulnOf({defended:true,first_floor_elev_m:1.2});
+assert(v.fbBonus===1.2,"vulnOf v2: measured first floor supersedes the defended proxy");
+assert(vulnOf({first_floor_elev_m:9.0}).fbBonus===3.0,"vulnOf v2: first-floor sanity cap 3 m");
+assert(vulnOf({equipment_elevated:true}).floodCap===0.5,"vulnOf v2: elevated equipment caps flood MDD at 0.5");
+assert(Math.abs(floodMdd(6.0,1.1)-0.75)<1e-12&&floodMdd(6.0,1.1,0.5)===0.5,
+  "floodMdd: cap parameter binds in deep water, default unchanged");
+
 persistPack();
 resultsPack=null;
 restore();

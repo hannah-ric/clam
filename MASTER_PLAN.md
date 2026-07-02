@@ -193,6 +193,37 @@ browser CostBenefit agrees with the canonical run within a documented tolerance;
 `test_frontend.py` extended and green; the runbook spot-checks still pass.
 
 -----------------------------------------------------------------------------
+ADAPTATION-FIRST PROGRAM (three increments; #1 shipped)
+-----------------------------------------------------------------------------
+
+Gap analysis: risk measurement is strong, but short-term adaptation planning
+needs (1) building profiles rich enough to price measures against a real
+baseline, (2) a realistic per-peril measure catalog with applicability rules,
+unit costs, downtime, and insurance co-benefits, (3) wildfire and pluvial rain
+in the peril set, (4) budget and refurbishment-cycle phasing lenses.
+
+Increment 1 (SHIPPED): profile schema v2. Optional site columns (roof_type,
+roof_year, opening_protection, first_floor_elev_m, equipment_elevated,
+stories, keys, renovation_year, wui_class, defensible_space_m, roof_class_a,
+fema_zone) drive a documented vulnerability factor table (vuln_v2, mirrored
+exactly between refresh_impacts.py and the v1.10 app): roof detail supersedes
+the year-built proxy, a measured first-floor height supersedes the defended
+0.5 m proxy, elevated critical systems cap flood MDD at 0.5. A six-field
+sites.csv reproduces today's numbers exactly (compatibility pinned by tests).
+pipeline/enrich_sites.py drafts profile fields from public data (DEM sample,
+dist-to-coast, FEMA NFHL zone, OSM building count) with per-field provenance,
+needs_review flags, never overwriting operator values, every source skippable.
+
+Increment 2 (NEXT): realistic measure catalog (applicability predicates on the
+profile, unit costs per key/site, lifespan, lead time, downtime, premium-credit
+hook) and capital plan v2 (budget-constrained selection, refurbishment-cycle
+phasing via renovation_year, benefit components reported separately).
+
+Increment 3: wildfire hazard layer (Petals WildFire) and TCRain pluvial as
+fifth and sixth perils, with the app's HAZARDS surface extended; wildfire
+MEASURES arrive with Increment 2 keyed off wui_class ahead of the layer.
+
+-----------------------------------------------------------------------------
 PHASE C: THE EXPERIENCE LEAP (frontend v2)
 -----------------------------------------------------------------------------
 

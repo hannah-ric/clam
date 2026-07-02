@@ -104,6 +104,12 @@ def run():
         "year_built": [2015, 1988, 2001],
         "defended": [True, False, False],
         "country": ["USA", "USA", "USA"],
+        # profile v2 fields, exercised through the real producer path
+        "roof_type": ["metal", "shingle", None],
+        "roof_year": [2019, 1999, None],
+        "opening_protection": ["impact", "none", None],
+        "first_floor_elev_m": [1.4, None, None],
+        "equipment_elevated": [True, False, False],
     })
     sites.to_csv("sim_sites.csv", index=False)
 

@@ -128,10 +128,11 @@ def emanuel_mdd(v, dmg_mult=1.0, v_half=V_HALF):
     return np.minimum(c / (1.0 + c) * dmg_mult, 1.0)
 
 
-def flood_mdd(d, fb):
-    """Mean damage ratio for water depth d (m) over freeboard fb (m)."""
+def flood_mdd(d, fb, cap=0.75):
+    """Mean damage ratio for water depth d (m) over freeboard fb (m), capped
+    at `cap` (0.75 published; lower when critical systems are elevated)."""
     e = np.asarray(d, dtype=float) - fb
-    return np.where(e <= 0.0, 0.0, np.minimum(0.75, 1.0 - np.exp(-0.6 * e)))
+    return np.where(e <= 0.0, 0.0, np.minimum(cap, 1.0 - np.exp(-0.6 * e)))
 
 
 def vuln_of(construction=None, year_built=None, defended=False):
@@ -147,6 +148,71 @@ def vuln_of(construction=None, year_built=None, defended=False):
     if np.isfinite(y) and y > 1800:
         w *= 1.15 if y < 1995 else (0.9 if y >= 2010 else 1.0)
     return min(max(w, 0.5), 1.6), (0.5 if defended else 0.0)
+
+
+# --- profile schema v2: documented factor table ------------------------------
+# Screening-grade factors; every value is a named constant so the Method copy
+# can cite them. A site with NO v2 fields reproduces vuln_of exactly (pinned
+# by tests), so a six-field sites.csv keeps yielding today's numbers.
+ROOF_TYPE_FACTOR = {"shingle": 1.1, "metal": 0.85, "tile": 0.95,
+                    "membrane": 0.95}
+ROOF_AGE_REF_YEAR = 2026          # deterministic reference for roof age bands
+ROOF_AGE_FACTOR = ((10, 0.9), (20, 1.0), (10**9, 1.2))   # (age <= N, factor)
+OPENING_FACTOR = {"impact": 0.85, "partial": 0.95, "none": 1.05}
+FIRST_FLOOR_MAX_M = 3.0           # sanity cap on measured first-floor height
+EQUIP_ELEV_FLOOD_CAP = 0.5        # flood MDD cap with elevated critical systems
+FLOOD_CAP_DEFAULT = 0.75          # the published curve's cap
+
+
+def _txt(x):
+    s = str(x).strip().lower() if x is not None else ""
+    return s if s and s not in ("nan", "none") else None
+
+
+def _num(x):
+    try:
+        v = float(x)
+        return v if np.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def vuln_v2(construction=None, year_built=None, defended=False,
+            roof_type=None, roof_year=None, opening_protection=None,
+            first_floor_elev_m=None, equipment_elevated=False):
+    """(wind multiplier, freeboard bonus m, flood MDD cap).
+
+    Wind: construction factor, then EITHER the roof-and-openings factors when
+    any of those fields is present (roof detail supersedes the coarse
+    year-built proxy, which would double-count roof age) OR the legacy
+    year-built factor. Absent fields are neutral (1.0), never penalising.
+    Flood: a measured first-floor height (clipped to FIRST_FLOOR_MAX_M)
+    supersedes the coarse `defended` 0.5 m proxy; elevated critical systems
+    cap the flood damage ratio at EQUIP_ELEV_FLOOD_CAP instead of 0.75.
+    """
+    rt, op = _txt(roof_type), _txt(opening_protection)
+    ry = _num(roof_year)
+    roofish = rt is not None or ry is not None or op is not None
+    if roofish:
+        w = CONSTR_FACTOR.get(str(construction or "").lower(), 1.0)
+        if rt in ROOF_TYPE_FACTOR:
+            w *= ROOF_TYPE_FACTOR[rt]
+        if ry is not None and ry > 1800:
+            age = max(ROOF_AGE_REF_YEAR - ry, 0)
+            w *= next(f for lim, f in ROOF_AGE_FACTOR if age <= lim)
+        if op in OPENING_FACTOR:
+            w *= OPENING_FACTOR[op]
+        wind_mult = min(max(w, 0.5), 1.6)
+    else:
+        wind_mult = vuln_of(construction, year_built, defended)[0]
+
+    ffe = _num(first_floor_elev_m)
+    if ffe is not None and ffe >= 0:
+        fb_bonus = min(ffe, FIRST_FLOOR_MAX_M)
+    else:
+        fb_bonus = 0.5 if defended else 0.0
+    cap = EQUIP_ELEV_FLOOD_CAP if equipment_elevated else FLOOD_CAP_DEFAULT
+    return wind_mult, fb_bonus, cap
 
 
 def nearest_centroids(site_lat, site_lon, cen_lat, cen_lon, max_km=MAX_SNAP_KM):
@@ -278,11 +344,14 @@ def wind_losses(wind_int, values, wind_mult, dmg_scale=1.0, haz_mult=1.0,
 
 
 def flood_losses(depth, values, freeboard, dmg_scale=1.0, haz_mult=1.0,
-                 depth_red=0.0):
-    """[events x sites] direct flood losses (surge or river)."""
+                 depth_red=0.0, cap=None):
+    """[events x sites] direct flood losses (surge or river). `cap` is the
+    per-site flood MDD cap array (None means the published 0.75)."""
     d = np.maximum(np.asarray(depth, float) * haz_mult - depth_red, 0.0)
-    frac = np.stack([flood_mdd(d[:, j], freeboard[j]) for j in range(d.shape[1])],
-                    axis=1)
+    caps = np.full(d.shape[1], FLOOD_CAP_DEFAULT) if cap is None \
+        else np.asarray(cap, float)
+    frac = np.stack([flood_mdd(d[:, j], freeboard[j], caps[j])
+                     for j in range(d.shape[1])], axis=1)
     frac = np.minimum(frac * dmg_scale, 1.0)
     return frac * values[None, :]
 
@@ -293,7 +362,8 @@ def flood_losses(depth, values, freeboard, dmg_scale=1.0, haz_mult=1.0,
 
 def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   dmg_scale=1.0, haz_mult=1.0, exp_mult=1.0,
-                  wind_dmg_mult=1.0, fb_bonus=0.0, cf_depth_red=0.0):
+                  wind_dmg_mult=1.0, fb_bonus=0.0, cf_depth_red=0.0,
+                  flood_cap=None):
     """One scenario's portfolio result from prepared intensities.
 
     `prep` is the pure data structure build_country_prep() returns:
@@ -321,7 +391,8 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         sg = prep["surge"].get((skey, app_key))
         if sg is not None:
             sl = flood_losses(sg["int"], vals, fb_coast + fb_bonus,
-                              dmg_scale, haz_mult, depth_red=cf_depth_red)
+                              dmg_scale, haz_mult, depth_red=cf_depth_red,
+                              cap=flood_cap)
             s_parts.append((w, {"aal": float(site_ead(sl, wnd["freq"]).sum()),
                                 "ep": ep_curve(sl.sum(axis=1), wnd["freq"]),
                                 "ead": site_ead(sl, wnd["freq"])}))
@@ -348,7 +419,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         mparts = []
         for m in members:
             rl = flood_losses(m["int"], vals, fb_river + fb_bonus,
-                              dmg_scale, haz_mult)
+                              dmg_scale, haz_mult, cap=flood_cap)
             mparts.append((1.0 / len(members),
                            {"aal": float(site_ead(rl, m["freq"]).sum()),
                             "ep": ep_curve(rl.sum(axis=1), m["freq"]),
@@ -371,7 +442,8 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
     }
 
 
-def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
+def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
+                   flood_cap=None):
     """Averted direct AAL, cost, and BCR per measure per scenario."""
     an = annuity(HORIZON_YEARS, DISCOUNT_RATE)
     out = {}
@@ -395,7 +467,8 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
             if "depth_red" in m:
                 kw["cf_depth_red"] = np.where(in_scope, m["depth_red"], 0.0)
             adapted = eval_scenario(prep, app_key, values, wind_mult,
-                                    fb_coast, fb_river, **kw)
+                                    fb_coast, fb_river, flood_cap=flood_cap,
+                                    **kw)
             if adapted is None:
                 continue
             cost = float((values[in_scope] * m["cost_pct_value"] / 100.0).sum())
@@ -422,7 +495,7 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen):
 
 
 def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
-                    scenarios, n_samples, seed):
+                    scenarios, n_samples, seed, flood_cap=None):
     """Seeded joint Monte Carlo over the three physical factors. Returns
     per-scenario quantiles for acute AAL and 1-in-100 loss, plus a
     one-at-a-time driver ranking (the tornado, computed the app's way).
@@ -437,17 +510,20 @@ def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
         for i in range(n_samples):
             r = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
                               fb_river, dmg_scale=draws["dmg"][i],
-                              haz_mult=draws["haz"][i], exp_mult=draws["exp"][i])
+                              haz_mult=draws["haz"][i], exp_mult=draws["exp"][i],
+                              flood_cap=flood_cap)
             aal[i] = r["acute"]["aal"] if r else 0.0
             var100[i] = r["acute"]["ep"][100] if r else 0.0
         central = eval_scenario(prep, app_key, values, wind_mult,
-                                fb_coast, fb_river)
+                                fb_coast, fb_river, flood_cap=flood_cap)
         drivers = []
         for f in MC_FACTORS:
             lo = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
-                               fb_river, **{_MC_KW[f["key"]]: f["lo"]})
+                               fb_river, flood_cap=flood_cap,
+                               **{_MC_KW[f["key"]]: f["lo"]})
             hi = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
-                               fb_river, **{_MC_KW[f["key"]]: f["hi"]})
+                               fb_river, flood_cap=flood_cap,
+                               **{_MC_KW[f["key"]]: f["hi"]})
             swing = abs((hi["acute"]["aal"] if hi else 0.0) -
                         (lo["acute"]["aal"] if lo else 0.0))
             drivers.append({"label": f["label"], "swing_usd": round(swing, 2)})
@@ -807,13 +883,19 @@ def load_sites(path):
     if "country" not in df.columns:
         df["country"] = "USA"
     df["country"] = df["country"].fillna("USA").astype(str).str.upper()
-    for c in ("construction", "year_built"):
+    # profile schema v2: every column optional; absent columns reproduce the
+    # six-field behavior exactly (pinned by tests)
+    for c in ("construction", "year_built", "roof_type", "roof_year",
+              "opening_protection", "first_floor_elev_m", "stories", "keys",
+              "buildings", "fema_zone", "backup_power", "renovation_year",
+              "wui_class", "defensible_space_m"):
         if c not in df.columns:
             df[c] = None
-    if "defended" not in df.columns:
-        df["defended"] = False
-    df["defended"] = df["defended"].map(
-        lambda x: str(x).strip().lower() in ("true", "1", "yes", "y"))
+    for c in ("defended", "equipment_elevated", "roof_class_a"):
+        if c not in df.columns:
+            df[c] = False
+        df[c] = df[c].map(
+            lambda x: str(x).strip().lower() in ("true", "1", "yes", "y"))
     return df
 
 
@@ -860,25 +942,31 @@ def main(argv=None) -> int:
         prep = build_country_prep(iso3, sites_c, surge_enabled,
                                   not args.no_river, meta)
         values = sites_c["asset_value_usd"].to_numpy(float)
-        wm = np.array([vuln_of(r.construction, r.year_built, r.defended)[0]
-                       for r in sites_c.itertuples()])
-        fbb = np.array([vuln_of(r.construction, r.year_built, r.defended)[1]
-                        for r in sites_c.itertuples()])
+        vulns = [vuln_v2(r.construction, r.year_built, r.defended,
+                         roof_type=r.roof_type, roof_year=r.roof_year,
+                         opening_protection=r.opening_protection,
+                         first_floor_elev_m=r.first_floor_elev_m,
+                         equipment_elevated=r.equipment_elevated)
+                 for r in sites_c.itertuples()]
+        wm = np.array([v[0] for v in vulns])
+        fbb = np.array([v[1] for v in vulns])
+        fcap = np.array([v[2] for v in vulns])
         fb_coast = FB_COAST + fbb
         fb_river = FB_RIVER + fbb
         scen = {}
         for app_key in rh.APP_SCENARIOS:
-            r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river)
+            r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river,
+                              flood_cap=fcap)
             if r is not None:
                 scen[app_key] = r
         base_keys = {"present"} | set(UNCERTAINTY_SCENARIOS)
         adaptation = run_adaptation(prep, values, wm, fb_coast, fb_river,
                                     {k: v for k, v in scen.items()
-                                     if k in base_keys})
+                                     if k in base_keys}, flood_cap=fcap)
         uncertainty = run_uncertainty(prep, values, wm, fb_coast, fb_river,
                                       [k for k in UNCERTAINTY_SCENARIOS
                                        if k in scen],
-                                      args.mc, args.seed)
+                                      args.mc, args.seed, flood_cap=fcap)
         if backtest is not None and "present" in scen:
             mask = sites_c["name"].astype(str).isin(backtest.index).to_numpy()
             if mask.any():

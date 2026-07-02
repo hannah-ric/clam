@@ -95,6 +95,22 @@ the fit is recorded in the pack as an optional setting, never silently applied.
 Keep real site files out of version control (`sites.csv` is gitignored);
 `sites_template.csv` documents the schema.
 
+Building profiles (schema v2, all columns optional): roof_type, roof_year,
+opening_protection, first_floor_elev_m, equipment_elevated, stories, keys,
+renovation_year, wui_class, defensible_space_m, roof_class_a, fema_zone.
+Present fields sharpen the damage math through a documented factor table
+(mirrored exactly between pipeline and app); absent fields reproduce the
+six-field behavior, pinned by tests. To draft profiles from public data:
+
+```bash
+cd pipeline
+python enrich_sites.py sites.csv -o sites_enriched.csv   # or --no-network
+```
+
+Enrichment fills only blank fields, marks every draft needs_review in the
+meta sidecar, and never overwrites an operator value. Review, confirm, then
+use the confirmed file as the pipeline's sites input.
+
 ## Repository layout
 
 ```

@@ -30,3 +30,7 @@ sites.csv
 sim_sites.csv
 sim_results_pack*.json
 sim_pack_*.json
+sites_enriched*.csv
+sites_enriched*_meta.json
+_tmp_*.csv
+_tmp_*_meta.json
