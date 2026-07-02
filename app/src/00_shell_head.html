@@ -210,6 +210,40 @@
   .lightbtn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
   .foot-legal{max-width:1220px;margin:0 auto;padding:6px 20px 26px;color:var(--muted);font-size:11.5px}
   svg text{font-family:Inter,sans-serif}
+  /* ---- Phase C2: scenario scrubber ---- */
+  .scrubbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px}
+  .scrublabel{font-size:12px;color:var(--muted);white-space:nowrap}
+  .scrubsteps{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .scrubstep{border:0;background:var(--surface);color:var(--ink);padding:7px 16px;font:inherit;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line)}
+  .scrubstep:last-child{border-right:0}
+  .scrubstep:hover{background:var(--surface-2)}
+  .scrubstep.cur{background:var(--primary);color:#fff;font-weight:600}
+  /* ---- Phase C2: score tracing ---- */
+  details.trace{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:8px;background:var(--surface-2)}
+  details.trace summary{cursor:pointer;font-size:13px}
+  details.trace[open] summary{margin-bottom:4px}
+  /* ---- Phase C2: board brief (print) ---- */
+  #briefHost{display:none}
+  #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
+  #briefHost .bkicker{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#555}
+  #briefHost h1{font-family:Fraunces,serif;font-size:26px;margin:4px 0 2px;color:#0F3A4B}
+  #briefHost h2{font-size:13px;margin:16px 0 6px;color:#0F3A4B;border-bottom:1px solid #ddd;padding-bottom:3px}
+  #briefHost .bmeta{color:#555;margin-bottom:14px}
+  #briefHost .bkpis{display:flex;gap:10px}
+  #briefHost .bk{flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px}
+  #briefHost .bl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#555}
+  #briefHost .bv{font-size:18px;font-weight:600;color:#0F3A4B}
+  #briefHost .bf{font-size:10.5px;color:#555}
+  #briefHost .bcols{display:flex;gap:24px}
+  #briefHost .bcols>div{flex:1}
+  #briefHost table{width:100%;border-collapse:collapse}
+  #briefHost td{padding:3px 0;border-bottom:1px solid #eee}
+  #briefHost td.num{text-align:right}
+  #briefHost .bprov{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;font-size:10.5px;color:#444}
+  @media print{
+    body.printbrief>*:not(#briefHost){display:none !important}
+    body.printbrief #briefHost{display:block}
+  }
 </style>
 </head>
 <body>
@@ -254,11 +288,18 @@
           <option value="2080">2080</option>
         </select>
       </div>
+      <div class="seg"><label class="mini-l">Brand</label>
+        <select class="scen" id="brandSel" title="Filter the map markers by brand" aria-label="Filter map markers by brand">
+          <option value="">All brands</option>
+        </select>
+      </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
+    <button class="btn" id="briefBtn">Board brief</button>
+    <button type="button" class="info on-dark" data-info="brief" aria-label="What the board brief is" aria-expanded="false">i</button>
   </div>
 </header>
 
@@ -285,6 +326,12 @@
     <div id="summaryBody" style="display:none">
       <h2 class="sec">Portfolio climate risk at a glance</h2>
       <p class="sub" id="sumSub"></p>
+      <div class="panel scrubbar">
+        <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
+        <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
+        <button class="lightbtn" id="scrubPlay">Play</button>
+        <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
+      </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
         <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
@@ -664,8 +711,10 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.0.0 assembled from source &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.1.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
+
+<div id="briefHost"></div>
 
 <div class="toast" id="toast"></div>
 

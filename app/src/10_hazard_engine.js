@@ -293,6 +293,113 @@ function siteRatings(site,sc){
   const o={};for(const h of HAZARDS)o[h.key]=hzSite(site,h.key,sc).band;return o;}
 
 /* ============================================================
+   Score tracing (Phase C2)
+   explainPeril answers "why is this number what it is": which dataset
+   produced the intensity (grid cell and distance, a named interim model,
+   or an honest zero), which named factors transformed it, and what came
+   out. Introspection only: every output figure is hzSite's own, every
+   factor mirrors vulnOf and the peril dispatch, and a test pins the wind
+   factor product to vulnOf so the trace can never drift from the math.
+   ============================================================ */
+function windFactorTrail(site){
+  const t=[];
+  const c=String(site.construction||"").toLowerCase();
+  if(CONSTR_FACTOR[c]!=null)t.push({name:c+" construction",mult:CONSTR_FACTOR[c]});
+  const rt=String(site.roof_type||"").toLowerCase();
+  const op=String(site.opening_protection||"").toLowerCase();
+  const ry=+site.roof_year;
+  const roofish=ROOF_TYPE_FACTOR[rt]!=null||OPENING_FACTOR[op]!=null||(isFinite(ry)&&ry>1800);
+  if(roofish){
+    if(ROOF_TYPE_FACTOR[rt]!=null)t.push({name:rt+" roof",mult:ROOF_TYPE_FACTOR[rt]});
+    if(isFinite(ry)&&ry>1800){const age=Math.max(ROOF_AGE_REF_YEAR-ry,0);
+      t.push({name:"roof age "+age+" years",mult:age<=10?0.9:(age<=20?1.0:1.2)});}
+    if(OPENING_FACTOR[op]!=null)t.push({name:"opening protection: "+op,mult:OPENING_FACTOR[op]});
+  }else{
+    const y=+site.year_built;
+    if(isFinite(y)&&y>1800){
+      if(y<1995)t.push({name:"built "+y+" (pre-1995 code era)",mult:1.15});
+      else if(y>=2010)t.push({name:"built "+y+" (modern code era)",mult:0.9});
+    }
+  }
+  const raw=t.reduce((a,f)=>a*f.mult,1);
+  const clipped=Math.min(Math.max(raw,0.5),1.6);
+  if(Math.abs(clipped-raw)>1e-12)t.push({name:"clipped to the 0.5..1.6 range",mult:clipped/raw});
+  return t;
+}
+function fbBonusTrail(site,vuln){
+  if(!(vuln.fbBonus>0))return [];
+  const ffe=+site.first_floor_elev_m;
+  const fromFfe=isFinite(ffe)&&ffe>=0;
+  return [{name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:vuln.fbBonus}];
+}
+function explainPeril(site,hz,sc){
+  const la=site.latitude,lo=site.longitude;
+  const r=hzSite(site,hz,sc);
+  const H=HAZARD_BY[hz]||{label:hz,unit:""};
+  const vuln=vulnOf(site);
+  const ds=(hazardGrid&&hazardGrid.meta)?hazardGrid.meta.name:null;
+  const gmeta=(()=>{const g=gridByHazard[hz];if(!g)return null;const q=g(la,lo,sc);return (q&&q.meta)||null;})();
+  const out={hz,label:H.label,unit:H.unit,ead:r.ead||0,eadPct:r.eadPct||0,band:r.band,
+             inputs:null,factors:[],notes:[],source:null};
+  const gridSrc=()=>({kind:"grid",dataset:ds,distKm:gmeta?gmeta.dist:null});
+  if(hz==="heat"){
+    out.source=(r.indicators&&r.indicators.source==="grid")?gridSrc()
+      :{kind:"interim",detail:"latitude and coast-distance climatology, shifted by scenario warming"};
+    out.inputs={kind:"indicators",indicators:r.indicators};
+    out.notes.push("chronic peril: banded by days over 32C, costed on the Financial impact tab");
+    return out;
+  }
+  if(hz==="tc"){
+    const meta=provider()(la,lo,sc).meta||{};
+    out.source=meta.source==="grid"?{kind:"grid",dataset:ds,distKm:meta.dist}
+      :{kind:"interim",detail:"regional wind anchors, inverse-distance weighted"};
+    out.inputs={kind:"vec",vec:r.vec};
+    out.factors=windFactorTrail(site);
+    out.windMult=vuln.windMult;
+    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+V_HALF+" m/s");
+    return out;
+  }
+  if(hz==="wfire"){
+    const b=fireBurnPct(site,sc);
+    if(b.source==="grid")out.source=gridSrc();
+    else if(b.source==="interim")out.source={kind:"interim",
+      detail:String(site.wui_class||"").toLowerCase()+" WUI class: "+
+        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base burn, +"+
+        Math.round(FIRE_WARMING_UPLIFT*100)+"% per degree of warming"};
+    else out.source={kind:"none",detail:"no wildfire grid loaded and no wui_class on the site profile, so wildfire scores zero"};
+    out.inputs={kind:"burn",burnPct:r.burnPct||0};
+    out.factors=[{name:"conditional damage when a site burns",mult:FIRE_MDD}];
+    if(site.roof_class_a)out.factors.push({name:"Class A fire-rated roof",mult:0.6});
+    const dsm=+site.defensible_space_m;
+    if(isFinite(dsm)&&dsm>=30)out.factors.push({name:"defensible space "+dsm+" m",mult:0.7});
+    return out;
+  }
+  if(hz==="prain"){
+    if(gmeta&&!gmeta.outside)out.source=gridSrc();
+    else if(gmeta&&gmeta.outside)out.source={kind:"none",
+      detail:"site is "+Math.round(gmeta.dist)+" km from the nearest rainfall cell (beyond 200 km), so rainfall scores zero"};
+    else out.source={kind:"none",detail:"TC rainfall has no interim model; it stays zero until a rainfall grid is loaded"};
+    out.inputs={kind:"vec",vec:r.vec};
+    out.factors=[{name:"drainage transform: first "+PRAIN_DRAIN_MM+" mm absorbed, ponding coefficient "+PRAIN_POND_COEFF}]
+      .concat([{name:"site drainage freeboard",add:PRAIN_FB}],fbBonusTrail(site,vuln));
+    if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
+    out.notes.push("concave stage-damage on ponding depth, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
+    return out;
+  }
+  /* cflood / rflood */
+  if(gmeta&&!gmeta.outside)out.source=gridSrc();
+  else if(gmeta&&gmeta.outside)out.source={kind:"interim",
+    detail:"site is "+Math.round(gmeta.dist)+" km from the nearest grid cell (beyond 200 km); the interim model fills in"};
+  else out.source={kind:"interim",detail:hz==="cflood"?"coast-proximity surge screening":"terrain and coast-distance screening"};
+  out.inputs={kind:"vec",vec:r.vec};
+  out.factors=[{name:hz==="cflood"?"coastal freeboard baseline":"riverine freeboard baseline",add:hz==="cflood"?FB_COAST:fbRiver()}]
+    .concat(fbBonusTrail(site,vuln));
+  if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
+  out.notes.push("concave stage-damage above freeboard, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
+  return out;
+}
+
+/* ============================================================
    Financial impact layer (Phase 2)
    Turns hazard into money a CFO can read: direct asset damage, business
    interruption, and heat-driven revenue at risk, summed into an expected

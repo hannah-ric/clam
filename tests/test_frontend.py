@@ -315,6 +315,75 @@ resultsPack=null;
 renderResultsPack();
 assert(panel.innerHTML==="","no pack -> empty panel");
 
+/* ---------------- v2.1.0: C2 experience layer ---------------- */
+/* scenario scrubber: pure scenario walking, top bar kept in sync */
+const st=scrubSteps();
+assert(st.length===4&&st[0].sc==="present"&&st[1].sc==="ssp245_2030"&&st[3].sc==="ssp245_2080",
+  "scrubSteps walks Present to 2080 under the default pathway");
+document.getElementById("pathSel").value="ssp585";
+assert(scrubSteps()[2].sc==="ssp585_2050","the scrubber follows the top-bar pathway");
+scenario="ssp585_2050";
+assert(scrubIndex()===2,"scrubIndex finds the current scenario on the timeline");
+let hooked=false; scenHook=()=>{hooked=true;};
+scrubTo(0);
+assert(scenario==="present"&&hooked,"scrubTo pins the scenario and resyncs the top bar");
+
+/* score tracing: the trace can never diverge from the math it explains */
+const traceProfiles=[
+  {construction:"masonry",year_built:1980,roof_type:"metal",roof_year:2020,opening_protection:"impact"},
+  {construction:"frame",year_built:2015,roof_type:"shingle",roof_year:2000,opening_protection:"none"},
+  {construction:"engineered",year_built:2012},{construction:"frame",year_built:1980},{}];
+assert(traceProfiles.every(p=>Math.abs(
+    windFactorTrail(p).reduce((a,f)=>a*f.mult,1)-vulnOf(p).windMult)<1e-9),
+  "the wind factor trail reproduces vulnOf exactly, clip entry included");
+clearHazCache();
+const exT=explainPeril({latitude:25.02,longitude:-80.02,asset_value_usd:1e8,
+  construction:"frame",roof_type:"shingle",roof_year:2000,opening_protection:"none"},"tc","present");
+assert(exT.source.kind==="grid"&&exT.source.dataset==="hazard_grid.csv"&&exT.source.distKm<10,
+  "tc trace names the grid dataset and the nearest-cell distance");
+assert(exT.factors.length>0&&Math.abs(exT.windMult-1.6)<1e-9,
+  "tc trace lists the profile factors and the combined multiplier");
+const exC=explainPeril({latitude:25.05,longitude:-80.05,asset_value_usd:1e8},"cflood","present");
+assert(exC.source.kind==="grid"&&exC.source.distKm<10&&exC.factors[0].add===FB_COAST,
+  "coastal trace reports the grid cell and the freeboard baseline");
+const exP=explainPeril(plain,"prain","present");
+assert(exP.source.kind==="none"&&exP.source.detail.indexOf("no interim model")>=0,
+  "rainfall trace states the honest zero (no interim model)");
+const exW=explainPeril(plain,"wfire","present");
+assert(exW.source.kind==="none"&&exW.source.detail.indexOf("wui_class")>=0,
+  "wildfire trace explains its zero (no grid, no wui_class)");
+const exWui=explainPeril(wui,"wfire","present");
+assert(exWui.source.kind==="interim"&&exWui.source.detail.indexOf("intermix")>=0,
+  "wildfire interim trace names the WUI class");
+scenario="present";
+const traceHtml=traceSection(wui);
+assert(traceHtml.indexOf("Why these numbers")>=0&&traceHtml.indexOf("scores zero")>=0
+  &&traceHtml.indexOf("interim model")>=0,
+  "the scorecard trace section renders a source line for every peril");
+assert(INFO.trace&&INFO.scrub&&INFO.brief,"the C2 surfaces carry INFO popovers");
+
+/* board brief: print-ready portfolio one-pager from the same functions */
+const bh=briefHtml();
+assert(bh.indexOf("Portfolio climate risk brief")>=0&&bh.indexOf("Expected annual cost")>=0
+  &&bh.indexOf("CLIMADA hazard grid")>=0&&bh.indexOf("not audited disclosure")>=0,
+  "the board brief carries headline figures and states its data basis");
+assert(bh.indexOf("Most exposed sites")>=0&&bh.indexOf("Ridge")>=0,
+  "the brief names the most exposed sites");
+sites=[];
+openBrief();
+assert(briefHtml()===""&&_lastToast.indexOf("Load sites")>=0,
+  "an empty portfolio cannot print a brief, and the app says why");
+
+/* map brand filter: options track the portfolio, stale picks reset */
+brandFilter="";_lastBrandKey="";
+syncBrandFilter([{brand:"A"},{brand:"B"},{}]);
+assert(document.getElementById("brandSel").innerHTML.indexOf("All brands")>=0
+  &&document.getElementById("brandSel").innerHTML.indexOf("Unbranded")>=0,
+  "the brand filter offers every brand plus Unbranded");
+brandFilter="Gone";_lastBrandKey="";
+syncBrandFilter([{brand:"A"}]);
+assert(brandFilter==="","a vanished brand resets the map filter instead of blanking the map");
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

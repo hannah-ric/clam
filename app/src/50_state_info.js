@@ -23,6 +23,10 @@ let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
 let sortKey="ead", sortDir=-1;
 let nextId=1;
+let brandFilter="";        // map-only brand filter (session, not persisted)
+let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
+let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
+let scrubTimer=null;       // scenario scrubber playback
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -57,6 +61,18 @@ const INFO={
     "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
     "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
+  scrub:{t:"The scenario timeline",b:
+    "<p>The timeline steps the whole app through <b>Present, 2030, 2050, and 2080</b> under the pathway selected in the top bar (SSP2-4.5 if the top bar is on Present day). Every figure on every tab recomputes at each step: it is the same model, walked through time.</p>"+
+    "<p><b>Play</b> animates the walk so you can watch where cost concentrates and how fast it grows. Clicking a step pins the app to that future; the top-bar controls stay in sync.</p>",
+    s:"Same scenario engine as the Pathway and Horizon controls; nothing extra is modeled."},
+  trace:{t:"Tracing a number to its source",b:
+    "<p>Each row walks one peril's figure back to where it came from: the <b>data source</b> (a loaded CLIMADA grid with the distance to the nearest cell, a named interim screening model, or an honest zero when neither exists), the <b>intensities</b> at each return period, the <b>named factors</b> this building's profile applies, and the resulting expected annual damage.</p>"+
+    "<p>If a number surprises you, the trace shows which ingredient drove it. A grid supersedes the interim model per peril; a zero always says why it is zero.</p>",
+    s:"The trace reads the same functions that computed the score; it cannot diverge from them."},
+  brief:{t:"The board brief",b:
+    "<p>Builds a print-ready one-pager of the portfolio at the current scenario: headline figures, cost by peril, the most exposed sites, the trajectory to 2080, and the data provenance line, then opens your browser's print dialog. Choose <b>Save as PDF</b> to get the file.</p>"+
+    "<p>The brief states its data basis (CLIMADA grid or interim screening) and carries the same disclosure caveats as the app; nothing is computed specially for it.</p>",
+    s:"Zero-install by design: the PDF comes from the browser, no service involved."},
   interim:{t:"Where the hazard comes from",b:
     "<p>With no data loaded, the app uses a built-in <b>interim model</b>: transparent regional proxies for each peril. It is good for exploration, not for disclosure.</p>"+
     "<p>Drop a <b>CLIMADA hazard grid</b> on the Method tab to replace any peril with authoritative values. Perils not in the grid stay on the interim model. The badge in the top bar shows which source is live, per peril.</p>"+
@@ -294,13 +310,27 @@ function updateLegend(){
   };
   legendCtl.addTo(map);
 }
+function syncBrandFilter(rows){
+  const sel=document.getElementById("brandSel"); if(!sel)return;
+  const brands=[];rows.forEach(r=>{const b=r.brand||"Unbranded";if(brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  const key=brands.join("|");
+  if(key!==_lastBrandKey){
+    _lastBrandKey=key;
+    if(brandFilter&&brands.indexOf(brandFilter)<0)brandFilter="";
+    sel.innerHTML='<option value="">All brands</option>'+brands.map(b=>'<option value="'+esc(b)+'">'+esc(b)+'</option>').join("");
+    sel.value=brandFilter;
+  }
+}
 function drawMarkers(scored){
+  syncBrandFilter(scored.rows);
   if(!mapOk)return;
   markers.forEach(m=>map.removeLayer(m));markers=[];
-  if(!scored.rows.length){_lastFitKey="";updateLegend();return;}
+  const rows=brandFilter?scored.rows.filter(r=>(r.brand||"Unbranded")===brandFilter):scored.rows;
+  if(!rows.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
-  const maxV=Math.max.apply(null,scored.rows.map(r=>r.asset_value_usd))||1;
-  scored.rows.forEach(r=>{
+  const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  rows.forEach(r=>{
     const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
     const m=L.circleMarker([r.latitude,r.longitude],{
       radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
@@ -308,13 +338,14 @@ function drawMarkers(scored){
     const metric=heat
       ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
       : fmt$(r.ead)+"/yr &middot; "+r.eadPct.toFixed(2)+"%";
-    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>");
+    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>"+
+      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+r.id)+")'>Open scorecard</button>");
     m.on("click",()=>{ selectedId=r.id; switchTab("sites"); renderSites(); });
     markers.push(m);
   });
   updateLegend();
   // only re-frame the map when the set of sites changes, not on every recompute
-  const key=scored.rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
+  const key=rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
   if(key!==_lastFitKey){ try{ map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25)); }catch(e){} _lastFitKey=key; }
 }
 

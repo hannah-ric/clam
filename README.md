@@ -189,18 +189,22 @@ Every patcher aborts with no output if its anchors no longer match. That chain
 is closed history now; new work happens in `app/src/`. Additions by version:
 v1.8 results-pack intake, v1.9 renewal benchmark and capital plan, v1.10
 building profiles, v1.11 phased catalog plan, v1.12 the wildfire and
-TC-rainfall perils, v1.13 the coherence pass, v2.0.0 the source-split rebuild.
+TC-rainfall perils, v1.13 the coherence pass, v2.0.0 the source-split
+rebuild, v2.1.0 the experience layer: a scenario timeline that animates the
+portfolio from Present to 2080, per-peril score tracing on every scorecard
+(each figure walked back to its grid cell or interim model and the named
+factors applied), a one-click print-ready board brief, and a map brand
+filter.
 
 The working system is fully consolidated in this repository, with CI green on
-every push. The roadmap lives in `MASTER_PLAN.md`; Phase C1 (structural
-rebuild with exact parity) is shipped, and Phase C2 (the experience layer) is
-next.
+every push. The roadmap lives in `MASTER_PLAN.md`; Phases A (CI), B (results
+pack), and C (parity-first rebuild plus the experience layer) are shipped.
 
 ## Where this is going
 
 Read `MASTER_PLAN.md`. Short version: consolidation and CI shipped (Phase A,
 container still open), the CLIMADA-native results pack with appraisal and
-uncertainty shipped (Phase B), the parity-first structural rebuild shipped
-(Phase C1), and next comes the experience layer on that foundation (Phase C2:
-map-first drilldowns, scenario scrubber, board PDF), then optional frontier
-layers (Phase D).
+uncertainty shipped (Phase B), the parity-first structural rebuild and the
+experience layer shipped (Phase C: scenario timeline, score tracing, board
+brief), leaving optional frontier layers (Phase D: storm-watch mode, CAT bond
+pricing, CoastalDEM, the hazard emulator).

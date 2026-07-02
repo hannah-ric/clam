@@ -282,8 +282,24 @@ layering, uncertainty bands, and the export CSV string byte for byte. CI gates
 both directions: assemble_app.py --check catches a deployable that drifted
 from source, and the parity test catches a refactor that changed an answer.
 The patchers remain as verified history (v1.5 through v1.13 regenerate byte
-identically); new work edits app/src/ and reassembles. Next is C2, the
-experience itself, on this foundation.
+identically); new work edits app/src/ and reassembles.
+
+STATUS (C2 SHIPPED, v2.1.0): the experience layer landed on that foundation,
+render-only so the parity-pinned math is untouched. Shipped: a scenario
+timeline on the Summary tab (Present / 2030 / 2050 / 2080 under the top-bar
+pathway, with Play animating the walk and the top-bar selects kept in sync);
+"why these numbers" score tracing on every site scorecard (each peril walks
+from its data source, grid cell distance and dataset name, or the named
+interim model, or an honest zero with the reason, through the intensities and
+the building's named factors to the EAD, with a test pinning the wind factor
+trail's product to vulnOf so the trace cannot diverge from the math); a
+one-click board brief (print-optimized one-pager with headline figures, cost
+by peril, most exposed sites, trajectory, capital plan when a pack is loaded,
+and a data-basis line, delivered as PDF through the browser's print dialog,
+zero dependencies); map popups that open scorecards directly; and a top-bar
+brand filter for the map. Every C2 item on the list below is now live, the
+CSV export schema is unchanged (partition-tested), and the suite grew to 101
+frontend assertions plus a real-browser smoke pass.
 
 1. Parity first. Every constant, formula, measure, fallback, and the no-grid
    regression from v1.7 becomes an executable spec (the successor to

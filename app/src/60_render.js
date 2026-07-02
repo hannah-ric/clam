@@ -9,6 +9,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderScrub();
   renderSites();
   renderAdaptation();
   renderScenarios();
@@ -559,6 +560,7 @@ function renderScorecard(s){
       '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
       (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
       '</tbody></table></div>'+
+    traceSection(s)+
     '<div class="panel" style="margin-bottom:4px;border-left:3px solid var(--primary)"><div style="font-size:14px;line-height:1.6">'+scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway)+'</div></div>';
 }
 function scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway){
@@ -777,3 +779,134 @@ function renderResultsPack(){
   el.innerHTML=h;
 }
 
+
+/* ============================================================
+   Phase C2 experience layer: scenario scrubber, score tracing,
+   board brief. Render-only: every figure on these surfaces comes
+   from the same functions the parity suite pins.
+   ============================================================ */
+function scrubSteps(){
+  const p=currentPathway();
+  return [{label:"Present",sc:"present"}].concat(HORIZONS.map(h=>({label:String(h),sc:p+"_"+h})));
+}
+function scrubIndex(){
+  const st=scrubSteps();
+  for(let i=0;i<st.length;i++)if(st[i].sc===scenario)return i;
+  return scenario==="present"?0:-1;
+}
+function scrubTo(i){
+  const st=scrubSteps()[i]; if(!st)return;
+  scenario=st.sc; persist(); if(scenHook)scenHook(); render();
+}
+function stopScrub(){
+  if(scrubTimer){clearInterval(scrubTimer);scrubTimer=null;}
+  const b=document.getElementById("scrubPlay"); if(b)b.textContent="Play";
+}
+function playScrub(){
+  if(scrubTimer){stopScrub();return;}
+  const b=document.getElementById("scrubPlay"); if(b)b.textContent="Stop";
+  let i=0; scrubTo(0);
+  scrubTimer=setInterval(()=>{i++;
+    if(i>=scrubSteps().length){stopScrub();return;}
+    scrubTo(i);
+  },1500);
+}
+function renderScrub(){
+  const host=document.getElementById("scrubSteps"); if(!host)return;
+  const idx=scrubIndex(), p=currentPathway();
+  const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
+  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'">'+esc(st.label)+'</button>').join("");
+  host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
+}
+
+/* ---- score tracing (scorecard) ---- */
+function fmtVecLine(ex){
+  if(ex.inputs.kind==="indicators"){const d=ex.inputs.indicators||{};
+    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C, "+d.cdd+" cooling degree days";}
+  if(ex.inputs.kind==="burn")return (+ex.inputs.burnPct).toFixed(2)+" % annual burn probability";
+  const v=ex.inputs.vec||{};
+  return RPS.map(rp=>"1-in-"+rp+": "+(+v[rp]||0).toFixed(ex.hz==="tc"?0:2)).join(" \u00b7 ")+" "+ex.unit;
+}
+function fmtFactor(f){
+  if(f.mult!=null)return esc(f.name)+" \u00d7"+f.mult.toFixed(2);
+  if(f.add!=null)return esc(f.name)+" +"+f.add.toFixed(1)+" m freeboard";
+  if(f.cap!=null)return esc(f.name)+": damage capped at "+Math.round(f.cap*100)+"% of value";
+  return esc(f.name);
+}
+function traceSection(s){
+  const rows=ACUTE.concat(["heat"]).map(hz=>{
+    const ex=explainPeril(s,hz,scenario);
+    const src=ex.source||{};
+    const srcTxt=src.kind==="grid"?("CLIMADA grid"+(src.distKm!=null?", cell "+(+src.distKm).toFixed(1)+" km":"")):
+                 src.kind==="interim"?"interim model":"no data, scores zero";
+    const head=hz==="heat"
+      ?((ex.inputs.indicators?ex.inputs.indicators.daysOver32+" days over 32C":"")+" ("+ex.band+")")
+      :(fmt$(ex.ead)+"/yr ("+ex.band+")");
+    const det=
+      '<div class="kv" style="margin-top:6px">'+
+      '<span class="k">Source</span><span class="v">'+(src.kind==="grid"
+        ?("CLIMADA grid"+(src.dataset?" \u00b7 "+esc(src.dataset):"")+(src.distKm!=null?" \u00b7 nearest cell "+(+src.distKm).toFixed(1)+" km":""))
+        :esc(src.detail||srcTxt))+'</span>'+
+      '<span class="k">Intensity</span><span class="v mono">'+esc(fmtVecLine(ex))+'</span>'+
+      (ex.factors.length?'<span class="k">Profile factors</span><span class="v">'+ex.factors.map(fmtFactor).join("<br>")+
+        (ex.windMult!=null?'<br><b>combined wind multiplier \u00d7'+ex.windMult.toFixed(2)+'</b>':'')+'</span>':'')+
+      (ex.notes.length?'<span class="k">Model</span><span class="v">'+ex.notes.map(esc).join("<br>")+'</span>':'')+
+      '</div>';
+    return '<details class="trace"><summary><b>'+esc(ex.label)+'</b> \u00b7 '+esc(srcTxt)+' \u00b7 '+head+'</summary>'+det+'</details>';
+  }).join("");
+  return '<div class="panel" style="margin-bottom:14px"><h3>Why these numbers '+infoBtn("trace")+'</h3>'+
+    '<div class="hint">Every figure traced to its data source, its intensities, and the factors this building applies.</div>'+rows+'</div>';
+}
+
+/* ---- board brief (print to PDF, zero dependencies) ---- */
+function briefHtml(){
+  if(!sites.length)return "";
+  const sc=scenario, f=finPortfolio(sites,sc), agg=aggregatePortfolio(sites,sc), u=uncRange(sites,sc);
+  const p=currentPathway();
+  const futureSc=(sc!=="present")?sc:(p+"_2050");
+  const pf=finPortfolio(sites,"present"), ff=finPortfolio(sites,futureSc);
+  const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat",wfire:"Wildfire",prain:"TC rainfall"};
+  const perils=Object.keys(agg.byPeril).map(k=>[perilName[k]||k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
+  const top=agg.perSite.slice().sort((a,b)=>b.total-a.total).slice(0,6);
+  const traj=[["Present","present"],[PATHWAY_LABEL[p]+" 2050",p+"_2050"],[PATHWAY_LABEL[p]+" 2080",p+"_2080"]]
+    .map(([lab,k])=>[lab,finPortfolio(sites,k).totalAal]);
+  const auth=perilAuthority(); const nLive=auth.filter(a=>a.live).length;
+  const pk=resultsPack&&resultsPack.data;
+  const dt=new Date().toISOString().slice(0,10);
+  const kpi=(l,v,foot)=>'<div class="bk"><div class="bl">'+l+'</div><div class="bv">'+v+'</div><div class="bf">'+foot+'</div></div>';
+  const tr2=(a,b)=>'<tr><td>'+a+'</td><td class="num mono">'+b+'</td></tr>';
+  return '<div class="briefpage">'+
+    '<div class="bhead"><div class="bkicker">Travel + Leisure Co. \u00b7 Resort Portfolio Risk-to-Value</div>'+
+    '<h1>Portfolio climate risk brief</h1>'+
+    '<div class="bmeta">'+esc(SCEN_LABEL[sc]||sc)+' \u00b7 '+sites.length+' site'+(sites.length>1?"s":"")+' \u00b7 generated '+dt+'</div></div>'+
+    '<div class="bkpis">'+
+      kpi("Insured value",fmt$(f.value),"")+
+      kpi("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high))+
+      kpi("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value")+
+      kpi("Climate premium","+"+fmt$(ff.totalAal-pf.totalAal)+"/yr","by "+esc(SCEN_LABEL[futureSc]||futureSc))+
+    '</div>'+
+    '<div class="bcols"><div>'+
+      '<h2>Cost by peril</h2><table>'+perils.map(x=>tr2(esc(x[0]),fmt$(x[1])+"/yr")).join("")+'</table>'+
+      '<h2>Trajectory</h2><table>'+traj.map(x=>tr2(esc(x[0]),fmt$(x[1])+"/yr")).join("")+'</table>'+
+    '</div><div>'+
+      '<h2>Most exposed sites</h2><table>'+top.map(r=>tr2(esc(r.name),fmt$(r.total)+"/yr")).join("")+'</table>'+
+    '</div></div>'+
+    (pk&&pk.capital_plan&&pk.capital_plan.projects&&pk.capital_plan.projects.length?
+      '<h2>Top capital projects (CLIMADA appraisal)</h2><table>'+pk.capital_plan.projects.slice(0,5).map(cp=>
+        '<tr><td>'+esc(cp.site)+' \u00b7 '+esc(cp.measure)+'</td><td class="num mono">BCR '+esc(cp.bcr)+' \u00b7 '+
+        fmt$(cp.averted_direct_aal_usd)+'/yr averted \u00b7 '+fmt$(cp.cost_usd)+'</td></tr>').join("")+'</table>':'')+
+    '<div class="bprov"><b>Data basis:</b> '+(hazardGrid
+      ?("CLIMADA hazard grid ("+esc(hazardGrid.meta.name)+"), "+nLive+" of "+HAZARDS.length+" perils grid-driven; the rest use the interim screening model.")
+      :"Built-in interim screening model for every peril; load a CLIMADA grid for disclosure-grade figures.")+
+    (pk?" Results pack: "+esc(String(pk.script||"refresh_impacts.py").split(" ")[0])+", run "+esc(String(pk.generated_utc||"").slice(0,10))+".":"")+
+    " Assumptions: revenue "+Math.round(finAssume.revRatio*100)+"% of value, GOP margin "+Math.round(finAssume.gopMargin*100)+"%, reopen "+finAssume.reopenMonths+" months at total loss."+
+    " Screening and appraisal for internal planning, not audited disclosure.</div>"+
+    '</div>';
+}
+function openBrief(){
+  if(!sites.length){toast("Load sites first: the brief reports the portfolio.");return;}
+  const h=document.getElementById("briefHost"); if(!h)return;
+  h.innerHTML=briefHtml();
+  document.body.classList.add("printbrief");
+  setTimeout(()=>{try{window.print();}catch(e){}},60);
+}

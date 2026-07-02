@@ -136,11 +136,13 @@ function wire(){
     horSel.disabled=(pathSel.value==="present");
   }
   function composeScenario(){
+    stopScrub();
     scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
     horSel.disabled=(pathSel.value==="present");
     persist();render();
   }
   syncScenControls();
+  scenHook=syncScenControls;   // lets the scenario scrubber keep the top bar in sync
   hazSel.onchange=e=>{activeHazard=e.target.value;persist();render();};
   pathSel.onchange=composeScenario;
   horSel.onchange=composeScenario;
@@ -149,6 +151,10 @@ function wire(){
   document.getElementById("sampleBtn3").onclick=loadSample;
   document.getElementById("sampleBtn4").onclick=loadSample;
   document.getElementById("exportBtn").onclick=exportCsv;
+  document.getElementById("briefBtn").onclick=openBrief;
+  window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
+  document.getElementById("scrubPlay").onclick=playScrub;
+  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort

@@ -210,6 +210,40 @@
   .lightbtn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
   .foot-legal{max-width:1220px;margin:0 auto;padding:6px 20px 26px;color:var(--muted);font-size:11.5px}
   svg text{font-family:Inter,sans-serif}
+  /* ---- Phase C2: scenario scrubber ---- */
+  .scrubbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px}
+  .scrublabel{font-size:12px;color:var(--muted);white-space:nowrap}
+  .scrubsteps{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .scrubstep{border:0;background:var(--surface);color:var(--ink);padding:7px 16px;font:inherit;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line)}
+  .scrubstep:last-child{border-right:0}
+  .scrubstep:hover{background:var(--surface-2)}
+  .scrubstep.cur{background:var(--primary);color:#fff;font-weight:600}
+  /* ---- Phase C2: score tracing ---- */
+  details.trace{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:8px;background:var(--surface-2)}
+  details.trace summary{cursor:pointer;font-size:13px}
+  details.trace[open] summary{margin-bottom:4px}
+  /* ---- Phase C2: board brief (print) ---- */
+  #briefHost{display:none}
+  #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
+  #briefHost .bkicker{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#555}
+  #briefHost h1{font-family:Fraunces,serif;font-size:26px;margin:4px 0 2px;color:#0F3A4B}
+  #briefHost h2{font-size:13px;margin:16px 0 6px;color:#0F3A4B;border-bottom:1px solid #ddd;padding-bottom:3px}
+  #briefHost .bmeta{color:#555;margin-bottom:14px}
+  #briefHost .bkpis{display:flex;gap:10px}
+  #briefHost .bk{flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px}
+  #briefHost .bl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#555}
+  #briefHost .bv{font-size:18px;font-weight:600;color:#0F3A4B}
+  #briefHost .bf{font-size:10.5px;color:#555}
+  #briefHost .bcols{display:flex;gap:24px}
+  #briefHost .bcols>div{flex:1}
+  #briefHost table{width:100%;border-collapse:collapse}
+  #briefHost td{padding:3px 0;border-bottom:1px solid #eee}
+  #briefHost td.num{text-align:right}
+  #briefHost .bprov{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;font-size:10.5px;color:#444}
+  @media print{
+    body.printbrief>*:not(#briefHost){display:none !important}
+    body.printbrief #briefHost{display:block}
+  }
 </style>
 </head>
 <body>
@@ -254,11 +288,18 @@
           <option value="2080">2080</option>
         </select>
       </div>
+      <div class="seg"><label class="mini-l">Brand</label>
+        <select class="scen" id="brandSel" title="Filter the map markers by brand" aria-label="Filter map markers by brand">
+          <option value="">All brands</option>
+        </select>
+      </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
+    <button class="btn" id="briefBtn">Board brief</button>
+    <button type="button" class="info on-dark" data-info="brief" aria-label="What the board brief is" aria-expanded="false">i</button>
   </div>
 </header>
 
@@ -285,6 +326,12 @@
     <div id="summaryBody" style="display:none">
       <h2 class="sec">Portfolio climate risk at a glance</h2>
       <p class="sub" id="sumSub"></p>
+      <div class="panel scrubbar">
+        <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
+        <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
+        <button class="lightbtn" id="scrubPlay">Play</button>
+        <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
+      </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
         <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
@@ -664,8 +711,10 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.0.0 assembled from source &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.1.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
+
+<div id="briefHost"></div>
 
 <div class="toast" id="toast"></div>
 
@@ -993,6 +1042,113 @@ function siteRatings(site,sc){
   const o={};for(const h of HAZARDS)o[h.key]=hzSite(site,h.key,sc).band;return o;}
 
 /* ============================================================
+   Score tracing (Phase C2)
+   explainPeril answers "why is this number what it is": which dataset
+   produced the intensity (grid cell and distance, a named interim model,
+   or an honest zero), which named factors transformed it, and what came
+   out. Introspection only: every output figure is hzSite's own, every
+   factor mirrors vulnOf and the peril dispatch, and a test pins the wind
+   factor product to vulnOf so the trace can never drift from the math.
+   ============================================================ */
+function windFactorTrail(site){
+  const t=[];
+  const c=String(site.construction||"").toLowerCase();
+  if(CONSTR_FACTOR[c]!=null)t.push({name:c+" construction",mult:CONSTR_FACTOR[c]});
+  const rt=String(site.roof_type||"").toLowerCase();
+  const op=String(site.opening_protection||"").toLowerCase();
+  const ry=+site.roof_year;
+  const roofish=ROOF_TYPE_FACTOR[rt]!=null||OPENING_FACTOR[op]!=null||(isFinite(ry)&&ry>1800);
+  if(roofish){
+    if(ROOF_TYPE_FACTOR[rt]!=null)t.push({name:rt+" roof",mult:ROOF_TYPE_FACTOR[rt]});
+    if(isFinite(ry)&&ry>1800){const age=Math.max(ROOF_AGE_REF_YEAR-ry,0);
+      t.push({name:"roof age "+age+" years",mult:age<=10?0.9:(age<=20?1.0:1.2)});}
+    if(OPENING_FACTOR[op]!=null)t.push({name:"opening protection: "+op,mult:OPENING_FACTOR[op]});
+  }else{
+    const y=+site.year_built;
+    if(isFinite(y)&&y>1800){
+      if(y<1995)t.push({name:"built "+y+" (pre-1995 code era)",mult:1.15});
+      else if(y>=2010)t.push({name:"built "+y+" (modern code era)",mult:0.9});
+    }
+  }
+  const raw=t.reduce((a,f)=>a*f.mult,1);
+  const clipped=Math.min(Math.max(raw,0.5),1.6);
+  if(Math.abs(clipped-raw)>1e-12)t.push({name:"clipped to the 0.5..1.6 range",mult:clipped/raw});
+  return t;
+}
+function fbBonusTrail(site,vuln){
+  if(!(vuln.fbBonus>0))return [];
+  const ffe=+site.first_floor_elev_m;
+  const fromFfe=isFinite(ffe)&&ffe>=0;
+  return [{name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:vuln.fbBonus}];
+}
+function explainPeril(site,hz,sc){
+  const la=site.latitude,lo=site.longitude;
+  const r=hzSite(site,hz,sc);
+  const H=HAZARD_BY[hz]||{label:hz,unit:""};
+  const vuln=vulnOf(site);
+  const ds=(hazardGrid&&hazardGrid.meta)?hazardGrid.meta.name:null;
+  const gmeta=(()=>{const g=gridByHazard[hz];if(!g)return null;const q=g(la,lo,sc);return (q&&q.meta)||null;})();
+  const out={hz,label:H.label,unit:H.unit,ead:r.ead||0,eadPct:r.eadPct||0,band:r.band,
+             inputs:null,factors:[],notes:[],source:null};
+  const gridSrc=()=>({kind:"grid",dataset:ds,distKm:gmeta?gmeta.dist:null});
+  if(hz==="heat"){
+    out.source=(r.indicators&&r.indicators.source==="grid")?gridSrc()
+      :{kind:"interim",detail:"latitude and coast-distance climatology, shifted by scenario warming"};
+    out.inputs={kind:"indicators",indicators:r.indicators};
+    out.notes.push("chronic peril: banded by days over 32C, costed on the Financial impact tab");
+    return out;
+  }
+  if(hz==="tc"){
+    const meta=provider()(la,lo,sc).meta||{};
+    out.source=meta.source==="grid"?{kind:"grid",dataset:ds,distKm:meta.dist}
+      :{kind:"interim",detail:"regional wind anchors, inverse-distance weighted"};
+    out.inputs={kind:"vec",vec:r.vec};
+    out.factors=windFactorTrail(site);
+    out.windMult=vuln.windMult;
+    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+V_HALF+" m/s");
+    return out;
+  }
+  if(hz==="wfire"){
+    const b=fireBurnPct(site,sc);
+    if(b.source==="grid")out.source=gridSrc();
+    else if(b.source==="interim")out.source={kind:"interim",
+      detail:String(site.wui_class||"").toLowerCase()+" WUI class: "+
+        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base burn, +"+
+        Math.round(FIRE_WARMING_UPLIFT*100)+"% per degree of warming"};
+    else out.source={kind:"none",detail:"no wildfire grid loaded and no wui_class on the site profile, so wildfire scores zero"};
+    out.inputs={kind:"burn",burnPct:r.burnPct||0};
+    out.factors=[{name:"conditional damage when a site burns",mult:FIRE_MDD}];
+    if(site.roof_class_a)out.factors.push({name:"Class A fire-rated roof",mult:0.6});
+    const dsm=+site.defensible_space_m;
+    if(isFinite(dsm)&&dsm>=30)out.factors.push({name:"defensible space "+dsm+" m",mult:0.7});
+    return out;
+  }
+  if(hz==="prain"){
+    if(gmeta&&!gmeta.outside)out.source=gridSrc();
+    else if(gmeta&&gmeta.outside)out.source={kind:"none",
+      detail:"site is "+Math.round(gmeta.dist)+" km from the nearest rainfall cell (beyond 200 km), so rainfall scores zero"};
+    else out.source={kind:"none",detail:"TC rainfall has no interim model; it stays zero until a rainfall grid is loaded"};
+    out.inputs={kind:"vec",vec:r.vec};
+    out.factors=[{name:"drainage transform: first "+PRAIN_DRAIN_MM+" mm absorbed, ponding coefficient "+PRAIN_POND_COEFF}]
+      .concat([{name:"site drainage freeboard",add:PRAIN_FB}],fbBonusTrail(site,vuln));
+    if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
+    out.notes.push("concave stage-damage on ponding depth, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
+    return out;
+  }
+  /* cflood / rflood */
+  if(gmeta&&!gmeta.outside)out.source=gridSrc();
+  else if(gmeta&&gmeta.outside)out.source={kind:"interim",
+    detail:"site is "+Math.round(gmeta.dist)+" km from the nearest grid cell (beyond 200 km); the interim model fills in"};
+  else out.source={kind:"interim",detail:hz==="cflood"?"coast-proximity surge screening":"terrain and coast-distance screening"};
+  out.inputs={kind:"vec",vec:r.vec};
+  out.factors=[{name:hz==="cflood"?"coastal freeboard baseline":"riverine freeboard baseline",add:hz==="cflood"?FB_COAST:fbRiver()}]
+    .concat(fbBonusTrail(site,vuln));
+  if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
+  out.notes.push("concave stage-damage above freeboard, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
+  return out;
+}
+
+/* ============================================================
    Financial impact layer (Phase 2)
    Turns hazard into money a CFO can read: direct asset damage, business
    interruption, and heat-driven revenue at risk, summed into an expected
@@ -1290,6 +1446,10 @@ let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
 let sortKey="ead", sortDir=-1;
 let nextId=1;
+let brandFilter="";        // map-only brand filter (session, not persisted)
+let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
+let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
+let scrubTimer=null;       // scenario scrubber playback
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -1324,6 +1484,18 @@ const INFO={
     "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
     "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
+  scrub:{t:"The scenario timeline",b:
+    "<p>The timeline steps the whole app through <b>Present, 2030, 2050, and 2080</b> under the pathway selected in the top bar (SSP2-4.5 if the top bar is on Present day). Every figure on every tab recomputes at each step: it is the same model, walked through time.</p>"+
+    "<p><b>Play</b> animates the walk so you can watch where cost concentrates and how fast it grows. Clicking a step pins the app to that future; the top-bar controls stay in sync.</p>",
+    s:"Same scenario engine as the Pathway and Horizon controls; nothing extra is modeled."},
+  trace:{t:"Tracing a number to its source",b:
+    "<p>Each row walks one peril's figure back to where it came from: the <b>data source</b> (a loaded CLIMADA grid with the distance to the nearest cell, a named interim screening model, or an honest zero when neither exists), the <b>intensities</b> at each return period, the <b>named factors</b> this building's profile applies, and the resulting expected annual damage.</p>"+
+    "<p>If a number surprises you, the trace shows which ingredient drove it. A grid supersedes the interim model per peril; a zero always says why it is zero.</p>",
+    s:"The trace reads the same functions that computed the score; it cannot diverge from them."},
+  brief:{t:"The board brief",b:
+    "<p>Builds a print-ready one-pager of the portfolio at the current scenario: headline figures, cost by peril, the most exposed sites, the trajectory to 2080, and the data provenance line, then opens your browser's print dialog. Choose <b>Save as PDF</b> to get the file.</p>"+
+    "<p>The brief states its data basis (CLIMADA grid or interim screening) and carries the same disclosure caveats as the app; nothing is computed specially for it.</p>",
+    s:"Zero-install by design: the PDF comes from the browser, no service involved."},
   interim:{t:"Where the hazard comes from",b:
     "<p>With no data loaded, the app uses a built-in <b>interim model</b>: transparent regional proxies for each peril. It is good for exploration, not for disclosure.</p>"+
     "<p>Drop a <b>CLIMADA hazard grid</b> on the Method tab to replace any peril with authoritative values. Perils not in the grid stay on the interim model. The badge in the top bar shows which source is live, per peril.</p>"+
@@ -1561,13 +1733,27 @@ function updateLegend(){
   };
   legendCtl.addTo(map);
 }
+function syncBrandFilter(rows){
+  const sel=document.getElementById("brandSel"); if(!sel)return;
+  const brands=[];rows.forEach(r=>{const b=r.brand||"Unbranded";if(brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  const key=brands.join("|");
+  if(key!==_lastBrandKey){
+    _lastBrandKey=key;
+    if(brandFilter&&brands.indexOf(brandFilter)<0)brandFilter="";
+    sel.innerHTML='<option value="">All brands</option>'+brands.map(b=>'<option value="'+esc(b)+'">'+esc(b)+'</option>').join("");
+    sel.value=brandFilter;
+  }
+}
 function drawMarkers(scored){
+  syncBrandFilter(scored.rows);
   if(!mapOk)return;
   markers.forEach(m=>map.removeLayer(m));markers=[];
-  if(!scored.rows.length){_lastFitKey="";updateLegend();return;}
+  const rows=brandFilter?scored.rows.filter(r=>(r.brand||"Unbranded")===brandFilter):scored.rows;
+  if(!rows.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
-  const maxV=Math.max.apply(null,scored.rows.map(r=>r.asset_value_usd))||1;
-  scored.rows.forEach(r=>{
+  const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  rows.forEach(r=>{
     const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
     const m=L.circleMarker([r.latitude,r.longitude],{
       radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
@@ -1575,13 +1761,14 @@ function drawMarkers(scored){
     const metric=heat
       ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
       : fmt$(r.ead)+"/yr &middot; "+r.eadPct.toFixed(2)+"%";
-    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>");
+    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>"+
+      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+r.id)+")'>Open scorecard</button>");
     m.on("click",()=>{ selectedId=r.id; switchTab("sites"); renderSites(); });
     markers.push(m);
   });
   updateLegend();
   // only re-frame the map when the set of sites changes, not on every recompute
-  const key=scored.rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
+  const key=rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
   if(key!==_lastFitKey){ try{ map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25)); }catch(e){} _lastFitKey=key; }
 }
 
@@ -1638,6 +1825,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderScrub();
   renderSites();
   renderAdaptation();
   renderScenarios();
@@ -2188,6 +2376,7 @@ function renderScorecard(s){
       '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
       (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
       '</tbody></table></div>'+
+    traceSection(s)+
     '<div class="panel" style="margin-bottom:4px;border-left:3px solid var(--primary)"><div style="font-size:14px;line-height:1.6">'+scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway)+'</div></div>';
 }
 function scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway){
@@ -2406,6 +2595,137 @@ function renderResultsPack(){
   el.innerHTML=h;
 }
 
+
+/* ============================================================
+   Phase C2 experience layer: scenario scrubber, score tracing,
+   board brief. Render-only: every figure on these surfaces comes
+   from the same functions the parity suite pins.
+   ============================================================ */
+function scrubSteps(){
+  const p=currentPathway();
+  return [{label:"Present",sc:"present"}].concat(HORIZONS.map(h=>({label:String(h),sc:p+"_"+h})));
+}
+function scrubIndex(){
+  const st=scrubSteps();
+  for(let i=0;i<st.length;i++)if(st[i].sc===scenario)return i;
+  return scenario==="present"?0:-1;
+}
+function scrubTo(i){
+  const st=scrubSteps()[i]; if(!st)return;
+  scenario=st.sc; persist(); if(scenHook)scenHook(); render();
+}
+function stopScrub(){
+  if(scrubTimer){clearInterval(scrubTimer);scrubTimer=null;}
+  const b=document.getElementById("scrubPlay"); if(b)b.textContent="Play";
+}
+function playScrub(){
+  if(scrubTimer){stopScrub();return;}
+  const b=document.getElementById("scrubPlay"); if(b)b.textContent="Stop";
+  let i=0; scrubTo(0);
+  scrubTimer=setInterval(()=>{i++;
+    if(i>=scrubSteps().length){stopScrub();return;}
+    scrubTo(i);
+  },1500);
+}
+function renderScrub(){
+  const host=document.getElementById("scrubSteps"); if(!host)return;
+  const idx=scrubIndex(), p=currentPathway();
+  const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
+  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'">'+esc(st.label)+'</button>').join("");
+  host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
+}
+
+/* ---- score tracing (scorecard) ---- */
+function fmtVecLine(ex){
+  if(ex.inputs.kind==="indicators"){const d=ex.inputs.indicators||{};
+    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C, "+d.cdd+" cooling degree days";}
+  if(ex.inputs.kind==="burn")return (+ex.inputs.burnPct).toFixed(2)+" % annual burn probability";
+  const v=ex.inputs.vec||{};
+  return RPS.map(rp=>"1-in-"+rp+": "+(+v[rp]||0).toFixed(ex.hz==="tc"?0:2)).join(" \u00b7 ")+" "+ex.unit;
+}
+function fmtFactor(f){
+  if(f.mult!=null)return esc(f.name)+" \u00d7"+f.mult.toFixed(2);
+  if(f.add!=null)return esc(f.name)+" +"+f.add.toFixed(1)+" m freeboard";
+  if(f.cap!=null)return esc(f.name)+": damage capped at "+Math.round(f.cap*100)+"% of value";
+  return esc(f.name);
+}
+function traceSection(s){
+  const rows=ACUTE.concat(["heat"]).map(hz=>{
+    const ex=explainPeril(s,hz,scenario);
+    const src=ex.source||{};
+    const srcTxt=src.kind==="grid"?("CLIMADA grid"+(src.distKm!=null?", cell "+(+src.distKm).toFixed(1)+" km":"")):
+                 src.kind==="interim"?"interim model":"no data, scores zero";
+    const head=hz==="heat"
+      ?((ex.inputs.indicators?ex.inputs.indicators.daysOver32+" days over 32C":"")+" ("+ex.band+")")
+      :(fmt$(ex.ead)+"/yr ("+ex.band+")");
+    const det=
+      '<div class="kv" style="margin-top:6px">'+
+      '<span class="k">Source</span><span class="v">'+(src.kind==="grid"
+        ?("CLIMADA grid"+(src.dataset?" \u00b7 "+esc(src.dataset):"")+(src.distKm!=null?" \u00b7 nearest cell "+(+src.distKm).toFixed(1)+" km":""))
+        :esc(src.detail||srcTxt))+'</span>'+
+      '<span class="k">Intensity</span><span class="v mono">'+esc(fmtVecLine(ex))+'</span>'+
+      (ex.factors.length?'<span class="k">Profile factors</span><span class="v">'+ex.factors.map(fmtFactor).join("<br>")+
+        (ex.windMult!=null?'<br><b>combined wind multiplier \u00d7'+ex.windMult.toFixed(2)+'</b>':'')+'</span>':'')+
+      (ex.notes.length?'<span class="k">Model</span><span class="v">'+ex.notes.map(esc).join("<br>")+'</span>':'')+
+      '</div>';
+    return '<details class="trace"><summary><b>'+esc(ex.label)+'</b> \u00b7 '+esc(srcTxt)+' \u00b7 '+head+'</summary>'+det+'</details>';
+  }).join("");
+  return '<div class="panel" style="margin-bottom:14px"><h3>Why these numbers '+infoBtn("trace")+'</h3>'+
+    '<div class="hint">Every figure traced to its data source, its intensities, and the factors this building applies.</div>'+rows+'</div>';
+}
+
+/* ---- board brief (print to PDF, zero dependencies) ---- */
+function briefHtml(){
+  if(!sites.length)return "";
+  const sc=scenario, f=finPortfolio(sites,sc), agg=aggregatePortfolio(sites,sc), u=uncRange(sites,sc);
+  const p=currentPathway();
+  const futureSc=(sc!=="present")?sc:(p+"_2050");
+  const pf=finPortfolio(sites,"present"), ff=finPortfolio(sites,futureSc);
+  const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat",wfire:"Wildfire",prain:"TC rainfall"};
+  const perils=Object.keys(agg.byPeril).map(k=>[perilName[k]||k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
+  const top=agg.perSite.slice().sort((a,b)=>b.total-a.total).slice(0,6);
+  const traj=[["Present","present"],[PATHWAY_LABEL[p]+" 2050",p+"_2050"],[PATHWAY_LABEL[p]+" 2080",p+"_2080"]]
+    .map(([lab,k])=>[lab,finPortfolio(sites,k).totalAal]);
+  const auth=perilAuthority(); const nLive=auth.filter(a=>a.live).length;
+  const pk=resultsPack&&resultsPack.data;
+  const dt=new Date().toISOString().slice(0,10);
+  const kpi=(l,v,foot)=>'<div class="bk"><div class="bl">'+l+'</div><div class="bv">'+v+'</div><div class="bf">'+foot+'</div></div>';
+  const tr2=(a,b)=>'<tr><td>'+a+'</td><td class="num mono">'+b+'</td></tr>';
+  return '<div class="briefpage">'+
+    '<div class="bhead"><div class="bkicker">Travel + Leisure Co. \u00b7 Resort Portfolio Risk-to-Value</div>'+
+    '<h1>Portfolio climate risk brief</h1>'+
+    '<div class="bmeta">'+esc(SCEN_LABEL[sc]||sc)+' \u00b7 '+sites.length+' site'+(sites.length>1?"s":"")+' \u00b7 generated '+dt+'</div></div>'+
+    '<div class="bkpis">'+
+      kpi("Insured value",fmt$(f.value),"")+
+      kpi("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high))+
+      kpi("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value")+
+      kpi("Climate premium","+"+fmt$(ff.totalAal-pf.totalAal)+"/yr","by "+esc(SCEN_LABEL[futureSc]||futureSc))+
+    '</div>'+
+    '<div class="bcols"><div>'+
+      '<h2>Cost by peril</h2><table>'+perils.map(x=>tr2(esc(x[0]),fmt$(x[1])+"/yr")).join("")+'</table>'+
+      '<h2>Trajectory</h2><table>'+traj.map(x=>tr2(esc(x[0]),fmt$(x[1])+"/yr")).join("")+'</table>'+
+    '</div><div>'+
+      '<h2>Most exposed sites</h2><table>'+top.map(r=>tr2(esc(r.name),fmt$(r.total)+"/yr")).join("")+'</table>'+
+    '</div></div>'+
+    (pk&&pk.capital_plan&&pk.capital_plan.projects&&pk.capital_plan.projects.length?
+      '<h2>Top capital projects (CLIMADA appraisal)</h2><table>'+pk.capital_plan.projects.slice(0,5).map(cp=>
+        '<tr><td>'+esc(cp.site)+' \u00b7 '+esc(cp.measure)+'</td><td class="num mono">BCR '+esc(cp.bcr)+' \u00b7 '+
+        fmt$(cp.averted_direct_aal_usd)+'/yr averted \u00b7 '+fmt$(cp.cost_usd)+'</td></tr>').join("")+'</table>':'')+
+    '<div class="bprov"><b>Data basis:</b> '+(hazardGrid
+      ?("CLIMADA hazard grid ("+esc(hazardGrid.meta.name)+"), "+nLive+" of "+HAZARDS.length+" perils grid-driven; the rest use the interim screening model.")
+      :"Built-in interim screening model for every peril; load a CLIMADA grid for disclosure-grade figures.")+
+    (pk?" Results pack: "+esc(String(pk.script||"refresh_impacts.py").split(" ")[0])+", run "+esc(String(pk.generated_utc||"").slice(0,10))+".":"")+
+    " Assumptions: revenue "+Math.round(finAssume.revRatio*100)+"% of value, GOP margin "+Math.round(finAssume.gopMargin*100)+"%, reopen "+finAssume.reopenMonths+" months at total loss."+
+    " Screening and appraisal for internal planning, not audited disclosure.</div>"+
+    '</div>';
+}
+function openBrief(){
+  if(!sites.length){toast("Load sites first: the brief reports the portfolio.");return;}
+  const h=document.getElementById("briefHost"); if(!h)return;
+  h.innerHTML=briefHtml();
+  document.body.classList.add("printbrief");
+  setTimeout(()=>{try{window.print();}catch(e){}},60);
+}
 /* ============================================================
    Data intake
    ============================================================ */
@@ -2702,11 +3022,13 @@ function wire(){
     horSel.disabled=(pathSel.value==="present");
   }
   function composeScenario(){
+    stopScrub();
     scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
     horSel.disabled=(pathSel.value==="present");
     persist();render();
   }
   syncScenControls();
+  scenHook=syncScenControls;   // lets the scenario scrubber keep the top bar in sync
   hazSel.onchange=e=>{activeHazard=e.target.value;persist();render();};
   pathSel.onchange=composeScenario;
   horSel.onchange=composeScenario;
@@ -2715,6 +3037,10 @@ function wire(){
   document.getElementById("sampleBtn3").onclick=loadSample;
   document.getElementById("sampleBtn4").onclick=loadSample;
   document.getElementById("exportBtn").onclick=exportCsv;
+  document.getElementById("briefBtn").onclick=openBrief;
+  window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
+  document.getElementById("scrubPlay").onclick=playScrub;
+  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort
