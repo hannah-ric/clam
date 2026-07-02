@@ -277,6 +277,31 @@ assert(Math.abs(adaptedFinSite(wui,"present",{}).totalAal-fireBase.totalAal)<1e-
   "adaptedFinSite with no mods stays self-consistent across six perils");
 gridByHazard={};clearHazCache();
 
+/* ---------------- v1.13: six-peril coherence ---------------- */
+assert(INFO.wfire&&INFO.wfire.b.indexOf("burn probability")>=0
+  &&INFO.wfire.b.indexOf("Honest limit")>=0,
+  "wildfire INFO popover exists and states the fire-tail limit");
+assert(INFO.prain&&INFO.prain.b.indexOf("no interim model")>=0,
+  "rainfall INFO popover exists and states the no-interim design");
+loadSiteCsv("name,latitude,longitude,asset_value_usd,wui_class,defensible_space_m,roof_class_a\\n"+
+            "Ridge,34.0,-116.5,50000000,intermix,10,true","sites.csv");
+assert(sites.length===1&&sites[0].wui_class==="intermix"
+  &&sites[0].defensible_space_m===10&&sites[0].roof_class_a===true,
+  "site CSV ingests the wildfire profile fields");
+gridByHazard={};clearHazCache();
+assert(hzSite(sites[0],"wfire","present").ead>0,
+  "an ingested WUI site reaches the wildfire interim model end to end");
+goodPack.scenarios.present.portfolio.by_peril_aal_usd.prain=120000;
+goodPack.scenarios.present.portfolio.by_peril_aal_usd.wfire=80000;
+resultsPack=null;
+loadResultsPack(JSON.stringify(goodPack),"results_pack.json");
+scenario="present";
+renderResultsPack();
+assert(panel.innerHTML.indexOf("prain")>=0&&panel.innerHTML.indexOf("wfire")>=0,
+  "pack by-peril row shows every peril the pack carries");
+assert(panel.innerHTML.indexOf("await")<0,
+  "the stale wildfire caveat is gone from the pack panel");
+
 persistPack();
 resultsPack=null;
 restore();

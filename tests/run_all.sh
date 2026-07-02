@@ -8,7 +8,7 @@
 #   1. contract tests        (three suites, pure pandas/numpy)
 #   2. simulations           (two end-to-end runs with CLIMADA mocked,
 #                             both validators' accept and reject gates)
-#   3. frontend functional   (31 assertions against the v1.7 app, needs node)
+#   3. frontend functional   (assertions against the deployable app, needs node)
 #   4. app lineage           (v1.5 -> patcher -> v1.6 -> patcher -> v1.7 must
 #                             reproduce the committed files byte for byte)
 #   5. style guard           (no em dashes outside the frozen lineage files)
@@ -24,6 +24,7 @@ PYTHONPATH=pipeline python3 tests/test_phase23_ops.py
 python3 tests/test_impactops.py
 python3 tests/test_profileops.py
 python3 tests/test_catalogops.py
+python3 tests/test_warming_parity.py
 
 echo
 echo "== 2  pipeline + results-pack simulations ==========================="
@@ -40,8 +41,8 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_badfire_grid.csv
 
 echo
-echo "== 3  frontend functional tests (v1.12 surface) ====================="
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v112.html
+echo "== 3  frontend functional tests (v1.13 surface) ====================="
+python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v113.html
 
 echo
 echo "== 4  app lineage reproducibility ==================================="
@@ -68,6 +69,9 @@ echo "ok  regenerated v1.11 is byte-identical to the committed v1.11"
 python3 app/patch_frontend_p9.py "$TMP/v111.html" "$TMP/v112.html"
 cmp "$TMP/v112.html" app/TNL_Resort_Climate_Risk_Explorer_v112.html
 echo "ok  regenerated v1.12 is byte-identical to the committed v1.12"
+python3 app/patch_frontend_p10.py "$TMP/v112.html" "$TMP/v113.html"
+cmp "$TMP/v113.html" app/TNL_Resort_Climate_Risk_Explorer_v113.html
+echo "ok  regenerated v1.13 is byte-identical to the committed v1.13"
 
 echo
 echo "== 5  style guard ===================================================="

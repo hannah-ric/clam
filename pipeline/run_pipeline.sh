@@ -25,9 +25,10 @@
 set -euo pipefail
 
 ENV_NAME="climada_env"
-FAST=0; PREFLIGHT=0; NO_HEAT=0; DRY=0
+FAST=0; PREFLIGHT=0; NO_HEAT=0; DRY=0; FIRE=0; RAIN=0
 for a in "$@"; do case "$a" in
   --fast) FAST=1;; --preflight) PREFLIGHT=1;; --no-heat) NO_HEAT=1;; --dry-run) DRY=1;;
+  --fire) FIRE=1;; --rain) RAIN=1;;
   *) echo "Unknown flag: $a"; exit 2;;
 esac; done
 
@@ -64,6 +65,7 @@ else
 fi
 
 # --- 2. heat layer ------------------------------------------------------------
+MERGE_IN="hazard_grid.csv"
 if [ "$NO_HEAT" -eq 0 ]; then
   echo; echo "== STEP 2  Heat layer (CPC climatology + AR6 deltas) ================"
   if [ "$FAST" -eq 1 ]; then
@@ -71,10 +73,30 @@ if [ "$NO_HEAT" -eq 0 ]; then
   else
     run python refresh_heat.py
   fi
-  echo; echo "== STEP 3  Merge into the single app-ready file ====================="
-  run python merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
+  MERGE_IN="$MERGE_IN heat_grid.csv"
 else
-  echo; echo "== STEP 2-3  Heat layer skipped (--no-heat) ========================="
+  echo; echo "== STEP 2  Heat layer skipped (--no-heat) ==========================="
+fi
+
+# --- 2b. optional fifth and sixth perils (opt-in: --fire, --rain) --------------
+if [ "$FIRE" -eq 1 ]; then
+  echo; echo "== STEP 2b  Wildfire layer (Petals WildFire burn probability) ======="
+  run python refresh_wildfire.py
+  MERGE_IN="$MERGE_IN wfire_grid.csv"
+fi
+if [ "$RAIN" -eq 1 ]; then
+  echo; echo "== STEP 2c  TC rainfall layer (Petals TCRain, mm at RPs) ============"
+  run python refresh_prain.py
+  MERGE_IN="$MERGE_IN prain_grid.csv"
+fi
+
+# --- 3. merge everything into the single app-ready file -------------------------
+if [ "$MERGE_IN" != "hazard_grid.csv" ]; then
+  echo; echo "== STEP 3  Merge into the single app-ready file ====================="
+  # shellcheck disable=SC2086
+  run python merge_grids.py $MERGE_IN -o hazard_grid.csv
+else
+  echo; echo "== STEP 3  Nothing to merge (single producer this run) =============="
 fi
 
 # --- 4. acceptance gate --------------------------------------------------------
@@ -86,7 +108,7 @@ echo "=============================================================="
 echo "PIPELINE COMPLETE. Ship these TWO files to the app:"
 echo "    hazard_grid.csv"
 echo "    hazard_grid_meta.json"
-echo "Open TNL_Resort_Climate_Risk_Explorer_v17.html, go to the Method"
+echo "Open the deployable app (highest version in app/), go to the Method"
 echo "tab, and drop BOTH files on the hazard zone (together is fine)."
 echo "Then commit both files plus this run's log to the repo as the"
 echo "provenance record for the quarter."

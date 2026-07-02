@@ -313,7 +313,8 @@ Risks and mitigations:
 - Data API drift: keep the candidate-fallback pattern and `list_datasets.py`; record
   matched properties in the meta sidecar.
 - unsequa compute cost: modest Saltelli N, `--fast` mode, parallelize when needed.
-- Frontend rewrite regression: the parity suite is the gate; v1.7 stays deployable
+- Frontend rewrite regression: the parity suite is the gate; the current
+  deployable stays deployable
   until C passes it.
 - Scope creep: A, B, C ship independently; B is the single highest-value increment.
 

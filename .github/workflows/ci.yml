@@ -7,8 +7,8 @@
 # minute and can never flake on external services.
 #
 # Gates: contract tests, pipeline simulation (validator accept/reject),
-# 31 frontend assertions against the v1.7 app, byte-for-byte app lineage
-# regeneration (v1.5 -> v1.6 -> v1.7), and the project style guard.
+# the frontend assertions against the deployable app, byte-for-byte app
+# lineage regeneration from the v1.5 patch source, and the project style guard.
 # =============================================================================
 name: CI
 

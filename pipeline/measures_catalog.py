@@ -198,25 +198,27 @@ CATALOG = [
      "note": "the legacy buffer measure, now scope-priced"},
     # -- identified, not yet priced for benefit --------------------------------
     {"key": "defensible", "name": "Defensible space (wildfire)",
-     "peril": "wildfire", "modeled": False,
+     "peril": "wildfire", "modeled": True,
+     "effect": lambda row: {"fire_mult": ri.FIRE_DEFENSIBLE},
      "applies": lambda row, ead: ((True, "") if _wui(row)
         and (_num(row.get("defensible_space_m")) or 0) < 30
         else (False, "not in the wildland-urban interface, or space adequate")),
      "cost": lambda row: _cost(row, per_key_usd=400, pct_value_fallback=0.1),
      "lifespan_years": 10, "lead_time_months": 3,
      "downtime_room_nights_per_key": 0, "premium_credit_pct": 0.0,
-     "note": "appraised live in the app (v1.12 wildfire peril); "
-             "pack-side pricing awaits wfire in the results pack"},
+     "note": "priced against the wildfire event layer; the factor "
+             "mirrors the app's profile modifier"},
     {"key": "roof_class_a", "name": "Class A roof assembly (wildfire)",
-     "peril": "wildfire", "modeled": False,
+     "peril": "wildfire", "modeled": True,
+     "effect": lambda row: {"fire_mult": ri.FIRE_ROOF_A},
      "applies": lambda row, ead: ((True, "") if _wui(row)
         and not bool(row.get("roof_class_a"))
         else (False, "not in the wildland-urban interface, or already Class A")),
      "cost": lambda row: _cost(row, per_key_usd=3000, pct_value_fallback=0.8),
      "lifespan_years": 40, "lead_time_months": 9,
      "downtime_room_nights_per_key": 2, "premium_credit_pct": 0.0,
-     "note": "appraised live in the app (v1.12 wildfire peril); "
-             "pack-side pricing awaits wfire in the results pack"},
+     "note": "priced against the wildfire event layer; the factor "
+             "mirrors the app's profile modifier"},
     {"key": "backup_power", "name": "Backup power (full-site generation)",
      "peril": "continuity", "modeled": False,
      "applies": lambda row, ead: ((True, "") if
@@ -239,7 +241,7 @@ def catalog_effects(sites_df, ead_by_peril, measure):
     mask = np.zeros(n, dtype=bool)
     reasons = []
     knobs = {"wind_dmg_mult": np.ones(n), "fb_bonus": np.zeros(n),
-             "cf_depth_red": np.zeros(n),
+             "cf_depth_red": np.zeros(n), "fire_mult": np.ones(n),
              "flood_cap": np.full(n, np.nan)}       # nan = keep site's own cap
     costs = np.zeros(n)
     for i, (_, row) in enumerate(sites_df.iterrows()):

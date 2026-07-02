@@ -3,10 +3,12 @@
 [![CI](https://github.com/hannah-ric/clam/actions/workflows/ci.yml/badge.svg)](https://github.com/hannah-ric/clam/actions/workflows/ci.yml)
 
 A physical-climate-risk platform for a resort portfolio (US CONUS + Hawaii, Puerto Rico,
-US Virgin Islands). Four perils: tropical-cyclone wind, storm surge, riverine flood, and
-heat, scored across present + SSP1-2.6 / SSP2-4.5 / SSP5-8.5 at 2030 / 2050 / 2080 and
-return periods from 10 to 500 years, with financial translation, adaptation appraisal,
-insurance layering, uncertainty screening, and an observed-loss backtest.
+US Virgin Islands). Six perils: tropical-cyclone wind, storm surge, riverine flood,
+extreme heat, wildfire, and TC rainfall, scored across present + SSP1-2.6 / SSP2-4.5 /
+SSP5-8.5 at 2030 / 2050 / 2080 and return periods from 10 to 500 years, with financial
+translation, a profile-driven measure catalog and phased capital plan, insurance
+layering with an event-set technical premium benchmark, uncertainty bands, and an
+observed-loss backtest with wind-curve calibration.
 
 Built on [CLIMADA](https://github.com/CLIMADA-project/climada_python) 6.1 and
 [CLIMADA Petals](https://github.com/CLIMADA-project/climada_petals) 6.1 (ETH Zurich).
@@ -14,18 +16,19 @@ Built on [CLIMADA](https://github.com/CLIMADA-project/climada_python) 6.1 and
 ## The whole system on one page
 
 ```
-  THE INTERNET (four independent public sources)
+  THE INTERNET (independent public sources)
   |  ETH Zurich Data API .... TC wind + river flood hazard sets
   |  Scripps (UCSD) ......... SRTM15+ elevation (one-time download)
   |  NOAA PSL ............... CPC daily temperatures (auto, cached)
   |  NASA (via CLIMADA) ..... distance-to-coast file (auto, once)
+  |  NASA FIRMS / IBTrACS ... fire history and TC tracks (via Petals)
   v
   THE PIPELINE (pipeline/, runs inside the climada_env conda environment)
   |  Headless hazard factory. Its entire product is two files:
   |      hazard_grid.csv  +  hazard_grid_meta.json
   |  gated by validate_grid.py (ship only on exit 0)
   v
-  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v17.html)
+  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v112.html, the deployable)
   |  Opened by double-click, runs entirely offline. Holds all
   |  vulnerability, financial, adaptation, and insurance logic.
   |  The CSV + JSON pair dropped on its Method tab is the only bridge.
@@ -60,16 +63,8 @@ the scripts reference each other by bare name, so run them from that directory):
 
 ```bash
 cd pipeline
-bash run_pipeline.sh                # full run; --fast / --preflight / --no-heat / --dry-run
-```
-
-Two optional producers add the fifth and sixth perils (run them before the
-merge, then merge their CSVs in like the heat layer):
-
-```bash
-python refresh_wildfire.py      # wfire: annual burn probability (Petals WildFire)
-python refresh_prain.py         # prain: TC rainfall mm at return periods (TCRain)
-python merge_grids.py hazard_grid.csv wfire_grid.csv prain_grid.csv -o hazard_grid.csv
+bash run_pipeline.sh                # --fast / --preflight / --no-heat / --dry-run
+bash run_pipeline.sh --fire --rain  # opt in the wildfire and TC-rainfall layers
 ```
 
 Migration safety: without these layers (and without wui_class profile data),
@@ -88,7 +83,8 @@ python validate_grid.py hazard_grid.csv hazard_grid_meta.json
 ```
 
 Then open the app and drop both `hazard_grid.csv` and `hazard_grid_meta.json` onto the
-hazard zone on the Method & data tab. The badge should read "CLIMADA x 4/4 perils".
+hazard zone on the Method & data tab. The badge counts every grid-fed peril
+(n/6); gray chips mean that peril awaits data, by design.
 
 The results pack (Phase 5, step 1) runs the impact math over the full event sets and
 ships per-site expected annual damage, the joint portfolio loss-exceedance curve, a
@@ -100,7 +96,7 @@ python refresh_impacts.py --sites sites.csv     # schema: sites_template.csv
 python validate_pack.py results_pack.json results_pack_meta.json
 ```
 
-Drop `results_pack.json` onto the app's hazard zone (v1.8) alongside the grid
+Drop `results_pack.json` onto the app's hazard zone alongside the grid
 and sidecar: the Method tab gains a pack panel showing the event-set figures
 beside the live model's. Add `--backtest backtest.csv` (columns: name,
 observed_annual_loss_usd) to fit the wind curve's v_half to observed losses;
@@ -133,13 +129,13 @@ lifecycle BCR over min(lifespan, horizon), refurbishment-cycle phasing via
 `renovation_year` (shared mobilization discounts the cost), and an annual
 budget lens: `python refresh_impacts.py --sites sites.csv --budget 5000000`
 phases funded projects into years 1..3 and marks the rest deferred, never
-dropped. Wildfire and continuity measures the pipeline cannot yet price are
-still identified per site in the pack.
+dropped. Wildfire measures price against the wildfire event layer; continuity
+measures (appraised in the app's financial model) stay identified per site.
 
 ## Repository layout
 
 ```
-app/        the browser application (v1.7, self-contained HTML)
+app/        the browser application (self-contained HTML; highest version wins)
 pipeline/   the hazard factory scripts and preflight/diagnostic tools
 tests/      contract tests (pure pandas/numpy, no CLIMADA needed)
 docs/       the standing documents: execution plan, runbook, novice guide,
@@ -156,10 +152,10 @@ no CLIMADA and no network:
 bash tests/run_all.sh
 ```
 
-That is: the three contract suites, the two end-to-end simulations (which
-exercise both validators' accept and reject paths), the 31 frontend assertions
-against the v1.7 app, byte-for-byte regeneration of the app lineage
-(v1.5 through both patchers to v1.7), and the project style guard.
+That is: the contract suites, the end-to-end simulations (which
+exercise the validators' accept and reject paths), the frontend assertions
+against the deployable app, byte-for-byte regeneration of the full app
+lineage from the v1.5 patch source, and the project style guard.
 
 CI runs the same script on every push and pull request
 (`.github/workflows/ci.yml`), so the badge above is the live answer to "is the
@@ -171,14 +167,13 @@ Run the gates after any code change; `test_frontend.py` after any app edit.
 
 ## App lineage
 
-`app/` carries the full patch chain, verified reproducible: the v1.5 original is the
-patch source; `patch_frontend.py` regenerates v1.6, `patch_frontend_p4.py` v1.7,
-`patch_frontend_p5.py` v1.8, and `patch_frontend_p6.py` v1.9, each byte-identical to
-the committed files. Every patcher aborts with no output if its anchors no longer
-match. The v1.9 file is the deployable; the rest is lineage. v1.9 adds, when a pack
-is loaded: the event-set technical premium benchmark in the risk layering panel (the
-number to judge renewal quotes against) and the pack's canonical capital plan, every
-(site, measure) pair ranked by benefit-cost ratio.
+`app/` carries the full patch chain, verified reproducible on every push: the v1.5
+original is the patch source, and patch_frontend.py, then _p4 through _p9, regenerate
+v1.6 through v1.12 byte-identically to the committed files. Every patcher aborts with
+no output if its anchors no longer match. The v1.12 file is the deployable; the rest
+is lineage. Recent additions by version: v1.8 results-pack intake, v1.9 renewal
+benchmark and capital plan, v1.10 building profiles, v1.11 phased catalog plan,
+v1.12 the wildfire and TC-rainfall perils.
 
 The working system is fully consolidated in this repository. Next steps are on the
 roadmap in `MASTER_PLAN.md` (Phase A: CI wiring and the one-command container).

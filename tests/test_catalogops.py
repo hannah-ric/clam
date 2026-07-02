@@ -143,7 +143,9 @@ def test_run_catalog_end_to_end():
                                     "int": np.array([[74.0, 42.0], [47.0, 32.0]])}},
             "surge": {("rcp45_2040", "ssp245_2050"): {"int": np.array([[2.2, 0.0], [0.9, 0.0]])},
                       ("rcp45_2060", "ssp245_2050"): {"int": np.array([[2.3, 0.0], [0.95, 0.0]])}},
-            "rflood": {}}
+            "rflood": {},
+            "wfire": {"freq": np.full(10, 0.02),
+                      "hits": np.array([[False, True]] * 10)}}
     sites = pd.DataFrame([
         _site(name="Wet", keys=200, stories=2, roof_type="shingle",
               roof_year=2000, opening_protection="none"),
@@ -156,17 +158,30 @@ def test_run_catalog_end_to_end():
                    for r in sites.to_dict("records")])
     fbc, fbr = np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER)
     fcap = np.full(2, ri.FLOOD_CAP_DEFAULT)
+    fvuln = np.array([ri.fire_vuln_of(r["roof_class_a"],
+                                      r["defensible_space_m"])
+                      for r in sites.to_dict("records")])
     base = {"ssp245_2050": ri.eval_scenario(prep, "ssp245_2050", vals, wm,
-                                            fbc, fbr, flood_cap=fcap)}
+                                            fbc, fbr, flood_cap=fcap,
+                                            fire_vuln=fvuln)}
     section, projects, sc = ri.run_catalog(prep, sites, vals, wm, fbc, fbr,
-                                           fcap, base)
+                                           fcap, base, fire_vuln=fvuln)
     assert sc == "ssp245_2050"
     assert "reroof" in section["modeled"]
     assert section["modeled"]["reroof"]["sites_in_scope"] == 1
     assert any(e["site"] == "Dry" and "best practice" in e["reason"]
                for e in section["modeled"]["reroof"]["excluded"])
-    assert any(i["key"] == "defensible" and i["sites"] == ["Dry"]
-               for i in section["identified"])
+    assert "defensible" in section["modeled"], \
+        "wildfire measures are now priced against the fire event layer"
+    assert section["modeled"]["defensible"]["sites_in_scope"] == 1
+    dfp = next(p for p in projects if p["measure_key"] == "defensible")
+    assert dfp["site"] == "Dry" and dfp["bcr"] > 0 \
+        and dfp["averted_direct_aal_usd"] > 0
+    fire_base = base["ssp245_2050"]["wfire"]["ead"][1]
+    assert abs(dfp["averted_direct_aal_usd"]
+               - round(float(fire_base) * (1 - ri.FIRE_DEFENSIBLE), 2)) <= 0.02, \
+        "defensible-space benefit is exactly the fire factor delta"
+    assert any(i["key"] == "backup_power" for i in section["identified"])
     assert projects and all(p["averted_direct_aal_usd"] >= 0 for p in projects)
     bcrs = [p["bcr"] for p in projects]
     assert bcrs == sorted(bcrs, reverse=True)

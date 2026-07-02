@@ -16,6 +16,8 @@ import pandas as pd
 
 import refresh_hazard as rh
 import refresh_impacts as ri
+import refresh_prain as rpn
+import refresh_wildfire as rw
 
 # ---- synthetic world: two coastal sites, one inland, near 5 centroids -------
 CEN_LAT = np.array([25.00, 25.25, 29.25, 30.00, 29.50])
@@ -79,6 +81,33 @@ def fake_compute_surge(wind_haz, slr):
     return FakeSurge(wind_haz, slr)
 
 
+FIRE_HITS = np.tile(np.array([[False, False, True]]), (40, 1))
+FIRE_HITS[::7, 1] = True                      # Dune Point burns occasionally
+
+
+class FakeFireHaz:
+    def __init__(self):
+        class C:
+            lat = np.array([25.02, 25.24, 29.49])
+            lon = np.array([-80.01, -80.02, -98.52])
+        self.centroids = C()
+        self.frequency = np.full(40, 0.004)
+        self.intensity = FIRE_HITS.astype(float) * 330.0
+
+
+RAIN_EVENTS = np.linspace(0.4, 1.9, 25)[:, None]
+
+
+class FakeRainHaz2:
+    def __init__(self):
+        class C:
+            lat = np.array([25.02, 25.24, 29.49])
+            lon = np.array([-80.01, -80.02, -98.52])
+        self.centroids = C()
+        self.frequency = np.full(25, 1 / 25.0)
+        self.intensity = RAIN_EVENTS * np.array([[600.0, 500.0, 900.0]])
+
+
 RF_MISSING = {"ssp126_2030"}
 
 def fake_fetch_river(iso3, app_key, meta):
@@ -92,6 +121,9 @@ def run():
     rh.fetch_wind = fake_fetch_wind
     rh.compute_surge = fake_compute_surge
     ri.fetch_river_flood_hazards = fake_fetch_river
+    rw.fetch_wildfire_hazard = lambda iso3: FakeFireHaz()
+    rpn.fetch_tracks = lambda iso3: object()
+    rpn.rain_hazard = lambda tracks, iso3: FakeRainHaz2()
     dem = Path("fake_dem.tiff"); dem.write_bytes(b"\0" * 16)
     rh.TOPO_PATH = dem
 
@@ -110,6 +142,8 @@ def run():
         "opening_protection": ["impact", "none", None],
         "first_floor_elev_m": [1.4, None, None],
         "equipment_elevated": [True, False, False],
+        "wui_class": [None, None, "intermix"],
+        "defensible_space_m": [None, None, 10],
     })
     sites.to_csv("sim_sites.csv", index=False)
 
@@ -159,6 +193,22 @@ def run():
         b = pack["uncertainty"][sk]["acute_aal_usd"]
         assert b["p5"] <= b["p50"] <= b["p95"]
     print("ok  adaptation appraises, uncertainty bands ordered")
+
+    # 4f. the five-peril pack: fire and rain in the event math
+    bp = pack["scenarios"]["present"]["portfolio"]["by_peril_aal_usd"]
+    assert set(bp) == {"tc", "cflood", "rflood", "prain", "wfire"}
+    assert bp["wfire"] > 0 and bp["prain"] > 0
+    ps = {x["name"]: x for x in pack["scenarios"]["present"]["per_site"]}
+    assert ps["River Bend"]["by_peril"]["wfire"] > 0   # always in the fire set
+    assert ps["Dune Point"]["by_peril"]["wfire"] > 0   # occasional-burn site
+    assert ps["Reef Bay"]["by_peril"]["wfire"] == 0    # never burns in the set
+    fut = pack["scenarios"]["ssp585_2080"]["portfolio"]["by_peril_aal_usd"]
+    assert fut["wfire"] > bp["wfire"], "fire frequency scales with warming"
+    assert fut["prain"] > bp["prain"], "rainfall scales with warming"
+    assert any(p["measure_key"] == "defensible"
+               for p in pack["capital_plan"]["projects"]), \
+        "wildfire measures now price into the capital plan"
+    print("ok  five-peril pack: fire and rain event math, plan prices wildfire")
 
     # 5a2. capital plan: present, ranked, and gated
     plan = pack.get("capital_plan")
