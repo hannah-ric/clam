@@ -34,3 +34,10 @@ sites_enriched*.csv
 sites_enriched*_meta.json
 _tmp_*.csv
 _tmp_*_meta.json
+sim_wfire_grid*
+sim_prain_grid*
+sim_tc_base.csv
+sim_sixperil_grid.csv
+sim_badfire_grid.csv
+wfire_grid*
+prain_grid*

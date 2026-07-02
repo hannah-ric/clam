@@ -73,7 +73,7 @@ renderHazProv();
 const badge=document.getElementById("hazBadge"),htext=document.getElementById("hazText");
 const prov=document.getElementById("hazProv"),note=document.getElementById("hazNote");
 assert(badge.classList.contains("authoritative"),"badge turns authoritative with a grid");
-assert(htext.textContent.indexOf("3/4")>=0,"badge counts live perils (tc, rflood, heat = 3/4)");
+assert(htext.textContent.indexOf("3/6")>=0,"badge counts live perils (tc, rflood, heat = 3/6)");
 assert(prov.innerHTML.indexOf("hazard_grid_meta.json")>=0,"panel invites the sidecar when absent");
 assert(note.textContent.indexOf("coastal flood")>=0&&note.textContent.indexOf("Still on the interim model")>=0,
   "hazNote narrows the caveat peril by peril");
@@ -115,7 +115,7 @@ const partialRows=rows.concat([{lat:25.0,lon:-80.0,scenario:"present",hazard:"cf
 loadHazardMeta(JSON.stringify(goodMeta),"hazard_grid_meta.json");
 loadHazardCsv(csvOf(partialRows),"hazard_grid.csv");
 renderHazProv();
-assert(htext.textContent.indexOf("4/4")>=0,"cflood now live: badge reads 4/4");
+assert(htext.textContent.indexOf("4/6")>=0,"cflood now live: badge reads 4/6");
 assert(note.textContent.indexOf("Partial scenario coverage")>=0&&note.textContent.indexOf("coastal flood")>=0,
   "present-only cflood is flagged as partial, not hidden");
 
@@ -227,6 +227,55 @@ assert(vulnOf({first_floor_elev_m:9.0}).fbBonus===3.0,"vulnOf v2: first-floor sa
 assert(vulnOf({equipment_elevated:true}).floodCap===0.5,"vulnOf v2: elevated equipment caps flood MDD at 0.5");
 assert(Math.abs(floodMdd(6.0,1.1)-0.75)<1e-12&&floodMdd(6.0,1.1,0.5)===0.5,
   "floodMdd: cap parameter binds in deep water, default unchanged");
+
+/* ---------------- v1.12: six perils, migration safety first ---------------- */
+gridByHazard={};clearHazCache();
+const plain={id:9,name:"Plain",latitude:29.5,longitude:-98.5,asset_value_usd:50000000};
+assert(hzSite(plain,"wfire","present").ead===0,
+  "MIGRATION SAFETY: wildfire scores zero without a grid or wui_class");
+assert(hzSite(plain,"prain","present").ead===0,
+  "MIGRATION SAFETY: rainfall scores zero without a grid (no interim model)");
+const wui={id:10,name:"Ridge",latitude:34.0,longitude:-116.5,asset_value_usd:50000000,wui_class:"intermix"};
+const wf0=hzSite(wui,"wfire","present");
+assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_MDD)<1e-6,
+  "wildfire interim: WUI class drives burn probability (0.6%/yr intermix)");
+const wf85=hzSite(wui,"wfire","ssp585_2080");
+assert(Math.abs(wf85.ead-wf0.ead*(1+FIRE_WARMING_UPLIFT*3.6))<1e-3,
+  "wildfire interim scales with warming per scenario");
+const hard1={...wui,roof_class_a:true,defensible_space_m:40};
+assert(Math.abs(hzSite(hard1,"wfire","present").ead-wf0.ead*0.6*0.7)<1e-6,
+  "wildfire profile fields (Class A roof, defensible space) cut the loss");
+
+const sixRows=[];
+for(const sc of SCEN_KEYS){
+  sixRows.push({lat:34.0,lon:-116.5,scenario:sc,hazard:"wfire",
+    v10:+(1.2*(1+FIRE_WARMING_UPLIFT*(WARMING[sc]||0))).toFixed(3),v25:0,v50:0,v100:0,v250:0,v500:0});
+  sixRows.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"prain",
+    v10:200,v25:350,v50:550,v100:800,v250:1200,v500:1600});
+}
+buildGridsFromRows(sixRows);
+const wfg=hzSite(wui,"wfire","present");
+assert(wfg.fireSource==="grid"&&Math.abs(wfg.burnPct-1.2)<1e-9,
+  "wildfire grid supersedes the WUI interim (grid-first)");
+const prg=hzSite(plain,"prain","present");
+assert(prg.ead>0,"rainfall grid lights the peril up");
+const d100=Math.max(0,800-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF;
+assert(Math.abs(prg.vec[100]-d100)<1e-12,
+  "rainfall converts mm to ponding depth via the documented drainage constants");
+assert(prg.curve.find(c=>c.rp===100).loss===0&&prg.curve.find(c=>c.rp===500).loss>0,
+  "drainage freeboard keeps moderate rain dry; only extreme rain ponds deep enough");
+assert(ACUTE.length===5&&ACUTE.indexOf("prain")>=0&&ACUTE.indexOf("wfire")>=0,
+  "both new perils are acute (they carry business interruption)");
+assert(HAZARDS.length===6&&siteRatings(wui,"present").wfire,
+  "six perils registered; site ratings cover wildfire");
+
+const fireBase=adaptedFinSite(wui,"present",{});
+const fireAdapted=adaptedFinSite(wui,"present",{fireMult:0.5});
+assert(fireAdapted.directEad<fireBase.directEad,
+  "the wildfire-hardening measure averts loss through adaptedFinSite");
+assert(Math.abs(adaptedFinSite(wui,"present",{}).totalAal-fireBase.totalAal)<1e-9,
+  "adaptedFinSite with no mods stays self-consistent across six perils");
+gridByHazard={};clearHazCache();
 
 persistPack();
 resultsPack=null;

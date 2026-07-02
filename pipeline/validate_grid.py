@@ -104,8 +104,9 @@ def main(path: str, meta_path: str | None = None) -> int:
         hard |= fail("grid contains ONLY the present scenario: this is the v1 "
                      "failure mode; future horizons would show no climate signal")
 
-    # D. monotonicity (water/wind layers only: heat uses indicator encoding) ---
-    dnh = df[df["hazard"] != "heat"]
+    # D. monotonicity (water/wind layers only: heat and wfire use indicator
+    #    encodings) ---------------------------------------------------------
+    dnh = df[~df["hazard"].isin(["heat", "wfire"])]
     v = dnh[VCOLS].to_numpy()
     viol = (np.diff(v, axis=1) < -0.011).any(axis=1)   # > 1 cm/0.01 m/s tolerance
     if len(v) and viol.any():
@@ -121,7 +122,7 @@ def main(path: str, meta_path: str | None = None) -> int:
     #    money-driving indicator, days over 35C, in v25) ------------------------
     print("\nClimate signal by scenario:")
     for hz in sorted(df["hazard"].unique()):
-        col = "v25" if hz == "heat" else "v100"
+        col = {"heat": "v25", "wfire": "v10"}.get(hz, "v100")
         sub = df[df["hazard"] == hz]
         means = sub.groupby("scenario")[col].mean()
         line = "  ".join(f"{k}={means[k]:.2f}" for k in APP_KEYS if k in means)
@@ -182,6 +183,30 @@ def main(path: str, meta_path: str | None = None) -> int:
                  "check the tmean units")
     else:
         warn("no heat rows: heat layer absent (app uses its latitude formula)")
+
+    # G2. wildfire sanity (v10 = annual burn probability, percent) ---------------
+    wf = df[df["hazard"] == "wfire"]
+    if len(wf):
+        print("\nwfire layer (v10 = annual burn probability, percent):")
+        print(f"  mean {wf['v10'].mean():.2f}%  max {wf['v10'].max():.2f}%")
+        if (wf["v10"] < 0).any() or (wf["v10"] > 100).any():
+            hard |= fail("wfire burn probability outside 0..100 percent")
+        if (wf[["v25", "v50", "v100", "v250", "v500"]].to_numpy() != 0).any():
+            warn("wfire rows carry nonzero v25..v500: the encoding says 0")
+        if wf["v10"].max() > 5:
+            warn("burn probability above 5%/yr somewhere: plausible only in "
+                 "extreme WUI; inspect before shipping")
+
+    # G3. rainfall sanity (mm at return periods) ----------------------------------
+    pr = df[df["hazard"] == "prain"]
+    if len(pr):
+        mx = pr[VCOLS].to_numpy().max()
+        print(f"\nprain layer: max {mx:.0f} mm at any return period")
+        if mx > 2500:
+            warn("rainfall above 2500 mm/event is implausible; check units")
+        if mx <= 0:
+            hard |= fail("prain layer has no rainfall anywhere: computation "
+                         "is wrong")
 
     # H. provenance cross-check --------------------------------------------------
     if meta_path:

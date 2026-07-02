@@ -229,9 +229,28 @@ years, deferral, synergy tags, the budget, and the identified list.
 validate_pack gates funded-project ordering, per-year budget, and per-project
 annuity reconciliation.
 
-Increment 3: wildfire hazard layer (Petals WildFire) and TCRain pluvial as
-fifth and sixth perils, with the app's HAZARDS surface extended; wildfire
-MEASURES arrive with Increment 2 keyed off wui_class ahead of the layer.
+Increment 3 (SHIPPED): wildfire and TC rainfall as the fifth and sixth perils.
+refresh_wildfire.py encodes annual burn probability (percent, indicator style
+like heat) from Petals WildFire behind a candidate-fallback seam, scenarios
+scaled by WARMING x FIRE_WARMING_UPLIFT (0.14/C). refresh_prain.py encodes
+event rainfall (mm at return periods) from TCRain over IBTrACS-derived
+synthetic tracks, scenarios by Clausius-Clapeyron (7%/C). validate_grid gained
+wfire and prain sections (burn probability bounded 0..100, indicator rows
+excluded from monotonicity, per-hazard signal columns). The v1.12 app
+(patch_frontend_p9.py, fifteen anchored edits) registers both perils
+everywhere: selector, chips (n/6), ratings, combined score, risk drivers,
+by-peril split, business interruption, scorecards, and a new
+wildfire-hardening measure in the adaptation engine. MIGRATION SAFETY is the
+design center: no wfire grid + no wui_class = zero wildfire; no prain grid =
+zero rainfall (deliberately NO interim model, rain cannot be proxied honestly
+from regional anchors), so v1.12 with no new data reproduces v1.11's numbers
+exactly, pinned by tests. Wildfire damage: value x burn probability x
+conditional damage ratio (0.6) x profile modifiers (Class A roof 0.6,
+defensible space 0.7). Rainfall damage: mm to ponding depth via documented
+drainage constants (150 mm capacity, 0.4 ponding, 0.3 m freeboard), then the
+flood curve. Remaining follow-ups: wfire/prain in the results pack's event
+math (so catalog wildfire measures price pack-side too) and run_pipeline.sh
+orchestration of the new producers.
 
 -----------------------------------------------------------------------------
 PHASE C: THE EXPERIENCE LEAP (frontend v2)

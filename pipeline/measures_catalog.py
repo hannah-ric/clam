@@ -205,7 +205,8 @@ CATALOG = [
      "cost": lambda row: _cost(row, per_key_usd=400, pct_value_fallback=0.1),
      "lifespan_years": 10, "lead_time_months": 3,
      "downtime_room_nights_per_key": 0, "premium_credit_pct": 0.0,
-     "note": "benefit awaits the wildfire hazard layer (increment 3)"},
+     "note": "appraised live in the app (v1.12 wildfire peril); "
+             "pack-side pricing awaits wfire in the results pack"},
     {"key": "roof_class_a", "name": "Class A roof assembly (wildfire)",
      "peril": "wildfire", "modeled": False,
      "applies": lambda row, ead: ((True, "") if _wui(row)
@@ -214,7 +215,8 @@ CATALOG = [
      "cost": lambda row: _cost(row, per_key_usd=3000, pct_value_fallback=0.8),
      "lifespan_years": 40, "lead_time_months": 9,
      "downtime_room_nights_per_key": 2, "premium_credit_pct": 0.0,
-     "note": "benefit awaits the wildfire hazard layer (increment 3)"},
+     "note": "appraised live in the app (v1.12 wildfire peril); "
+             "pack-side pricing awaits wfire in the results pack"},
     {"key": "backup_power", "name": "Backup power (full-site generation)",
      "peril": "continuity", "modeled": False,
      "applies": lambda row, ead: ((True, "") if

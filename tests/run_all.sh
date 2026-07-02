@@ -29,15 +29,19 @@ echo
 echo "== 2  pipeline + results-pack simulations ==========================="
 ( cd pipeline && PYTHONPATH=. python3 ../tests/test_pipeline_sim.py )
 ( cd pipeline && PYTHONPATH=. python3 ../tests/test_impacts_sim.py )
+( cd pipeline && PYTHONPATH=. python3 ../tests/test_newperils.py )
 rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_heat_grid.csv pipeline/sim_heat_grid_meta.json \
       pipeline/sim_ghost_meta.json pipeline/sim_v1_grid.csv pipeline/fake_dem.tiff \
       pipeline/sim_sites.csv pipeline/sim_results_pack*.json \
-      pipeline/sim_pack_*.json pipeline/sim_backtest.csv
+      pipeline/sim_pack_*.json pipeline/sim_backtest.csv \
+      pipeline/sim_wfire_grid* pipeline/sim_prain_grid* \
+      pipeline/sim_tc_base.csv pipeline/sim_sixperil_grid.csv \
+      pipeline/sim_badfire_grid.csv
 
 echo
-echo "== 3  frontend functional tests (v1.11 surface) ====================="
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v111.html
+echo "== 3  frontend functional tests (v1.12 surface) ====================="
+python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v112.html
 
 echo
 echo "== 4  app lineage reproducibility ==================================="
@@ -61,6 +65,9 @@ echo "ok  regenerated v1.10 is byte-identical to the committed v1.10"
 python3 app/patch_frontend_p8.py "$TMP/v110.html" "$TMP/v111.html"
 cmp "$TMP/v111.html" app/TNL_Resort_Climate_Risk_Explorer_v111.html
 echo "ok  regenerated v1.11 is byte-identical to the committed v1.11"
+python3 app/patch_frontend_p9.py "$TMP/v111.html" "$TMP/v112.html"
+cmp "$TMP/v112.html" app/TNL_Resort_Climate_Risk_Explorer_v112.html
+echo "ok  regenerated v1.12 is byte-identical to the committed v1.12"
 
 echo
 echo "== 5  style guard ===================================================="

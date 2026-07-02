@@ -63,6 +63,20 @@ cd pipeline
 bash run_pipeline.sh                # full run; --fast / --preflight / --no-heat / --dry-run
 ```
 
+Two optional producers add the fifth and sixth perils (run them before the
+merge, then merge their CSVs in like the heat layer):
+
+```bash
+python refresh_wildfire.py      # wfire: annual burn probability (Petals WildFire)
+python refresh_prain.py         # prain: TC rainfall mm at return periods (TCRain)
+python merge_grids.py hazard_grid.csv wfire_grid.csv prain_grid.csv -o hazard_grid.csv
+```
+
+Migration safety: without these layers (and without wui_class profile data),
+the v1.12 app scores both new perils zero and every number matches the
+five-peril app exactly; the trust chips show wildfire and rainfall gray until
+data arrives. Rainfall deliberately has no interim model.
+
 Or the four steps it wraps, individually:
 
 ```bash
