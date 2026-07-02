@@ -52,9 +52,9 @@ python pipeline/check_phase1.py --smoke
 The quarterly refresh (details in `docs/RUNBOOK.md`):
 
 ```bash
-python refresh_hazard.py            # tc + cflood + rflood     (PENDING import)
-python refresh_heat.py              # heat                     (PENDING import)
-python merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv   # (PENDING)
+python pipeline/refresh_hazard.py   # tc + cflood + rflood
+python pipeline/refresh_heat.py     # heat
+python pipeline/merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
 python pipeline/validate_grid.py hazard_grid.csv hazard_grid_meta.json
 ```
 
@@ -72,30 +72,34 @@ docs/       the standing documents: execution plan, runbook, novice guide,
 MASTER_PLAN.md   the research synthesis and forward roadmap (start here)
 ```
 
+## Running the tests
+
+All four suites run without CLIMADA (the last needs node):
+
+```bash
+PYTHONPATH=pipeline python3 tests/test_gridops.py
+PYTHONPATH=pipeline python3 tests/test_phase23_ops.py
+(cd pipeline && PYTHONPATH=. python3 ../tests/test_pipeline_sim.py)
+python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v17.html
+```
+
+Run them after any code change; run `test_frontend.py` after any app edit.
+
 ## PENDING: files not yet imported
 
-This repository holds 12 of the working system's files. The remaining 12 exist in the
+This repository holds 17 of the working system's files. The remaining 7 exist in the
 operator's working folder (`rtv/`) and should be committed here verbatim, with no edits,
-before any refactor. Their contracts are pinned by the tests in `tests/`.
+before any refactor.
 
 | File | Role |
 |---|---|
-| `refresh_hazard.py` | v3 producer: wind + surge + river flood, provenance sidecar |
-| `refresh_heat.py` | heat producer: CPC climatology + AR6 warming shifts |
-| `merge_grids.py` | folds grid CSVs and their sidecars into the one shipped pair |
 | `run_pipeline.sh` | quarterly orchestrator (`--fast`, `--preflight`, `--no-heat`, `--dry-run`) |
 | `check_climada.py` | Core + Data API preflight (operator original) |
 | `diagnose_network.py` | corporate TLS fixer (operator original) |
 | `patch_frontend.py` | lineage: built v1.6 from the v1.5 app |
 | `patch_frontend_p4.py` | lineage: built v1.7 from v1.6 |
-| `test_frontend.py` | 31 functional assertions against the app (needs node) |
-| `test_pipeline_sim.py` | pipeline simulation test |
 | `TNL_Resort_Climate_Risk_Explorer_v16.html` | patch lineage |
 | `TNL_Resort_Climate_Risk_Explorer.html` (v1.5) | patch source, keep for regeneration |
-
-Until `refresh_hazard.py` and `refresh_heat.py` land, `tests/test_gridops.py` and
-`tests/test_phase23_ops.py` fail on import by design; they are the executable contracts
-those two files must satisfy.
 
 ## Where this is going
 

@@ -9,6 +9,11 @@ heat_grid.csv
 heat_grid_meta.json
 results_pack.json
 results_pack_meta.json
+sim_hazard_grid*.csv
+sim_hazard_grid*_meta.json
+sim_heat_grid*.csv
+sim_heat_grid*_meta.json
+sim_ghost_meta.json
 
 # Environments and caches
 .venv/
