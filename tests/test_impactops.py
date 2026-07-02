@@ -261,6 +261,30 @@ def test_combine_countries_padding():
     ok("combine_countries: scenario gaps pad with aligned zeros and are recorded")
 
 
+def test_vhalf_calibration_roundtrip():
+    # generate "observed" losses with a known v_half; the fit must recover it
+    wind = {"freq": np.array([0.01, 0.02, 0.005]),
+            "int": np.array([[70.0, 55.0], [45.0, 40.0], [95.0, 80.0]])}
+    values = np.array([50e6, 30e6])
+    wm = np.array([1.0, 1.15])
+    true_vh = 85.0
+    wl = ri.wind_losses(wind["int"], values, wm, v_half=true_vh)
+    observed = float(ri.site_ead(wl, wind["freq"]).sum()) + 12345.0
+    parts = [{"wind": wind, "values": values, "wind_mult": wm,
+              "flood_fixed": 12345.0}]
+    vh, modeled, clipped = ri.fit_v_half(parts, observed)
+    assert not clipped
+    assert abs(vh - true_vh) < 0.1, vh
+    assert abs(modeled - observed) / observed < 1e-6
+    # unreachable target clips at the bound instead of pretending precision
+    vh_lo, _m, clip_lo = ri.fit_v_half(parts, observed * 100)
+    assert clip_lo and vh_lo == ri.VHALF_LO
+    cal = ri.build_calibration(parts, observed, matched=2)
+    assert cal["applied"] is False and cal["fitted_v_half"] == round(true_vh, 1)
+    assert cal["portfolio_bias_obs_over_model"] is not None
+    ok("v_half calibration: round-trip recovery, bound clipping, record shape")
+
+
 def test_annuity():
     # 25 years at 3%: standard annuity factor ~17.413
     assert abs(ri.annuity(25, 0.03) - 17.4131) < 5e-4
@@ -283,5 +307,6 @@ if __name__ == "__main__":
     test_water_snap_guard()
     test_adaptation_scope_no_free_benefit()
     test_combine_countries_padding()
+    test_vhalf_calibration_roundtrip()
     test_annuity()
     print("\nALL IMPACT-OP TESTS PASSED")

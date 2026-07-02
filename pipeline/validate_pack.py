@@ -168,6 +168,23 @@ def main(path: str, meta_path: str | None = None) -> int:
     if not g_bad:
         ok("uncertainty: quantile ordering sane")
 
+    # G2. calibration (optional section) ---------------------------------------------------
+    cal = pack.get("calibration")
+    if cal:
+        if not (40.0 <= cal.get("fitted_v_half", 0) <= 150.0):
+            hard |= fail("calibration: fitted v_half outside its search bounds")
+        if cal.get("applied") is not False:
+            warn("calibration: 'applied' is not false; pack figures should "
+                 "use the published curve until adoption is deliberate")
+        if cal.get("clipped_at_bound"):
+            warn("calibration: fit clipped at a bound; observed losses are "
+                 "outside what the wind curve can reproduce, review inputs")
+        if cal.get("flag"):
+            warn(f"calibration: {cal['flag']}")
+        if not hard:
+            ok(f"calibration recorded (fitted v_half "
+               f"{cal.get('fitted_v_half')}, not applied)")
+
     # H. provenance cross-check ------------------------------------------------------------
     if meta_path:
         print(f"\nProvenance cross-check against {meta_path}:")

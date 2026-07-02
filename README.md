@@ -86,6 +86,12 @@ python refresh_impacts.py --sites sites.csv     # schema: sites_template.csv
 python validate_pack.py results_pack.json results_pack_meta.json
 ```
 
+Drop `results_pack.json` onto the app's hazard zone (v1.8) alongside the grid
+and sidecar: the Method tab gains a pack panel showing the event-set figures
+beside the live model's. Add `--backtest backtest.csv` (columns: name,
+observed_annual_loss_usd) to fit the wind curve's v_half to observed losses;
+the fit is recorded in the pack as an optional setting, never silently applied.
+
 Keep real site files out of version control (`sites.csv` is gitignored);
 `sites_template.csv` documents the schema.
 
@@ -125,10 +131,10 @@ Run the gates after any code change; `test_frontend.py` after any app edit.
 ## App lineage
 
 `app/` carries the full patch chain, verified reproducible: the v1.5 original is the
-patch source, `patch_frontend.py` regenerates v1.6 from it, and `patch_frontend_p4.py`
-regenerates v1.7 from v1.6, byte-identical to the committed files in both steps. Both
-patchers abort with no output if their anchors no longer match. The v1.7 file is the
-deployable; the rest is lineage.
+patch source; `patch_frontend.py` regenerates v1.6, `patch_frontend_p4.py` regenerates
+v1.7, and `patch_frontend_p5.py` regenerates v1.8, each byte-identical to the committed
+files. Every patcher aborts with no output if its anchors no longer match. The v1.8
+file is the deployable; the rest is lineage.
 
 The working system is fully consolidated in this repository. Next steps are on the
 roadmap in `MASTER_PLAN.md` (Phase A: CI wiring and the one-command container).

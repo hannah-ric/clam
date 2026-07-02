@@ -154,6 +154,25 @@ def run():
         assert b["p5"] <= b["p50"] <= b["p95"]
     print("ok  adaptation appraises, uncertainty bands ordered")
 
+    # 5b. backtest calibration: recorded, sane, and gated
+    pd.DataFrame({"name": ["Reef Bay", "Dune Point", "Nowhere Resort"],
+                  "observed_annual_loss_usd": [900_000, 400_000, 1]}
+                 ).to_csv("sim_backtest.csv", index=False)
+    rc_cal = ri.main(["--sites", "sim_sites.csv", "--out",
+                      "sim_results_pack_cal.json", "--mc", "60",
+                      "--seed", "42", "--backtest", "sim_backtest.csv"])
+    assert rc_cal == 0
+    cal = json.loads(Path("sim_results_pack_cal.json").read_text())["calibration"]
+    assert cal["matched_sites"] == 2, "only names present in sites count"
+    assert cal["observed_total_usd"] == 1_300_000.0
+    assert cal["applied"] is False
+    assert ri.VHALF_LO <= cal["fitted_v_half"] <= ri.VHALF_HI
+    r_cal = subprocess.run([sys.executable, "validate_pack.py",
+                            "sim_results_pack_cal.json"],
+                           capture_output=True, text=True)
+    assert r_cal.returncode == 0 and "calibration recorded" in r_cal.stdout
+    print("ok  calibration: matched sites only, recorded not applied, gated")
+
     # 6. determinism: same seed reproduces the pack byte for byte
     rc2 = ri.main(["--sites", "sim_sites.csv", "--out", "sim_results_pack2.json",
                    "--mc", "120", "--seed", "42"])

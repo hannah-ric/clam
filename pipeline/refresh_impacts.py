@@ -118,10 +118,12 @@ UNCERTAINTY_SCENARIOS = ["present", "ssp245_2050", "ssp585_2080"]
 # Pure impact math (no CLIMADA imports: unit-tested in test_impactops.py)
 # ---------------------------------------------------------------------------
 
-def emanuel_mdd(v, dmg_mult=1.0):
-    """Mean damage ratio for wind speed v (m/s), the app's exact curve."""
+def emanuel_mdd(v, dmg_mult=1.0, v_half=V_HALF):
+    """Mean damage ratio for wind speed v (m/s), the app's exact curve.
+    v_half is exposed for the backtest calibration; the default is the
+    app's constant."""
     v = np.asarray(v, dtype=float)
-    vt = np.maximum((v - V_THRESH) / (V_HALF - V_THRESH), 0.0)
+    vt = np.maximum((v - V_THRESH) / (v_half - V_THRESH), 0.0)
     c = vt ** 3
     return np.minimum(c / (1.0 + c) * dmg_mult, 1.0)
 
@@ -267,9 +269,10 @@ def annuity(years, rate):
     return float((1.0 / (1.0 + rate) ** t).sum())
 
 
-def wind_losses(wind_int, values, wind_mult, dmg_scale=1.0, haz_mult=1.0):
+def wind_losses(wind_int, values, wind_mult, dmg_scale=1.0, haz_mult=1.0,
+                v_half=V_HALF):
     """[events x sites] direct wind losses."""
-    frac = emanuel_mdd(wind_int * haz_mult, dmg_mult=1.0)
+    frac = emanuel_mdd(wind_int * haz_mult, dmg_mult=1.0, v_half=v_half)
     frac = np.minimum(frac * wind_mult[None, :] * dmg_scale, 1.0)
     return frac * values[None, :]
 
@@ -454,6 +457,81 @@ def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
 
 
 _MC_KW = {"haz": "haz_mult", "dmg": "dmg_scale", "exp": "exp_mult"}
+
+
+# ---------------------------------------------------------------------------
+# Backtest calibration (pure): fit the wind curve's v_half so the modeled
+# present-day acute AAL over the backtested sites matches observed losses.
+# Recorded in the pack as an OPTIONAL vulnerability setting, never silently
+# applied: the pack's headline figures keep the app's published curve.
+# ---------------------------------------------------------------------------
+
+VHALF_LO, VHALF_HI = 40.0, 150.0
+
+def fit_v_half(calib_parts, observed_total, lo=VHALF_LO, hi=VHALF_HI,
+               iters=60):
+    """Bisection on v_half. calib_parts is a list of per-country dicts:
+    {"wind": {"freq", "int"} for the present source restricted to matched
+    sites, "values", "wind_mult", "flood_fixed"} where flood_fixed is the
+    matched sites' present cflood+rflood AAL (independent of v_half).
+    Modeled acute AAL is strictly decreasing in v_half, so the root is
+    unique when reachable; otherwise the bound is returned with clipped=True.
+    """
+    def modeled(vh):
+        total = 0.0
+        for p in calib_parts:
+            w = p.get("wind")
+            if w is not None and w["int"].size:
+                wl = wind_losses(w["int"], p["values"], p["wind_mult"],
+                                 v_half=vh)
+                total += float(site_ead(wl, w["freq"]).sum())
+            total += p["flood_fixed"]
+        return total
+    m_lo, m_hi = modeled(lo), modeled(hi)      # AAL(lo) >= AAL(hi)
+    if observed_total >= m_lo:
+        return lo, m_lo, True
+    if observed_total <= m_hi:
+        return hi, m_hi, True
+    a, b = lo, hi
+    for _ in range(iters):
+        mid = 0.5 * (a + b)
+        if modeled(mid) > observed_total:
+            a = mid                            # too much damage: raise v_half
+        else:
+            b = mid
+    vh = 0.5 * (a + b)
+    return vh, modeled(vh), False
+
+
+def build_calibration(calib_parts, observed_total, matched):
+    vh, modeled_at_fit, clipped = fit_v_half(calib_parts, observed_total)
+    base = None
+    for p in calib_parts:                      # bias uses the PUBLISHED curve
+        base = (base or 0.0)
+        w = p.get("wind")
+        if w is not None and w["int"].size:
+            wl = wind_losses(w["int"], p["values"], p["wind_mult"])
+            base += float(site_ead(wl, w["freq"]).sum())
+        base += p["flood_fixed"]
+    bias = round(observed_total / base, 3) if base else None
+    out = {
+        "method": "bisection on Emanuel v_half; modeled present-day acute "
+                  "AAL (wind at v_half + fixed flood) matched to observed "
+                  "annual losses over the backtested sites",
+        "matched_sites": int(matched),
+        "observed_total_usd": round(observed_total, 2),
+        "modeled_present_acute_usd": round(base, 2) if base is not None else None,
+        "portfolio_bias_obs_over_model": bias,
+        "fitted_v_half": round(vh, 1),
+        "published_v_half": V_HALF,
+        "clipped_at_bound": clipped,
+        "applied": False,
+        "note": "recorded as an optional vulnerability setting; pack figures "
+                "use the published curve",
+    }
+    if bias is not None and not 0.5 <= bias <= 2.0:
+        out["flag"] = "bias outside 0.5..2.0, review before adopting"
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +782,19 @@ def main(argv=None) -> int:
     ap.add_argument("--mc", type=int, default=300,
                     help="Monte Carlo samples (default %(default)s)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--backtest", default=None, metavar="CSV",
+                    help="observed-loss CSV (name, observed_annual_loss_usd): "
+                         "fits v_half and records it in the pack, not applied")
     args = ap.parse_args(argv)
+
+    backtest = None
+    if args.backtest:
+        backtest = pd.read_csv(args.backtest)
+        need_bt = ["name", "observed_annual_loss_usd"]
+        if any(c not in backtest.columns for c in need_bt):
+            raise SystemExit(f"{args.backtest}: needs columns {need_bt}")
+        backtest = (backtest.drop_duplicates("name")
+                    .astype({"name": str}).set_index("name"))
 
     surge_enabled = not args.no_surge
     if surge_enabled and not rh.TOPO_PATH.exists():
@@ -717,6 +807,7 @@ def main(argv=None) -> int:
     meta = {"skipped": [], "wind_sources": {}, "_countries": set()}
 
     per_country, order = [], []
+    calib_parts, matched_names = [], set()
     for iso3, sites_c in sites.groupby("country", sort=True):
         meta["_countries"].add(iso3)
         LOG.info("Country %s: %d site(s)", iso3, len(sites_c))
@@ -742,6 +833,18 @@ def main(argv=None) -> int:
                                       [k for k in UNCERTAINTY_SCENARIOS
                                        if k in scen],
                                       args.mc, args.seed)
+        if backtest is not None and "present" in scen:
+            mask = sites_c["name"].astype(str).isin(backtest.index).to_numpy()
+            if mask.any():
+                wp = prep["wind"].get("present")
+                calib_parts.append({
+                    "wind": None if wp is None else
+                        {"freq": wp["freq"], "int": wp["int"][:, mask]},
+                    "values": values[mask], "wind_mult": wm[mask],
+                    "flood_fixed": float(
+                        np.asarray(scen["present"]["cflood"]["ead"])[mask].sum()
+                        + np.asarray(scen["present"]["rflood"]["ead"])[mask].sum())})
+                matched_names.update(sites_c.loc[mask, "name"].astype(str))
         per_country.append({"scen": scen, "adaptation": adaptation,
                             "uncertainty": uncertainty, "iso3": iso3,
                             "names": list(sites_c["name"]), "values": values})
@@ -764,6 +867,21 @@ def main(argv=None) -> int:
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites)
+    if backtest is not None:
+        if calib_parts:
+            observed_total = float(
+                backtest.loc[sorted(matched_names),
+                             "observed_annual_loss_usd"].sum())
+            pack["calibration"] = build_calibration(calib_parts,
+                                                    observed_total,
+                                                    len(matched_names))
+            LOG.info("Calibration: %d matched site(s), fitted v_half %.1f "
+                     "(published %.1f)", len(matched_names),
+                     pack["calibration"]["fitted_v_half"], V_HALF)
+        else:
+            meta["skipped"].append({"layer": "calibration",
+                                    "reason": "no backtest names matched the "
+                                              "sites file"})
     Path(args.out).write_text(json.dumps(pack, indent=2))
     meta_path = Path(args.out).with_name(Path(args.out).stem + "_meta.json")
     meta_path.write_text(json.dumps(pack_meta(pack, args, meta), indent=2,

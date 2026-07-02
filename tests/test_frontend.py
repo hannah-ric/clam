@@ -126,6 +126,64 @@ assert(!badge.classList.contains("authoritative")&&htext.textContent==="Interim 
   "no grid -> interim badge restored");
 assert(prov.innerHTML.indexOf("all on the interim model")>=0,"interim panel shows gray chips line");
 
+/* ---------------- Phase 5: results pack intake, render, persistence -------- */
+const goodPack={pack_version:1,kind:"results_pack",
+  generated_utc:"2026-07-02T06:00:00+00:00",
+  script:"refresh_impacts.py v1 (Phase 5 results pack, step 1)",
+  sites:{count:3,file:"sites.csv",total_value_usd:260000000},
+  scenarios:{present:{portfolio:{direct_aal_usd:2500000,
+      by_peril_aal_usd:{tc:1600000,cflood:700000,rflood:200000},
+      ep_usd:{"10":900000,"25":2500000,"50":5500000,"100":11000000,"250":21000000,"500":30000000}},
+    per_site:[]},
+   ssp585_2080:{portfolio:{direct_aal_usd:4400000,
+      by_peril_aal_usd:{tc:2700000,cflood:1400000,rflood:300000},
+      ep_usd:{"10":1500000,"25":4100000,"50":8600000,"100":17000000,"250":31000000,"500":43000000}},
+    per_site:[]}},
+  adaptation:{},
+  uncertainty:{present:{acute_aal_usd:{p5:1900000,p50:2500000,p95:3400000,central:2500000},
+    loss_1in100_usd:{p5:8000000,p50:11000000,p95:15000000,central:11000000},drivers:[]}}};
+
+loadResultsPack("{broken","p.json");
+assert(_lastToast.indexOf("parse")>=0&&resultsPack===null,"broken pack JSON rejected, state untouched");
+loadResultsPack(JSON.stringify({kind:"results_pack",pack_version:2,scenarios:{}}),"p.json");
+assert(_lastToast.indexOf("does not look like")>=0&&resultsPack===null,"wrong pack version rejected");
+loadResultsPack(JSON.stringify(goodPack),"results_pack.json");
+assert(resultsPack&&resultsPack.data.kind==="results_pack","valid pack accepted and stored");
+
+routeHazJson(JSON.stringify(goodMeta),"hazard_grid_meta.json");
+assert(hazardMeta&&hazardMeta.data.combined===true,"dispatcher: sidecar JSON still routes to meta");
+resultsPack=null;
+routeHazJson(JSON.stringify(goodPack),"results_pack.json");
+assert(resultsPack&&resultsPack.data.pack_version===1,"dispatcher: pack JSON routes to the pack loader");
+
+scenario="present";
+sites=[{id:1,name:"T",brand:"B",latitude:25.0,longitude:-80.0,asset_value_usd:100000000}];
+renderResultsPack();
+const panel=document.getElementById("packPanel");
+assert(panel.innerHTML.indexOf("CLIMADA results pack")>=0,"pack panel renders");
+assert(panel.innerHTML.indexOf("$2.50M")>=0,"pack direct AAL shown");
+assert(panel.innerHTML.indexOf("$11.00M")>=0,"pack 1-in-100 loss shown");
+assert(panel.innerHTML.indexOf("live model:")>=0,"live-model comparison shown beside pack figures");
+assert(panel.innerHTML.indexOf("p5..p95")>=0,"uncertainty band shown");
+assert(panel.innerHTML.indexOf("results_pack.json")>=0,"pack provenance carries the file name");
+
+scenario="ssp245_2050";           // pack lacks this key: falls back, visibly
+renderResultsPack();
+assert(panel.innerHTML.indexOf("pack has no ssp245_2050")>=0,
+  "missing pack scenario falls back to present and says so");
+scenario="ssp585_2080";
+renderResultsPack();
+assert(panel.innerHTML.indexOf("$4.40M")>=0,"pack scenario rows resolve per key");
+
+persistPack();
+resultsPack=null;
+restore();
+assert(resultsPack&&resultsPack.data.scenarios.ssp585_2080,"pack restored from storage");
+
+resultsPack=null;
+renderResultsPack();
+assert(panel.innerHTML==="","no pack -> empty panel");
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

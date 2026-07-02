@@ -15,6 +15,7 @@ sim_heat_grid*.csv
 sim_heat_grid*_meta.json
 sim_ghost_meta.json
 sim_v1_grid.csv
+sim_backtest.csv
 
 # Environments and caches
 .venv/
