@@ -14,13 +14,19 @@
 # On success it prints exactly which two files to drop onto the app.
 #
 # Usage:
-#   bash run_pipeline.sh                 # full run (all countries, 20yr heat)
+#   bash run_pipeline.sh                 # standard run (wind + floods + heat)
+#   bash run_pipeline.sh --all           # FULL SIX-PERIL run: adds wildfire and
+#                                        # TC rainfall (equivalent to --fire --rain)
+#   bash run_pipeline.sh --fire          # opt in the wildfire layer only
+#   bash run_pipeline.sh --rain          # opt in the TC-rainfall layer only
 #   bash run_pipeline.sh --fast          # iteration run: VIR PRI only, 10yr heat
 #   bash run_pipeline.sh --preflight     # run the preflights first, then pipeline
 #   bash run_pipeline.sh --no-heat       # skip the heat layer this run
 #   bash run_pipeline.sh --dry-run       # print every command without executing
 #
 # Flags combine, e.g.:  bash run_pipeline.sh --preflight --fast
+# Without --all/--fire/--rain the app scores wildfire and TC rainfall zero
+# (by design) and shows their trust chips gray; see the Method tab in the app.
 # =============================================================================
 set -euo pipefail
 
@@ -28,7 +34,7 @@ ENV_NAME="climada_env"
 FAST=0; PREFLIGHT=0; NO_HEAT=0; DRY=0; FIRE=0; RAIN=0
 for a in "$@"; do case "$a" in
   --fast) FAST=1;; --preflight) PREFLIGHT=1;; --no-heat) NO_HEAT=1;; --dry-run) DRY=1;;
-  --fire) FIRE=1;; --rain) RAIN=1;;
+  --fire) FIRE=1;; --rain) RAIN=1;; --all) FIRE=1; RAIN=1;;
   *) echo "Unknown flag: $a"; exit 2;;
 esac; done
 

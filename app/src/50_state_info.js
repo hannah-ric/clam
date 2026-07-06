@@ -10,7 +10,9 @@ const SAMPLE=[
   ["WorldMark San Antonio","WorldMark",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
   ["Club Wyndham Myrtle Beach","Club Wyndham",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
   ["Margaritaville St Thomas","Margaritaville",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
-  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999}],
+  /* wui_class makes the sample demonstrate the wildfire peril out of the box:
+     Palm Springs sits against the San Jacinto wildland edge (illustrative) */
+  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999,wui_class:"interface",defensible_space_m:20}],
 ];
 let sites=[];
 let hazardGrid=null;       // {rows, meta}: the loaded grid and its summary
@@ -98,7 +100,7 @@ const INFO={
     "<p>Each shows the site's risk band for that peril at the selected scenario, so you see the whole risk profile at a glance. Colours follow the same band scale.</p>"},
   drivers:{t:"Risk drivers",b:
     "<p>Portfolio expected annual damage split by peril, so you can see what actually drives the loss rather than assuming it is wind.</p>"+
-    "<p>Heat is tracked as indicators, not dollars, so it sits outside this split until a later phase dollarises it.</p>"},
+    "<p>Heat is tracked as indicators, not damage dollars, so it sits outside this split; its cost appears as heat revenue at risk on the Financial impact tab.</p>"},
   epcurve:{t:"Loss exceedance curve",b:
     "<p>Each point is the portfolio loss at a return period. The curve rising to the right means rarer events cause larger losses.</p>"+
     "<p>Expected annual damage is the area under this curve.</p>"},
@@ -122,7 +124,7 @@ const INFO={
     "<p>It is among the least precise perils here and improves the most when a CLIMADA river-flood grid is loaded.</p>"},
   heat:{t:"Extreme heat",b:
     "<p>Reported as <b>indicators</b>, not a dollar loss: days per year over 32&deg;C and 35&deg;C, and cooling degree-days.</p>"+
-    "<p>Heat's cost to a resort is mostly business interruption and energy, which a later phase turns into dollars.</p>"},
+    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days.</p>"},
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
@@ -370,10 +372,11 @@ function epCurveSvg(rpLoss){
 }
 function barsSvg(items,valKey,labKey,color){
   const W=460,rowH=30,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
-  const lab=120;let s=svgEl(W,H);
+  const lab=140;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+10;const w=(it[valKey]/max)*(W-lab-70);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(String(it[labKey]).slice(0,20))+'</text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"/>';
+    const full=String(it[labKey]);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"><title>'+esc(full)+': '+fmt$(it[valKey])+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+13)+'" font-size="11" fill="#15202B" class="mono">'+fmt$(it[valKey])+'</text>';});
   s+="</svg>";return s;
 }
@@ -382,8 +385,9 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
   const W=460,rowH=26,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
   const lab=150;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+8;const w=(it[valKey]/max)*(W-lab-56);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(String(it[labKey]).slice(0,24))+'</text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"/>';
+    const full=String(it[labKey]);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
   s+="</svg>";return s;
 }

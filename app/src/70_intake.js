@@ -195,14 +195,20 @@ function readFiles(files,done){
 }
 /* the hazard drop zone accepts the grid CSV(s) and the JSON sidecar(s) in one
    go: JSON files route to the provenance/results-pack handlers; a single CSV
-   loads as before; multiple CSVs merge (later wins) instead of overwriting. */
+   loads as before; multiple CSVs merge (later wins) instead of overwriting.
+   A production grid takes a second or two of synchronous parsing, so say so
+   first and yield a frame to let the toast paint before the parse blocks. */
 function routeHazFiles(files){
+  const n=(files&&files.length)||0; if(!n)return;
+  toast("Reading "+n+" file"+(n>1?"s":"")+"...");
   readFiles(files,list=>{
-    const jsons=[],csvs=[];
-    list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-    if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
-    else if(csvs.length>1) loadHazardCsvMulti(csvs);
-    jsons.forEach(o=>routeHazJson(o.text,o.name));
+    setTimeout(()=>{
+      const jsons=[],csvs=[];
+      list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
+      if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
+      else if(csvs.length>1) loadHazardCsvMulti(csvs);
+      jsons.forEach(o=>routeHazJson(o.text,o.name));
+    },40);
   });
 }
 
