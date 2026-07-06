@@ -190,12 +190,12 @@ function wire(){
   const finInit={revRatio:Math.round(finAssume.revRatio*100),gop:Math.round(finAssume.gopMargin*100),reopen:finAssume.reopenMonths,heatDrop:Math.round(finAssume.heatDrop*100),corr:Math.round(finAssume.corr*100)};
   Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});
   syncFinAssume();
-  // hazard drop
+  // hazard drop: grid CSV(s) + JSON sidecar(s), loaded as one batch so multiple
+  // CSVs merge instead of the last one silently replacing the rest
   const hd=document.getElementById("hazDrop"),hf=document.getElementById("hazFile");
-  const routeHaz=f=>readFile(f,t=>{ if(/\.json$/i.test(f.name||"")||/^\s*\{/.test(t)) routeHazJson(t,f.name); else loadHazardCsv(t,f.name); });
   hd.onclick=()=>hf.click();
-  hf.onchange=()=>{ for(const f of hf.files) routeHaz(f); hf.value=""; };
-  dropZone(hd,routeHaz);
+  hf.onchange=()=>{ routeHazFiles(hf.files); hf.value=""; };
+  dropZoneMulti(hd,routeHazFiles);
   // site drop
   const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
   sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};
@@ -210,5 +210,12 @@ function dropZone(el,cb){
   el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});
   el.addEventListener("dragleave",()=>el.classList.remove("over"));
   el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("over");for(const f of e.dataTransfer.files)cb(f);});
+}
+/* like dropZone but hands the whole FileList to the callback in one call, so a
+   multi-file drop is loaded as a batch (see routeHazFiles) */
+function dropZoneMulti(el,cb){
+  el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});
+  el.addEventListener("dragleave",()=>el.classList.remove("over"));
+  el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("over");cb(e.dataTransfer.files);});
 }
 window.addEventListener("DOMContentLoaded",wire);
