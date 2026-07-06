@@ -66,6 +66,33 @@ function loadSiteCsv(text){
   sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
   toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
 }
+/* SVP review: the in-app Add/Edit form's coercion, mirroring loadSiteCsv's
+   per-field guards exactly so a typed site is validated the same way an uploaded
+   one is. Blank or invalid optional fields are omitted, so an empty advanced
+   section reproduces today's six-field behaviour. Returns null when the required
+   location or value is invalid. Pure; defined before restore() so it is testable. */
+const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
+  "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
+  "wui_class","defensible_space_m"];
+function siteRecordFromFields(raw){
+  raw=raw||{};
+  const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
+  if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0)return null;
+  const rec={name:String(raw.name||"Site").slice(0,120),brand:String(raw.brand||"").slice(0,80),
+             latitude:lat,longitude:lon,asset_value_usd:val};
+  const rv=toNum(raw.annual_revenue_usd); if(isFinite(rv)&&rv>=0)rec.annual_revenue_usd=rv;
+  const cs=String(raw.construction||"").trim().toLowerCase(); if(CONSTR_FACTOR[cs]!=null)rec.construction=cs;
+  const yb=toNum(raw.year_built); if(isFinite(yb)&&yb>1800&&yb<2100)rec.year_built=Math.round(yb);
+  if(raw.defended!==undefined&&String(raw.defended).trim()!=="")rec.defended=truthy(raw.defended);
+  const rt=String(raw.roof_type||"").trim().toLowerCase(); if(ROOF_TYPE_FACTOR[rt]!=null)rec.roof_type=rt;
+  const ry=toNum(raw.roof_year); if(isFinite(ry)&&ry>1800&&ry<2100)rec.roof_year=Math.round(ry);
+  const op=String(raw.opening_protection||"").trim().toLowerCase(); if(OPENING_FACTOR[op]!=null)rec.opening_protection=op;
+  const ffe=toNum(raw.first_floor_elev_m); if(isFinite(ffe)&&ffe>=0)rec.first_floor_elev_m=ffe;
+  if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
+  const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
+  const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  return rec;
+}
 function buildGridsFromRows(rows){
   gridByHazard={};
   const byHaz={};

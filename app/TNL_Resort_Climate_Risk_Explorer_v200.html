@@ -844,15 +844,55 @@
 </div>
 
 <div class="modal-bg" id="addModal">
-  <div class="modal">
-    <h3>Add a site</h3>
+  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+    <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="field">
+      <label>Location (search a place, or type coordinates below)</label>
+      <div class="searchwrap" style="width:100%">
+        <input type="text" id="mGeo" placeholder="Bonnet Creek, Orlando..." autocomplete="off" style="width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding-left:12px">
+        <div class="search-results" id="mGeoResults" role="listbox"></div>
+      </div>
+    </div>
     <div class="grid2" style="gap:10px">
       <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
       <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
     </div>
-    <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+      <div class="field"><label>Annual revenue (USD, optional)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
+    </div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Construction</label>
+        <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+      </div>
+      <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
+    </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
+    <details style="margin:2px 0 12px">
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--primary);font-weight:500">Advanced: sharpens the insurance view (all optional)</summary>
+      <div class="hint" style="margin:8px 0 10px">These are the documented "secondary modifiers" underwriters price on. Leave blank if unknown; blanks reproduce the basic estimate.</div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Roof type</label>
+          <select id="mRoofType"><option value="">Not specified</option><option value="shingle">Shingle</option><option value="tile">Tile</option><option value="metal">Metal</option><option value="membrane">Membrane / flat</option></select>
+        </div>
+        <div class="field"><label>Roof year</label><input type="number" id="mRoofYear" step="1" placeholder="e.g. 2018"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Opening protection</label>
+          <select id="mOpening"><option value="">Not specified</option><option value="impact">Impact-rated</option><option value="partial">Partial / shutters</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label>First-floor elevation (m)</label><input type="number" id="mFfe" step="0.1" placeholder="e.g. 1.5"></div>
+      </div>
+      <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mEquipElev" style="width:auto">Critical equipment elevated above flood level</label></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Wildfire exposure (WUI)</label>
+          <select id="mWui"><option value="">Not specified</option><option value="none">None</option><option value="interface">Interface</option><option value="intermix">Intermix</option></select>
+        </div>
+        <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
+      </div>
+    </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
       <button class="lightbtn primary" id="mAdd">Add site</button>
@@ -864,7 +904,10 @@
   <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
-      <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      <div style="display:flex;gap:8px">
+        <button class="lightbtn" id="focusEdit" aria-label="Edit this site">Edit site</button>
+        <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      </div>
     </div>
     <div id="focusBody"></div>
   </div>
@@ -1767,6 +1810,7 @@ let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is load
 let scenario="present";
 let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
+let _scorecardId=null;     // the site whose scorecard is open (for the Edit button)
 let sortKey="ead", sortDir=-1;
 let nextId=1;
 let brandFilter="";        // map-only brand filter (session, not persisted)
@@ -1878,7 +1922,8 @@ const INFO={
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
-    "<p>The site's insured or replacement value. Every dollar loss scales with it. Edit it on any site to test sensitivity.</p>"},
+    "<p>The site's insured or replacement value. Every dollar loss scales with it.</p>"+
+    "<p>Use <b>Edit site</b> (on the site detail or its scorecard) to change the value, the revenue, the construction, and the other building facts, and everything recomputes.</p>"},
   scenarios:{t:"Combined physical risk by pathway",b:
     "<p>All acute perils summed into one physical expected-annual-damage figure, compared across emissions pathways at the horizon selected in the top bar.</p>"+
     "<p><b>Band migration</b> shows how many sites move into higher bands as the climate warms.</p>"},
@@ -2597,11 +2642,11 @@ function renderDetail(r){
     ratingStrip+mid+table+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
-      '<button class="lightbtn" id="editVal">Edit value</button>'+
+      '<button class="lightbtn" id="editVal">Edit site</button>'+
       '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
     '</div>';
   document.getElementById("openCard").onclick=()=>openScorecard(r.id);
-  document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
+  document.getElementById("editVal").onclick=()=>{const s=sites.find(x=>x.id===r.id);if(s)openForm("edit",s);};
   document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
 }
 
@@ -2941,6 +2986,7 @@ function renderFinance(){
    ============================================================ */
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
+  _scorecardId=id;
   renderScorecard(s);
   document.getElementById("focusBg").classList.add("open");
 }
@@ -3428,6 +3474,33 @@ function loadSiteCsv(text){
   sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
   toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
 }
+/* SVP review: the in-app Add/Edit form's coercion, mirroring loadSiteCsv's
+   per-field guards exactly so a typed site is validated the same way an uploaded
+   one is. Blank or invalid optional fields are omitted, so an empty advanced
+   section reproduces today's six-field behaviour. Returns null when the required
+   location or value is invalid. Pure; defined before restore() so it is testable. */
+const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
+  "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
+  "wui_class","defensible_space_m"];
+function siteRecordFromFields(raw){
+  raw=raw||{};
+  const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
+  if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0)return null;
+  const rec={name:String(raw.name||"Site").slice(0,120),brand:String(raw.brand||"").slice(0,80),
+             latitude:lat,longitude:lon,asset_value_usd:val};
+  const rv=toNum(raw.annual_revenue_usd); if(isFinite(rv)&&rv>=0)rec.annual_revenue_usd=rv;
+  const cs=String(raw.construction||"").trim().toLowerCase(); if(CONSTR_FACTOR[cs]!=null)rec.construction=cs;
+  const yb=toNum(raw.year_built); if(isFinite(yb)&&yb>1800&&yb<2100)rec.year_built=Math.round(yb);
+  if(raw.defended!==undefined&&String(raw.defended).trim()!=="")rec.defended=truthy(raw.defended);
+  const rt=String(raw.roof_type||"").trim().toLowerCase(); if(ROOF_TYPE_FACTOR[rt]!=null)rec.roof_type=rt;
+  const ry=toNum(raw.roof_year); if(isFinite(ry)&&ry>1800&&ry<2100)rec.roof_year=Math.round(ry);
+  const op=String(raw.opening_protection||"").trim().toLowerCase(); if(OPENING_FACTOR[op]!=null)rec.opening_protection=op;
+  const ffe=toNum(raw.first_floor_elev_m); if(isFinite(ffe)&&ffe>=0)rec.first_floor_elev_m=ffe;
+  if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
+  const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
+  const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  return rec;
+}
 function buildGridsFromRows(rows){
   gridByHazard={};
   const byHaz={};
@@ -3612,29 +3685,59 @@ function restore(){
   }catch(e){}
 }
 
-/* ---- geocode (external; degrades quietly if blocked) ---- */
-let geoTimer=null;
-function geocode(q){
+/* ---- geocode (external; degrades quietly if blocked). geocodeInto is shared by
+   the top-bar search and the in-form search so both use one code path. ---- */
+let geoTimer=null, mGeoTimer=null;
+function geocodeInto(q,box,onPick){
   fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&q="+encodeURIComponent(q),{headers:{"Accept-Language":"en"}})
     .then(r=>r.json()).then(list=>{
-      const box=document.getElementById("geoResults");
       if(!Array.isArray(list)||!list.length){box.innerHTML='<div class="r"><small>No matches</small></div>';box.classList.add("open");return;}
-      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
+      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'" data-name="'+esc(p.display_name.split(",")[0])+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
       box.classList.add("open");
-      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{openAdd(+el.dataset.lat,+el.dataset.lon,document.getElementById("geo").value.split(",")[0]);box.classList.remove("open");document.getElementById("geo").value="";});
+      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{onPick(+el.dataset.lat,+el.dataset.lon,el.dataset.name);box.classList.remove("open");});
     }).catch(()=>toast("Search is unavailable on this network. Add sites by CSV or map click."));
 }
+function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
-/* ---- add modal ---- */
-function openAdd(lat,lon,name){
-  document.getElementById("mLat").value=lat.toFixed(4);
-  document.getElementById("mLon").value=lon.toFixed(4);
-  document.getElementById("mName").value=name||"";
-  document.getElementById("mBrand").value="";
-  document.getElementById("mVal").value=30000000;
-  document.getElementById("addModal").classList.add("open");
+/* ---- add / edit site form (SVP review) ---- */
+let _editId=null;
+function openForm(mode,site){
+  const g=id=>document.getElementById(id), s=site||{};
+  const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
+  const set=(id,v)=>{g(id).value=(v==null||(typeof v==="number"&&!isFinite(v)))?"":v;};
+  g("formTitle").textContent=(mode==="edit")?"Edit site":"Add a site";
+  g("mAdd").textContent=(mode==="edit")?"Save changes":"Add site";
+  set("mName",s.name); g("mBrand").value=s.brand||"";
+  set("mLat",(s.latitude!=null&&isFinite(+s.latitude))?(+s.latitude).toFixed(4):"");
+  set("mLon",(s.longitude!=null&&isFinite(+s.longitude))?(+s.longitude).toFixed(4):"");
+  set("mVal",s.asset_value_usd); set("mRev",s.annual_revenue_usd);
+  g("mConstr").value=s.construction||""; set("mYear",s.year_built);
+  g("mDefended").checked=!!s.defended;
+  g("mRoofType").value=s.roof_type||""; set("mRoofYear",s.roof_year);
+  g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
+  g("mEquipElev").checked=!!s.equipment_elevated;
+  g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mGeo").value=""; g("mGeoResults").classList.remove("open");
+  _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  g("addModal").classList.add("open");
 }
-function closeAdd(){document.getElementById("addModal").classList.remove("open");}
+function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
+function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function submitForm(){
+  const g=id=>document.getElementById(id);
+  const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
+    asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
+    year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
+    roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
+    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value};
+  const rec=siteRecordFromFields(raw);
+  if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
+  if(_editId!=null){
+    const s=sites.find(x=>x.id===_editId);
+    if(s){FORM_OPTIONAL_FIELDS.forEach(k=>delete s[k]);Object.assign(s,rec);clearHazCache();persist();render();toast("Site updated");}
+  }else{ clearHazCache();addSites([rec]);toast("Site added"); }
+  closeAdd();
+}
 
 /* ---- first-run orientation (SVP review) ---- */
 function closeOnboard(seen){ document.getElementById("onboardModal").classList.remove("open"); if(seen){ui.onboarded=true;persist();} }
@@ -3772,7 +3875,7 @@ function wire(){
   if(mcSel){mcSel.value=["peril","combined","dominant"].indexOf(ui.views.mapColor)>=0?ui.views.mapColor:"peril";
     mcSel.onchange=e=>{ui.views.mapColor=e.target.value;persist();render();};}
   document.getElementById("tmplBtn").onclick=downloadTemplate;
-  document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
+  document.getElementById("addSiteBtn").onclick=()=>openForm("add",{});
   // sort
   document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>th.onclick=e=>{
     if(e.target.closest(".info"))return;
@@ -3781,23 +3884,26 @@ function wire(){
   // geocode
   const geo=document.getElementById("geo");
   geo.oninput=()=>{clearTimeout(geoTimer);const q=geo.value.trim();if(q.length<3){document.getElementById("geoResults").classList.remove("open");return;}geoTimer=setTimeout(()=>geocode(q),400);};
-  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap"))document.getElementById("geoResults").classList.remove("open");});
+  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap")){document.getElementById("geoResults").classList.remove("open");document.getElementById("mGeoResults").classList.remove("open");}});
+  // in-form place search (fills the coordinate fields; keeps its own results box)
+  const mGeo=document.getElementById("mGeo");
+  if(mGeo)mGeo.oninput=()=>{clearTimeout(mGeoTimer);const q=mGeo.value.trim();if(q.length<3){document.getElementById("mGeoResults").classList.remove("open");return;}
+    mGeoTimer=setTimeout(()=>geocodeInto(q,document.getElementById("mGeoResults"),(lat,lon,name)=>{
+      document.getElementById("mLat").value=lat.toFixed(4);document.getElementById("mLon").value=lon.toFixed(4);
+      if(!document.getElementById("mName").value)document.getElementById("mName").value=name||"";mGeo.value="";}),400);};
   // modal
   document.getElementById("mCancel").onclick=closeAdd;
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
+  document.getElementById("mAdd").onclick=submitForm;
   document.getElementById("focusClose").onclick=closeScorecard;
+  const fe=document.getElementById("focusEdit");
+  if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;
   document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
   document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
-  document.getElementById("mAdd").onclick=()=>{
-    const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
-    if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
-    addSites([{name:(document.getElementById("mName").value||"New site").slice(0,120),brand:(document.getElementById("mBrand").value||"").slice(0,80),latitude:lat,longitude:lon,asset_value_usd:val}]);
-    closeAdd();toast("Site added");
-  };
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;
   document.getElementById("load").value=adapt.load;

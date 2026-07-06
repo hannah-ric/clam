@@ -23,6 +23,7 @@ let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is load
 let scenario="present";
 let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
+let _scorecardId=null;     // the site whose scorecard is open (for the Edit button)
 let sortKey="ead", sortDir=-1;
 let nextId=1;
 let brandFilter="";        // map-only brand filter (session, not persisted)
@@ -134,7 +135,8 @@ const INFO={
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
-    "<p>The site's insured or replacement value. Every dollar loss scales with it. Edit it on any site to test sensitivity.</p>"},
+    "<p>The site's insured or replacement value. Every dollar loss scales with it.</p>"+
+    "<p>Use <b>Edit site</b> (on the site detail or its scorecard) to change the value, the revenue, the construction, and the other building facts, and everything recomputes.</p>"},
   scenarios:{t:"Combined physical risk by pathway",b:
     "<p>All acute perils summed into one physical expected-annual-damage figure, compared across emissions pathways at the horizon selected in the top bar.</p>"+
     "<p><b>Band migration</b> shows how many sites move into higher bands as the climate warms.</p>"},

@@ -472,6 +472,21 @@ assert(markerFill(_rowA,"dominant","present")===HAZARD_BY[_bst].color,
   "map colour: dominant mode uses the leading peril's colour");
 assert(markerFill(_rowA,"peril","present",_rowA.band!=null?_rowA.band:hzSite(_rowA,activeHazard,"present").band)===BAND_COLOR[hzSite(_rowA,activeHazard,"present").band],
   "map colour: peril mode keeps the selected-peril band");
+/* SVP review: the Add/Edit form's coercion mirrors the CSV loader's guards */
+const _blankRec=siteRecordFromFields({name:"X",latitude:25,longitude:-80,asset_value_usd:5e7});
+assert(_blankRec&&Object.keys(_blankRec).length===5&&_blankRec.construction===undefined,
+  "site form: a blank optional section yields exactly the required fields");
+assert(siteRecordFromFields({latitude:999,longitude:0,asset_value_usd:1})===null,
+  "site form: an out-of-range latitude is rejected");
+const _fullRec=siteRecordFromFields({name:"Y",latitude:25,longitude:-80,asset_value_usd:5e7,
+  construction:"frame",year_built:"1988",roof_type:"metal",opening_protection:"impact",
+  first_floor_elev_m:"1.5",defended:true,wui_class:"interface",annual_revenue_usd:"20000000"});
+assert(_fullRec.construction==="frame"&&_fullRec.roof_type==="metal"&&_fullRec.first_floor_elev_m===1.5&&_fullRec.defended===true&&_fullRec.annual_revenue_usd===20000000,
+  "site form: valid business and advanced fields are coerced and kept");
+assert(siteRecordFromFields({name:"Z",latitude:25,longitude:-80,asset_value_usd:5e7,construction:"brick"}).construction===undefined,
+  "site form: an invalid construction value is dropped, not stored");
+assert(vulnOf(_fullRec).windMult!==vulnOf(_blankRec).windMult,
+  "site form: the advanced fields actually change the wind vulnerability");
 ui.onboarded=true;ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
 ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
 restore();

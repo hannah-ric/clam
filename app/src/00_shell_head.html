@@ -844,15 +844,55 @@
 </div>
 
 <div class="modal-bg" id="addModal">
-  <div class="modal">
-    <h3>Add a site</h3>
+  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+    <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="field">
+      <label>Location (search a place, or type coordinates below)</label>
+      <div class="searchwrap" style="width:100%">
+        <input type="text" id="mGeo" placeholder="Bonnet Creek, Orlando..." autocomplete="off" style="width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding-left:12px">
+        <div class="search-results" id="mGeoResults" role="listbox"></div>
+      </div>
+    </div>
     <div class="grid2" style="gap:10px">
       <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
       <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
     </div>
-    <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+      <div class="field"><label>Annual revenue (USD, optional)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
+    </div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Construction</label>
+        <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+      </div>
+      <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
+    </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
+    <details style="margin:2px 0 12px">
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--primary);font-weight:500">Advanced: sharpens the insurance view (all optional)</summary>
+      <div class="hint" style="margin:8px 0 10px">These are the documented "secondary modifiers" underwriters price on. Leave blank if unknown; blanks reproduce the basic estimate.</div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Roof type</label>
+          <select id="mRoofType"><option value="">Not specified</option><option value="shingle">Shingle</option><option value="tile">Tile</option><option value="metal">Metal</option><option value="membrane">Membrane / flat</option></select>
+        </div>
+        <div class="field"><label>Roof year</label><input type="number" id="mRoofYear" step="1" placeholder="e.g. 2018"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Opening protection</label>
+          <select id="mOpening"><option value="">Not specified</option><option value="impact">Impact-rated</option><option value="partial">Partial / shutters</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label>First-floor elevation (m)</label><input type="number" id="mFfe" step="0.1" placeholder="e.g. 1.5"></div>
+      </div>
+      <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mEquipElev" style="width:auto">Critical equipment elevated above flood level</label></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Wildfire exposure (WUI)</label>
+          <select id="mWui"><option value="">Not specified</option><option value="none">None</option><option value="interface">Interface</option><option value="intermix">Intermix</option></select>
+        </div>
+        <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
+      </div>
+    </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
       <button class="lightbtn primary" id="mAdd">Add site</button>
@@ -864,7 +904,10 @@
   <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
-      <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      <div style="display:flex;gap:8px">
+        <button class="lightbtn" id="focusEdit" aria-label="Edit this site">Edit site</button>
+        <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      </div>
     </div>
     <div id="focusBody"></div>
   </div>

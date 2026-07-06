@@ -367,11 +367,11 @@ function renderDetail(r){
     ratingStrip+mid+table+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
-      '<button class="lightbtn" id="editVal">Edit value</button>'+
+      '<button class="lightbtn" id="editVal">Edit site</button>'+
       '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
     '</div>';
   document.getElementById("openCard").onclick=()=>openScorecard(r.id);
-  document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
+  document.getElementById("editVal").onclick=()=>{const s=sites.find(x=>x.id===r.id);if(s)openForm("edit",s);};
   document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
 }
 
@@ -711,6 +711,7 @@ function renderFinance(){
    ============================================================ */
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
+  _scorecardId=id;
   renderScorecard(s);
   document.getElementById("focusBg").classList.add("open");
 }
