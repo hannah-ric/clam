@@ -464,16 +464,24 @@ renderQuadrant();
 const _qv=document.getElementById("riskValue").innerHTML;
 assert((_qv.match(/openScorecard\\(/g)||[]).length===sites.length,
   "risk-vs-value plots one clickable bubble per site");
+const _rowA=sites[0];
+assert(markerFill(_rowA,"combined","present")===BAND_COLOR[scorePhysTotal([_rowA],"present").rows[0].band],
+  "map colour: combined mode uses the combined band");
+let _bst=null,_bv=-1;for(const hz of ACUTE){const e=hzSite(_rowA,hz,"present").ead;if(e>_bv){_bv=e;_bst=hz;}}
+assert(markerFill(_rowA,"dominant","present")===HAZARD_BY[_bst].color,
+  "map colour: dominant mode uses the leading peril's colour");
+assert(markerFill(_rowA,"peril","present",_rowA.band!=null?_rowA.band:hzSite(_rowA,activeHazard,"present").band)===BAND_COLOR[hzSite(_rowA,activeHazard,"present").band],
+  "map colour: peril mode keeps the selected-peril band");
 ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
 restore();
 assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd",
   "ui.views lenses persist and restore");
 const stU=JSON.parse(localStorage.getItem("rtv_state_v1"));
 delete stU.ui;localStorage.setItem("rtv_state_v1",JSON.stringify(stU));
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
 restore();
-assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="band",
+assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="peril",
   "legacy saved state without ui keeps the view defaults (backward safe)");
 hazardGrid=null;gridByHazard={};clearHazCache();
 sites=savedSites;scenario="present";

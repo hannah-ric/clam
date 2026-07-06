@@ -309,6 +309,13 @@
           <option value="">All brands</option>
         </select>
       </div>
+      <div class="seg"><label class="mini-l">Map colour</label>
+        <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
+          <option value="peril">Selected peril</option>
+          <option value="combined">Combined risk</option>
+          <option value="dominant">Dominant peril</option>
+        </select>
+      </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
@@ -1750,7 +1757,7 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -1783,7 +1790,8 @@ const INFO={
   controls:{t:"Peril, pathway and horizon",b:
     "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, extreme heat, wildfire, or TC rainfall. The Overview risk-driver panel always shows all perils together.</p>"+
     "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
-    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
+    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>"+
+    "<p><b>Brand</b> filters which sites appear on the map. <b>Map colour</b> is a display lens: colour the markers by the selected peril's band, by combined all-peril risk, or by each site's dominant peril. It changes the map only, never a figure.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
   scrub:{t:"The scenario timeline",b:
     "<p>The timeline steps the whole app through <b>Present, 2030, 2050, and 2080</b> under the pathway selected in the top bar (SSP2-4.5 if the top bar is on Present day). Every figure on every tab recomputes at each step: it is the same model, walked through time.</p>"+
@@ -2051,6 +2059,15 @@ function initMap(){
   }catch(err){ showMapUnavailable(); }
 }
 const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+/* SVP review: what a map marker is coloured by (the map's "change views" lens).
+   Pure, so the node tests can pin the two new modes. "peril" keeps the legacy
+   behaviour (the selected peril's band); "combined" uses the all-perils band;
+   "dominant" uses the leading peril's own colour. */
+function markerFill(r,mode,sc,perilBand){
+  if(mode==="combined")return BAND_COLOR[scorePhysTotal([r],sc).rows[0].band];
+  if(mode==="dominant"){let best=null,bv=-1;for(const hz of ACUTE){const e=hzSite(r,hz,sc).ead;if(e>bv){bv=e;best=hz;}}return (bv>0&&best)?HAZARD_BY[best].color:BAND_COLOR.Minimal;}
+  return BAND_COLOR[perilBand!=null?perilBand:hzSite(r,activeHazard,sc).band];
+}
 let legendCtl=null;
 function updateLegend(){
   if(!mapOk)return;
@@ -2058,9 +2075,16 @@ function updateLegend(){
   legendCtl=L.control({position:"bottomright"});
   legendCtl.onAdd=function(){
     const d=L.DomUtil.create("div","maplegend");
-    const bands=["Minimal","Low","Moderate","High","Severe"];
-    d.innerHTML='<div class="lh">'+HAZARD_LABEL[activeHazard]+' rating</div>'+
-      bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    const mode=ui.views.mapColor;
+    if(mode==="dominant"){
+      d.innerHTML='<div class="lh">Dominant peril</div>'+
+        ACUTE.map(hz=>'<span class="li"><i style="background:'+HAZARD_BY[hz].color+'"></i>'+HAZARD_LABEL[hz]+'</span>').join("");
+    }else{
+      const title=(mode==="combined")?"Combined risk":(HAZARD_LABEL[activeHazard]+" rating");
+      const bands=["Minimal","Low","Moderate","High","Severe"];
+      d.innerHTML='<div class="lh">'+title+'</div>'+
+        bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    }
     return d;
   };
   legendCtl.addTo(map);
@@ -2085,10 +2109,11 @@ function drawMarkers(scored){
   if(!rows.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
   const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  const colorMode=ui.views.mapColor;
   rows.forEach(r=>{
     const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
     const m=L.circleMarker([r.latitude,r.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
+      radius:rad,color:"#fff",weight:1.5,fillColor:markerFill(r,colorMode,scenario,r.band),fillOpacity:.85
     }).addTo(map);
     const metric=heat
       ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
@@ -3713,6 +3738,9 @@ function wire(){
   const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
   if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
   if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
+  const mcSel=document.getElementById("mapColorSel");
+  if(mcSel){mcSel.value=["peril","combined","dominant"].indexOf(ui.views.mapColor)>=0?ui.views.mapColor:"peril";
+    mcSel.onchange=e=>{ui.views.mapColor=e.target.value;persist();render();};}
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort

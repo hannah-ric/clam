@@ -181,6 +181,9 @@ function wire(){
   const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
   if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
   if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
+  const mcSel=document.getElementById("mapColorSel");
+  if(mcSel){mcSel.value=["peril","combined","dominant"].indexOf(ui.views.mapColor)>=0?ui.views.mapColor:"peril";
+    mcSel.onchange=e=>{ui.views.mapColor=e.target.value;persist();render();};}
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort
