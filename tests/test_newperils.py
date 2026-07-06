@@ -169,6 +169,51 @@ def test_firms_io():
     ok("resolve_firms: explicit wins else FIRMS_CSV/./firms/; no FIRMS exits 1 cleanly")
 
 
+def test_petals_deprecation_filter():
+    """The Petals deprecation flood is a logging.WARNING record (LOGGER.warning),
+    not a Python warning, so warnings.simplefilter can't reach it. Verify the
+    logging filter drops ONLY the 'is deprecated' notices, leaves real progress
+    and warnings alone, and is fully removed the moment the context exits."""
+    import logging
+    name = "climada_petals.hazard.wildfire"
+    logger = logging.getLogger(name)
+    captured = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    handler = _Capture()
+    logger.addHandler(handler)
+    saved_level, saved_prop = logger.level, logger.propagate
+    logger.setLevel(logging.INFO)
+    logger.propagate = False              # don't double-print via the root handler
+    before = list(logger.filters)
+    try:
+        with rw._quiet_petals_deprecation(name):
+            assert len(logger.filters) == len(before) + 1, "filter installed"
+            logger.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                           "Use WildFire.from_hist_fire_FIRMS .")
+            logger.info("Setting up historical fire seasons 2020.")
+            logger.warning("a genuine problem the operator must see")
+        assert list(logger.filters) == before, "filter removed on context exit"
+        logger.warning("still deprecated after exit")   # no longer swallowed
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(saved_level)
+        logger.propagate = saved_prop
+
+    assert not any("is deprecated" in m for m in captured), \
+        "deprecation notices dropped while the context is active"
+    assert "Setting up historical fire seasons 2020." in captured, \
+        "genuine INFO progress still shows"
+    assert "a genuine problem the operator must see" in captured, \
+        "genuine WARNINGs still show"
+    assert "still deprecated after exit" in captured, \
+        "filtering stops the moment the context exits"
+    ok("petals deprecation flood dropped via a scoped, reversible logging filter")
+
+
 def run():
     # FIRMS input + the corrected seam: Petals is mocked (build_wildfire_hazard),
     # but the real load_firms + filter_firms_to_regions + main plumbing run. The
@@ -251,4 +296,5 @@ if __name__ == "__main__":
     test_wfire_rows_encoding()
     test_prain_scaling()
     test_firms_io()
+    test_petals_deprecation_filter()
     run()
