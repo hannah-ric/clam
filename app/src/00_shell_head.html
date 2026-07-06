@@ -377,6 +377,7 @@
               <select id="mtxGroup" aria-label="Group the risk matrix rows">
                 <option value="site">by site</option>
                 <option value="brand">by brand</option>
+                <option value="insured">by named insured</option>
               </select>
             </label>
             <label class="viewlens">Show
@@ -431,6 +432,11 @@
           <div class="hint">Expected annual cost rolled up to each brand.</div>
           <div id="sumByBrand"></div>
         </div>
+      </div>
+      <div class="panel" id="sumInsuredPanel" style="display:none">
+        <h3>By named insured<button type="button" class="info" data-info="namedInsured" aria-label="How named-insured aggregation works" aria-expanded="false">i</button></h3>
+        <div class="hint">Expected annual damage rolled up to each named insured across the portfolio (HOA, operating company, and so on), so exposure can be owned and managed by insured party as well as by site. Shown when the portfolio carries a named insured.</div>
+        <div id="sumByInsured"></div>
       </div>
       <div class="note" id="sumNote"></div>
     </div>
@@ -749,7 +755,7 @@
         <div class="hint">Load or replace the portfolio.</div>
         <div id="siteDrop" class="drop">
           <div class="big">Load site CSV</div>
-          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended.</small>
+          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name.</small>
         </div>
         <input type="file" id="siteFile" accept=".csv" hidden>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -853,6 +859,11 @@
     <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
     <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Named insured (optional)</label><input type="text" id="mNamedInsured" placeholder="HOA, operating company..."></div>
+      <div class="field"><label>Site ID (groups insureds into one site)</label><input type="text" id="mSiteId" placeholder="e.g. CAMPUS-BEACH"></div>
+    </div>
+    <div class="field"><label>Site name (campus display, optional)</label><input type="text" id="mSiteName" placeholder="blank = use the name above"></div>
     <div class="field">
       <label>Location (search a place, or type coordinates below)</label>
       <div class="searchwrap" style="width:100%">

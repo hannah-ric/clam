@@ -113,6 +113,11 @@ const INFO={
     "<p>Expected annual damage is the area under this curve.</p>"},
   brand:{t:"Expected annual damage by brand",b:
     "<p>Where expected loss concentrates by brand, so you can see which banner carries the exposure.</p>"},
+  namedInsured:{t:"Named insured aggregation",b:
+    "<p>A single physical <b>site</b> (a resort campus) can carry several <b>named insured</b> parties: an owners' association (HOA) and the operating company (TNL), for example, each insuring different buildings on the same land.</p>"+
+    "<p>The map shows <b>one marker per physical site</b>, so the portfolio reads as sites rather than duplicate pins stacked at the same coordinates. Everywhere the split matters, a <b>breakout</b> reports each named insured's value, expected annual damage, and share of the site total, so you can see <b>who is impacted and to what degree</b>.</p>"+
+    "<p>Records are grouped by <code>site_id</code> when present, otherwise by exact coordinates. A portfolio with neither draws one marker per record, exactly as before.</p>",
+    s:"A display and rollup lens: it groups the same per-record figures, changing none of them."},
   wfire:{t:"Wildfire",b:
     "<p>Wildfire uses an <b>annual burn probability</b>, not a return-period intensity: expected damage = value x burn probability x a "+(FIRE_MDD*100)+"% conditional damage ratio, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
     "<p>The probability comes from a wfire grid when loaded, else from the site's <code>wui_class</code> (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
@@ -387,27 +392,42 @@ function drawMarkers(scored){
   syncBrandFilter(scored.rows);
   if(!mapOk)return;
   markers.forEach(m=>map.removeLayer(m));markers=[];
-  const rows=brandFilter?scored.rows.filter(r=>(r.brand||"Unbranded")===brandFilter):scored.rows;
-  if(!rows.length){_lastFitKey="";updateLegend();return;}
+  // one marker per PHYSICAL site: records sharing a site_id (or, absent that,
+  // exact coordinates) are aggregated, so an HOA record and a TNL record at the
+  // same campus draw a single marker sized by the site's total value, with a
+  // named-insured breakout in the popup. A portfolio with no site_id and
+  // distinct coordinates draws one marker per record, exactly as before.
+  const recs=brandFilter?sites.filter(r=>(r.brand||"Unbranded")===brandFilter):sites;
+  const groups=siteGroups(recs).map(g=>scoreGroup(g,scenario));
+  if(!groups.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
-  const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  const maxV=Math.max.apply(null,groups.map(g=>g.value))||1;
   const colorMode=ui.views.mapColor;
-  rows.forEach(r=>{
-    const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
-    const m=L.circleMarker([r.latitude,r.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:markerFill(r,colorMode,scenario,r.band),fillOpacity:.85
+  groups.forEach(g=>{
+    const rad=7+16*Math.sqrt(Math.max(g.value,0)/maxV);
+    const activeEad=g.perHaz[activeHazard]||0, activePct=g.value?activeEad/g.value*100:0;
+    const activeBand=heat?heatBand(g.heatDays):bandOf(activePct);
+    const m=L.circleMarker([g.latitude,g.longitude],{
+      radius:rad,color:"#fff",weight:1.5,fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
     }).addTo(map);
-    const metric=heat
-      ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
-      : fmt$(r.ead)+"/yr &middot; "+r.eadPct.toFixed(2)+"%";
-    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>"+
-      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+r.id)+")'>Open scorecard</button>");
-    m.on("click",()=>{ selectedId=r.id; switchTab("sites"); renderSites(); });
+    const metric=heat ? g.heatDays+" days &gt;32&deg;C"
+                      : fmt$(activeEad)+"/yr &middot; "+activePct.toFixed(2)+"%";
+    const targetId=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0].id;
+    const breakout=g.multi
+      ? "<div style='margin-top:5px;border-top:1px solid #E3E8E5;padding-top:5px'><b>Named insured</b> ("+g.byInsured.length+")"+
+        g.byInsured.map(r=>"<br>"+esc(r.insured)+": "+fmt$(r.value)+" val &middot; "+fmt$(r.ead)+"/yr ("+r.share.toFixed(0)+"%)").join("")+"</div>"
+      : (insuredOf(g.members[0])!=="Unspecified"?"<br><span class='mono'>Named insured: "+esc(insuredOf(g.members[0]))+"</span>":"");
+    m.bindPopup("<b>"+esc(g.name)+"</b>"+(g.multi?" <span class='mono'>("+g.members.length+" insured groups)</span>":"")+"<br>"+esc(g.brand||"")+
+      "<br><span class='mono'>Site value "+fmt$(g.value)+"</span>"+
+      "<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+activeBand+"</span>"+
+      breakout+
+      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
+    m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });
     markers.push(m);
   });
   updateLegend();
-  // only re-frame the map when the set of sites changes, not on every recompute
-  const key=rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
+  // only re-frame the map when the set of physical sites changes, not on every recompute
+  const key=groups.map(g=>g.key).sort().join(",");
   if(key!==_lastFitKey){ try{ map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25)); }catch(e){} _lastFitKey=key; }
 }
 

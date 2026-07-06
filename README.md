@@ -128,6 +128,17 @@ Present fields sharpen the damage math through a documented factor table
 (mirrored exactly between pipeline and app); absent fields reproduce the
 six-field behavior, pinned by tests. To draft profiles from public data:
 
+Named-insured aggregation (also optional): `named_insured`, `site_id`, and
+`site_name`. One physical site can carry several named-insured parties (an
+owners' association and the operating company, say), each insuring different
+buildings on the same land. Records sharing a `site_id` (or, absent that,
+exact coordinates) aggregate into a single site: the map draws one marker per
+physical site, while the scorecard, the risk matrix (a "by named insured"
+view), the summary, and the results pack (`by_named_insured_aal_usd` plus
+`named_insured` / `site_id` on each per-site row) break the exposure out by
+party, so you can still see who is impacted and to what degree. A portfolio
+with none of these columns is unchanged: one marker per record, as before.
+
 ```bash
 cd pipeline
 python enrich_sites.py sites.csv -o sites_enriched.csv   # or --no-network
@@ -210,7 +221,9 @@ rebuild, v2.1.0 the experience layer: a scenario timeline that animates the
 portfolio from Present to 2080, per-peril score tracing on every scorecard
 (each figure walked back to its grid cell or interim model and the named
 factors applied), a one-click print-ready board brief, and a map brand
-filter.
+filter; v2.2.0 named-insured aggregation, which groups several named-insured
+parties on one physical site into a single map marker while breaking their
+exposure out everywhere the split matters.
 
 The working system is fully consolidated in this repository, with CI green on
 every push. The roadmap lives in `MASTER_PLAN.md`; Phases A (CI), B (results

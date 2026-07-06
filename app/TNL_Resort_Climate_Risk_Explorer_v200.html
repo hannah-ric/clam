@@ -377,6 +377,7 @@
               <select id="mtxGroup" aria-label="Group the risk matrix rows">
                 <option value="site">by site</option>
                 <option value="brand">by brand</option>
+                <option value="insured">by named insured</option>
               </select>
             </label>
             <label class="viewlens">Show
@@ -431,6 +432,11 @@
           <div class="hint">Expected annual cost rolled up to each brand.</div>
           <div id="sumByBrand"></div>
         </div>
+      </div>
+      <div class="panel" id="sumInsuredPanel" style="display:none">
+        <h3>By named insured<button type="button" class="info" data-info="namedInsured" aria-label="How named-insured aggregation works" aria-expanded="false">i</button></h3>
+        <div class="hint">Expected annual damage rolled up to each named insured across the portfolio (HOA, operating company, and so on), so exposure can be owned and managed by insured party as well as by site. Shown when the portfolio carries a named insured.</div>
+        <div id="sumByInsured"></div>
       </div>
       <div class="note" id="sumNote"></div>
     </div>
@@ -749,7 +755,7 @@
         <div class="hint">Load or replace the portfolio.</div>
         <div id="siteDrop" class="drop">
           <div class="big">Load site CSV</div>
-          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended.</small>
+          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name.</small>
         </div>
         <input type="file" id="siteFile" accept=".csv" hidden>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -853,6 +859,11 @@
     <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
     <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Named insured (optional)</label><input type="text" id="mNamedInsured" placeholder="HOA, operating company..."></div>
+      <div class="field"><label>Site ID (groups insureds into one site)</label><input type="text" id="mSiteId" placeholder="e.g. CAMPUS-BEACH"></div>
+    </div>
+    <div class="field"><label>Site name (campus display, optional)</label><input type="text" id="mSiteName" placeholder="blank = use the name above"></div>
     <div class="field">
       <label>Location (search a place, or type coordinates below)</label>
       <div class="searchwrap" style="width:100%">
@@ -1007,6 +1018,89 @@ function brandRollup(rows){
   const m={};for(const r of rows){const k=r.brand||"Unbranded";(m[k]||(m[k]={brand:k,tiv:0,ead:0,n:0}));m[k].tiv+=r.asset_value_usd;m[k].ead+=r.eadUsd;m[k].n++;}
   return Object.values(m).map(x=>Object.assign({},x,{eadPct:x.tiv?x.ead/x.tiv*100:0})).sort((a,b)=>b.ead-a.ead);
 }
+
+/* ============================================================
+   Named-insured aggregation
+   A physical site can host several named-insured groups (e.g. an HOA and the
+   operating company). Each record is one such group's exposure at a location;
+   records sharing a site_id (or, absent that, exact coordinates) are ONE site
+   on the map, with a breakout of who is impacted and to what degree. Pure over
+   hzSite / bandOf, so it moves no computed per-record figure: every group
+   figure is the sum of its members'. A portfolio with no named_insured / site_id
+   yields one group per record (today's behaviour, one marker each).
+   ============================================================ */
+function insuredOf(s){ const v=String(s&&s.named_insured!=null?s.named_insured:"").trim(); return v||"Unspecified"; }
+function siteGroupKey(s){
+  const sid=String(s&&s.site_id!=null?s.site_id:"").trim();
+  if(sid)return "id:"+sid.toLowerCase();
+  const la=+s.latitude, lo=+s.longitude;
+  return "geo:"+(isFinite(la)?la.toFixed(5):"?")+","+(isFinite(lo)?lo.toFixed(5):"?");
+}
+/* most common non-empty value of a field across members; ties break by first
+   appearance, so the display name and brand of a mixed group are deterministic */
+function commonField(members,key){
+  const counts=new Map();let best=null,bestN=0;
+  members.forEach(s=>{const v=String(s[key]==null?"":s[key]).trim();if(!v)return;
+    const n=(counts.get(v)||0)+1;counts.set(v,n);if(n>bestN){bestN=n;best=v;}});
+  return best;
+}
+function siteGroups(rows){
+  const m=new Map();
+  rows.forEach(s=>{const k=siteGroupKey(s);let g=m.get(k);
+    if(!g){g={key:k,members:[]};m.set(k,g);}g.members.push(s);});
+  return [...m.values()].map(g=>({
+    key:g.key,members:g.members,
+    latitude:+g.members[0].latitude,longitude:+g.members[0].longitude,
+    name:commonField(g.members,"site_name")||commonField(g.members,"name")||g.members[0].name||"Site",
+    brand:commonField(g.members,"brand")||"",
+    multi:g.members.length>1}));
+}
+/* one site group's scored rollup at a scenario: per-peril and combined EAD, the
+   combined band, and the named-insured breakout. Members share a location, so
+   the hazard is identical; value adds, damage adds, and the band is taken on the
+   summed loss ratio (so differing member vulnerabilities are handled correctly). */
+function scoreGroup(g,sc){
+  const perHaz={};ACUTE.forEach(hz=>perHaz[hz]=0);
+  let value=0,ead=0,days=0;
+  const ins=new Map();
+  g.members.forEach(s=>{
+    value+=s.asset_value_usd;
+    let sead=0;const sp={};
+    ACUTE.forEach(hz=>{const e=hzSite(s,hz,sc).ead;perHaz[hz]+=e;sp[hz]=e;sead+=e;});
+    ead+=sead;
+    const d=heatIndicators(s.latitude,s.longitude,sc).daysOver32;if(d>days)days=d;
+    const key=insuredOf(s);let r=ins.get(key);
+    if(!r){r={insured:key,value:0,ead:0,n:0,perHaz:{}};ACUTE.forEach(hz=>r.perHaz[hz]=0);ins.set(key,r);}
+    r.value+=s.asset_value_usd;r.ead+=sead;r.n++;ACUTE.forEach(hz=>r.perHaz[hz]+=sp[hz]);
+  });
+  const pct=value?ead/value*100:0;
+  const byInsured=[...ins.values()].map(r=>{const p=r.value?r.ead/r.value*100:0;
+    return Object.assign(r,{eadPct:p,band:bandOf(p),share:ead?r.ead/ead*100:0});})
+    .sort((a,b)=>b.ead-a.ead);
+  return {key:g.key,name:g.name,brand:g.brand,latitude:g.latitude,longitude:g.longitude,
+    members:g.members,value,perHaz,ead,eadPct:pct,band:bandOf(pct),heatDays:days,
+    byInsured,multi:byInsured.length>1};
+}
+/* the group analogue of markerFill: combined -> combined band; dominant ->
+   leading peril's own colour; peril -> the active peril's band on the group's
+   summed loss ratio (heat by hot-days band). */
+function groupMarkerFill(gr,mode,activeHz){
+  if(mode==="combined")return BAND_COLOR[gr.band];
+  if(mode==="dominant"){let best=null,bv=-1;ACUTE.forEach(hz=>{if(gr.perHaz[hz]>bv){bv=gr.perHaz[hz];best=hz;}});return (bv>0&&best)?HAZARD_BY[best].color:BAND_COLOR.Minimal;}
+  if(activeHz==="heat")return BAND_COLOR[heatBand(gr.heatDays)];
+  const p=gr.value?(gr.perHaz[activeHz]||0)/gr.value*100:0;
+  return BAND_COLOR[bandOf(p)];
+}
+/* portfolio-level acute EAD by named insured (across every site), for the
+   summary breakout: who carries the exposure, and to what degree. */
+function insuredRollup(rows,sc){
+  const m={};
+  rows.forEach(s=>{const k=insuredOf(s);const r=m[k]||(m[k]={insured:k,value:0,ead:0,n:0});
+    r.value+=s.asset_value_usd;r.n++;for(const hz of ACUTE)r.ead+=hzSite(s,hz,sc).ead;});
+  return Object.values(m).map(r=>Object.assign(r,{eadPct:r.value?r.ead/r.value*100:0,
+    band:bandOf(r.value?r.ead/r.value*100:0)})).sort((a,b)=>b.ead-a.ead);
+}
+function hasNamedInsured(rows){ return rows.some(s=>insuredOf(s)!=="Unspecified"); }
 
 /* ============================================================
    Multi-hazard interim layer
@@ -1913,6 +2007,11 @@ const INFO={
     "<p>Expected annual damage is the area under this curve.</p>"},
   brand:{t:"Expected annual damage by brand",b:
     "<p>Where expected loss concentrates by brand, so you can see which banner carries the exposure.</p>"},
+  namedInsured:{t:"Named insured aggregation",b:
+    "<p>A single physical <b>site</b> (a resort campus) can carry several <b>named insured</b> parties: an owners' association (HOA) and the operating company (TNL), for example, each insuring different buildings on the same land.</p>"+
+    "<p>The map shows <b>one marker per physical site</b>, so the portfolio reads as sites rather than duplicate pins stacked at the same coordinates. Everywhere the split matters, a <b>breakout</b> reports each named insured's value, expected annual damage, and share of the site total, so you can see <b>who is impacted and to what degree</b>.</p>"+
+    "<p>Records are grouped by <code>site_id</code> when present, otherwise by exact coordinates. A portfolio with neither draws one marker per record, exactly as before.</p>",
+    s:"A display and rollup lens: it groups the same per-record figures, changing none of them."},
   wfire:{t:"Wildfire",b:
     "<p>Wildfire uses an <b>annual burn probability</b>, not a return-period intensity: expected damage = value x burn probability x a "+(FIRE_MDD*100)+"% conditional damage ratio, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
     "<p>The probability comes from a wfire grid when loaded, else from the site's <code>wui_class</code> (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
@@ -2187,27 +2286,42 @@ function drawMarkers(scored){
   syncBrandFilter(scored.rows);
   if(!mapOk)return;
   markers.forEach(m=>map.removeLayer(m));markers=[];
-  const rows=brandFilter?scored.rows.filter(r=>(r.brand||"Unbranded")===brandFilter):scored.rows;
-  if(!rows.length){_lastFitKey="";updateLegend();return;}
+  // one marker per PHYSICAL site: records sharing a site_id (or, absent that,
+  // exact coordinates) are aggregated, so an HOA record and a TNL record at the
+  // same campus draw a single marker sized by the site's total value, with a
+  // named-insured breakout in the popup. A portfolio with no site_id and
+  // distinct coordinates draws one marker per record, exactly as before.
+  const recs=brandFilter?sites.filter(r=>(r.brand||"Unbranded")===brandFilter):sites;
+  const groups=siteGroups(recs).map(g=>scoreGroup(g,scenario));
+  if(!groups.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
-  const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  const maxV=Math.max.apply(null,groups.map(g=>g.value))||1;
   const colorMode=ui.views.mapColor;
-  rows.forEach(r=>{
-    const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
-    const m=L.circleMarker([r.latitude,r.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:markerFill(r,colorMode,scenario,r.band),fillOpacity:.85
+  groups.forEach(g=>{
+    const rad=7+16*Math.sqrt(Math.max(g.value,0)/maxV);
+    const activeEad=g.perHaz[activeHazard]||0, activePct=g.value?activeEad/g.value*100:0;
+    const activeBand=heat?heatBand(g.heatDays):bandOf(activePct);
+    const m=L.circleMarker([g.latitude,g.longitude],{
+      radius:rad,color:"#fff",weight:1.5,fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
     }).addTo(map);
-    const metric=heat
-      ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
-      : fmt$(r.ead)+"/yr &middot; "+r.eadPct.toFixed(2)+"%";
-    m.bindPopup("<b>"+esc(r.name)+"</b><br>"+esc(r.brand||"")+"<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+r.band+"</span>"+
-      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+r.id)+")'>Open scorecard</button>");
-    m.on("click",()=>{ selectedId=r.id; switchTab("sites"); renderSites(); });
+    const metric=heat ? g.heatDays+" days &gt;32&deg;C"
+                      : fmt$(activeEad)+"/yr &middot; "+activePct.toFixed(2)+"%";
+    const targetId=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0].id;
+    const breakout=g.multi
+      ? "<div style='margin-top:5px;border-top:1px solid #E3E8E5;padding-top:5px'><b>Named insured</b> ("+g.byInsured.length+")"+
+        g.byInsured.map(r=>"<br>"+esc(r.insured)+": "+fmt$(r.value)+" val &middot; "+fmt$(r.ead)+"/yr ("+r.share.toFixed(0)+"%)").join("")+"</div>"
+      : (insuredOf(g.members[0])!=="Unspecified"?"<br><span class='mono'>Named insured: "+esc(insuredOf(g.members[0]))+"</span>":"");
+    m.bindPopup("<b>"+esc(g.name)+"</b>"+(g.multi?" <span class='mono'>("+g.members.length+" insured groups)</span>":"")+"<br>"+esc(g.brand||"")+
+      "<br><span class='mono'>Site value "+fmt$(g.value)+"</span>"+
+      "<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+activeBand+"</span>"+
+      breakout+
+      "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
+    m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });
     markers.push(m);
   });
   updateLegend();
-  // only re-frame the map when the set of sites changes, not on every recompute
-  const key=rows.map(r=>r.id).sort((a,b)=>a-b).join(",");
+  // only re-frame the map when the set of physical sites changes, not on every recompute
+  const key=groups.map(g=>g.key).sort().join(",");
   if(key!==_lastFitKey){ try{ map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25)); }catch(e){} _lastFitKey=key; }
 }
 
@@ -2369,6 +2483,18 @@ function renderSummary(){
   document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","#B23A32");
   const brands=Object.keys(agg.byBrand).map(b=>({label:b,ead:agg.byBrand[b]})).sort((a,b)=>b.ead-a.ead);
   document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
+  /* named-insured breakout: who carries the exposure across the portfolio. Only
+     shown when the portfolio actually carries a named_insured field, so a
+     portfolio without it is unchanged. */
+  const insPanel=document.getElementById("sumInsuredPanel");
+  if(insPanel){
+    if(hasNamedInsured(sites)){
+      insPanel.style.display="";
+      const ins=insuredRollup(sites,scenario);
+      document.getElementById("sumByInsured").innerHTML=
+        barsSvg(ins.map(r=>({label:r.insured,ead:r.ead})),"ead","label","#6E5AA6");
+    }else{ insPanel.style.display="none"; }
+  }
   /* caveats only for the perils actually still on the interim model, so the
      note stops warning about proxies a loaded grid has already replaced */
   const caveats=[];
@@ -2383,20 +2509,25 @@ function renderSummary(){
    hzSite / bandOf / heatBand; renderRiskMatrix only paints it. No computed figure
    changes, so the parity surface is untouched. The View and Show selects are the
    "change views" lens: regroup the rows, or switch what each cell reports. */
+/* roll the portfolio up by an arbitrary key (brand or named insured) into
+   matrix rows. Kept identical to the original brand branch so that view's
+   output is byte-for-byte unchanged; the named-insured view reuses it. */
+function matrixGroupRows(keyOf){
+  const by={};
+  sites.forEach(s=>{const b=keyOf(s);const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
+    g.value+=s.asset_value_usd; g.n++;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
+    const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
+  return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
+    ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
+    row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
+    const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
+    return row;
+  }).sort((a,b)=>b.combined.ead-a.combined.ead);
+}
 function matrixRows(group){
-  if(group==="brand"){
-    const by={};
-    sites.forEach(s=>{const b=s.brand||"Unbranded";const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
-      g.value+=s.asset_value_usd; g.n++;
-      ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
-      const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
-    return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
-      ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
-      row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
-      const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
-      return row;
-    }).sort((a,b)=>b.combined.ead-a.combined.ead);
-  }
+  if(group==="brand")return matrixGroupRows(s=>s.brand||"Unbranded");
+  if(group==="insured")return matrixGroupRows(insuredOf);
   return sites.map(s=>{const row={label:s.name,id:s.id,value:s.asset_value_usd,cells:{},combined:null};let comb=0;
     ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);row.cells[hz]={ead:r.ead,eadPct:r.eadPct,band:r.band};comb+=r.ead;});
     const hr=hzSite(s,"heat",scenario); row.cells.heat={ead:0,eadPct:0,band:hr.band,days:hr.indicators?hr.indicators.daysOver32:0,isHeat:true};
@@ -2407,18 +2538,19 @@ function matrixRows(group){
 function renderRiskMatrix(){
   const host=document.getElementById("riskMatrix"); if(!host)return;
   if(!sites.length){host.innerHTML="";return;}
-  const group=(ui.views.matrixGroup==="brand")?"brand":"site";
+  const group=["brand","insured"].indexOf(ui.views.matrixGroup)>=0?ui.views.matrixGroup:"site";
   const metric=["pct","usd","band"].indexOf(ui.views.matrixMetric)>=0?ui.views.matrixMetric:"pct";
   const gsel=document.getElementById("mtxGroup"); if(gsel)gsel.value=group;
   const msel=document.getElementById("mtxMetric"); if(msel)msel.value=metric;
   const cols=HAZARDS.slice();
   const rows=matrixRows(group);
+  const groupLabel=group==="brand"?"Brand":(group==="insured"?"Named insured":"Site");
   const cellText=c=>{ if(c.isHeat)return ""; if(c.ead<=0&&c.eadPct<=0)return "0";
     if(metric==="usd")return fmt$(c.ead); if(metric==="band")return c.band; return c.eadPct.toFixed(2); };
   const cellTitle=(label,hzLabel,c)=>c.isHeat
     ? esc(label)+" · "+hzLabel+": "+c.band+" ("+c.days+" days over 32C)"
     : esc(label)+" · "+hzLabel+": "+c.band+" · "+fmt$(c.ead)+"/yr · "+c.eadPct.toFixed(2)+"% of value";
-  let h='<table class="mtx"><thead><tr><th class="rowh">'+(group==="brand"?"Brand":"Site")+'</th>';
+  let h='<table class="mtx"><thead><tr><th class="rowh">'+groupLabel+'</th>';
   cols.forEach(H=>h+='<th title="'+esc(H.label)+'">'+H.short+'</th>');
   h+='<th title="Combined physical risk across all perils">All</th></tr></thead><tbody>';
   rows.forEach(r=>{
@@ -2633,6 +2765,26 @@ function renderSites(){
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
+/* the named-insured breakout for one physical site: every named insured that
+   shares it, with value, expected annual damage, % of value, and share of the
+   site total, so the reader sees who is impacted and to what degree. Empty for
+   a single-record site (nothing to break out). The selected record's row is
+   highlighted. */
+function namedInsuredDetail(record){
+  const key=siteGroupKey(record);
+  const members=sites.filter(x=>siteGroupKey(x)===key);
+  if(members.length<2)return "";
+  const gr=scoreGroup(siteGroups(members)[0],scenario);
+  const rows=gr.byInsured.map(r=>
+    '<tr'+(insuredOf(record)===r.insured?' style="background:#F2F5F3"':'')+'><td>'+esc(r.insured)+(r.n>1?' <span class="hint">('+r.n+' rec)</span>':'')+'</td>'+
+    '<td class="num mono">'+fmt$(r.value)+'</td><td class="num mono">'+fmt$(r.ead)+'</td>'+
+    '<td class="num mono">'+r.eadPct.toFixed(2)+'%</td><td class="num mono">'+r.share.toFixed(0)+'%</td>'+
+    '<td><span class="pill mini '+r.band+'" title="'+r.band+'">'+r.band+'</span></td></tr>').join("");
+  return '<div class="panel" style="margin-top:12px;border-left:3px solid var(--primary)">'+
+    '<h3 style="margin:0 0 2px">Named insured at this site'+infoBtn("namedInsured")+'</h3>'+
+    '<div class="hint" style="margin-bottom:6px">'+esc(gr.name)+' aggregates '+gr.members.length+' named-insured records into one site worth '+fmt$(gr.value)+', with '+fmt$(gr.ead)+'/yr combined expected damage ('+gr.band+'). Who is impacted, and to what degree:</div>'+
+    '<table class="tbl"><thead><tr><th>Named insured</th><th class="num">Value</th><th class="num">EAD $/yr</th><th class="num">% value</th><th class="num">Share</th><th>Band</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
 function renderDetail(r){
   if(!r){document.getElementById("detailBody").style.display="none";document.getElementById("detailHint").style.display="block";return;}
   document.getElementById("detailHint").style.display="none";
@@ -2666,8 +2818,8 @@ function renderDetail(r){
   }
   body.innerHTML=
     '<div style="font-family:Fraunces,serif;font-size:17px;color:var(--primary);margin-bottom:2px">'+esc(r.name)+'</div>'+
-    '<div class="hint" style="margin-bottom:6px">'+esc(r.brand||"")+' · '+r.latitude.toFixed(3)+', '+r.longitude.toFixed(3)+' · '+H.label+infoBtn(hz)+(r.hazardMeta&&r.hazardMeta.outside?' · <span style="color:var(--r-high)">outside hazard grid</span>':'')+'</div>'+
-    ratingStrip+mid+table+
+    '<div class="hint" style="margin-bottom:6px">'+esc(r.brand||"")+(insuredOf(r)!=="Unspecified"?' · '+esc(insuredOf(r)):'')+' · '+r.latitude.toFixed(3)+', '+r.longitude.toFixed(3)+' · '+H.label+infoBtn(hz)+(r.hazardMeta&&r.hazardMeta.outside?' · <span style="color:var(--r-high)">outside hazard grid</span>':'')+'</div>'+
+    ratingStrip+mid+table+namedInsuredDetail(r)+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
       '<button class="lightbtn" id="editVal">Edit site</button>'+
@@ -3092,7 +3244,7 @@ function renderScorecard(s){
   attrs.push("wind vulnerability x"+vuln.windMult.toFixed(2));
   document.getElementById("focusHead").innerHTML=
     '<div style="font-family:Fraunces,serif;font-size:21px;color:var(--primary)">'+esc(s.name)+'</div>'+
-    '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>';
+    '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+(insuredOf(s)!=="Unspecified"?' \u00b7 '+esc(insuredOf(s)):'')+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>';
   const card=(l,v,foot)=>'<div class="card"><div class="l">'+l+'</div><div class="v" style="font-size:19px">'+v+'</div><div class="foot">'+foot+'</div></div>';
   const pills=perils.map(p=>'<span class="pill '+p.band+'" title="'+esc(p.label)+'">'+HAZARD_BY[p.hz].short+'</span>').join(" ")+' <span class="pill '+heatR.band+'" title="Extreme heat">H</span>';
   document.getElementById("focusBody").innerHTML=
@@ -3121,6 +3273,7 @@ function renderScorecard(s){
       '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
       (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
       '</tbody></table></div>'+
+    namedInsuredDetail(s)+
     traceSection(s)+
     '<div class="panel" style="margin-bottom:4px;border-left:3px solid var(--primary)"><div style="font-size:14px;line-height:1.6">'+scorecardNarrative(s,fin,perils,costShare,valShare,rise2080,acts,pathway)+'</div></div>';
 }
@@ -3533,6 +3686,12 @@ function loadSiteCsv(text){
     const wu2=String(row.get("wui_class")||"").trim().toLowerCase();if(FIRE_WUI_PBURN[wu2]!=null||wu2==="none")rec.wui_class=wu2;
     const ds2=toNum(row.get("defensible_space_m"));if(isFinite(ds2)&&ds2>=0)rec.defensible_space_m=ds2;
     const ra2=row.get("roof_class_a");if(ra2!==undefined&&String(ra2).trim()!=="")rec.roof_class_a=truthy(ra2);
+    /* named-insured aggregation: who is insured (named_insured), which physical
+       site they sit on (site_id groups them into one map marker), and the
+       campus display name (site_name). All optional free text. */
+    const ni2=String(row.get("named_insured")||"").trim();if(ni2)rec.named_insured=ni2.slice(0,80);
+    const sid2=String(row.get("site_id")||"").trim();if(sid2)rec.site_id=sid2.slice(0,80);
+    const snm2=String(row.get("site_name")||"").trim();if(snm2)rec.site_name=snm2.slice(0,120);
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
@@ -3546,7 +3705,7 @@ function loadSiteCsv(text){
    location or value is invalid. Pure; defined before restore() so it is testable. */
 const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
   "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
-  "wui_class","defensible_space_m"];
+  "wui_class","defensible_space_m","named_insured","site_id","site_name"];
 function siteRecordFromFields(raw){
   raw=raw||{};
   const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
@@ -3564,6 +3723,9 @@ function siteRecordFromFields(raw){
   if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
   const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
   const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  const ni=String(raw.named_insured||"").trim(); if(ni)rec.named_insured=ni.slice(0,80);
+  const sid=String(raw.site_id||"").trim(); if(sid)rec.site_id=sid.slice(0,80);
+  const snm=String(raw.site_name||"").trim(); if(snm)rec.site_name=snm.slice(0,120);
   return rec;
 }
 function buildGridsFromRows(rows){
@@ -3782,6 +3944,7 @@ function openForm(mode,site){
   g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
   g("mEquipElev").checked=!!s.equipment_elevated;
   g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
   g("addModal").classList.add("open");
@@ -3794,7 +3957,8 @@ function submitForm(){
     asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
     year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
     roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
-    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value};
+    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value,
+    named_insured:g("mNamedInsured").value,site_id:g("mSiteId").value,site_name:g("mSiteName").value};
   const rec=siteRecordFromFields(raw);
   if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
   if(_editId!=null){
@@ -3885,11 +4049,14 @@ function exportActionList(){
 }
 function downloadTemplate(){
   // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country.
+  // The first two rows share a site_id (CAMPUS-BEACH), so they aggregate into a
+  // single site on the map with an HOA / operating-company named-insured breakout.
   const csv=
-    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,\n";
+    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,named_insured,site_id,site_name\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,,,\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

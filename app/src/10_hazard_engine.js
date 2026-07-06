@@ -87,6 +87,89 @@ function brandRollup(rows){
 }
 
 /* ============================================================
+   Named-insured aggregation
+   A physical site can host several named-insured groups (e.g. an HOA and the
+   operating company). Each record is one such group's exposure at a location;
+   records sharing a site_id (or, absent that, exact coordinates) are ONE site
+   on the map, with a breakout of who is impacted and to what degree. Pure over
+   hzSite / bandOf, so it moves no computed per-record figure: every group
+   figure is the sum of its members'. A portfolio with no named_insured / site_id
+   yields one group per record (today's behaviour, one marker each).
+   ============================================================ */
+function insuredOf(s){ const v=String(s&&s.named_insured!=null?s.named_insured:"").trim(); return v||"Unspecified"; }
+function siteGroupKey(s){
+  const sid=String(s&&s.site_id!=null?s.site_id:"").trim();
+  if(sid)return "id:"+sid.toLowerCase();
+  const la=+s.latitude, lo=+s.longitude;
+  return "geo:"+(isFinite(la)?la.toFixed(5):"?")+","+(isFinite(lo)?lo.toFixed(5):"?");
+}
+/* most common non-empty value of a field across members; ties break by first
+   appearance, so the display name and brand of a mixed group are deterministic */
+function commonField(members,key){
+  const counts=new Map();let best=null,bestN=0;
+  members.forEach(s=>{const v=String(s[key]==null?"":s[key]).trim();if(!v)return;
+    const n=(counts.get(v)||0)+1;counts.set(v,n);if(n>bestN){bestN=n;best=v;}});
+  return best;
+}
+function siteGroups(rows){
+  const m=new Map();
+  rows.forEach(s=>{const k=siteGroupKey(s);let g=m.get(k);
+    if(!g){g={key:k,members:[]};m.set(k,g);}g.members.push(s);});
+  return [...m.values()].map(g=>({
+    key:g.key,members:g.members,
+    latitude:+g.members[0].latitude,longitude:+g.members[0].longitude,
+    name:commonField(g.members,"site_name")||commonField(g.members,"name")||g.members[0].name||"Site",
+    brand:commonField(g.members,"brand")||"",
+    multi:g.members.length>1}));
+}
+/* one site group's scored rollup at a scenario: per-peril and combined EAD, the
+   combined band, and the named-insured breakout. Members share a location, so
+   the hazard is identical; value adds, damage adds, and the band is taken on the
+   summed loss ratio (so differing member vulnerabilities are handled correctly). */
+function scoreGroup(g,sc){
+  const perHaz={};ACUTE.forEach(hz=>perHaz[hz]=0);
+  let value=0,ead=0,days=0;
+  const ins=new Map();
+  g.members.forEach(s=>{
+    value+=s.asset_value_usd;
+    let sead=0;const sp={};
+    ACUTE.forEach(hz=>{const e=hzSite(s,hz,sc).ead;perHaz[hz]+=e;sp[hz]=e;sead+=e;});
+    ead+=sead;
+    const d=heatIndicators(s.latitude,s.longitude,sc).daysOver32;if(d>days)days=d;
+    const key=insuredOf(s);let r=ins.get(key);
+    if(!r){r={insured:key,value:0,ead:0,n:0,perHaz:{}};ACUTE.forEach(hz=>r.perHaz[hz]=0);ins.set(key,r);}
+    r.value+=s.asset_value_usd;r.ead+=sead;r.n++;ACUTE.forEach(hz=>r.perHaz[hz]+=sp[hz]);
+  });
+  const pct=value?ead/value*100:0;
+  const byInsured=[...ins.values()].map(r=>{const p=r.value?r.ead/r.value*100:0;
+    return Object.assign(r,{eadPct:p,band:bandOf(p),share:ead?r.ead/ead*100:0});})
+    .sort((a,b)=>b.ead-a.ead);
+  return {key:g.key,name:g.name,brand:g.brand,latitude:g.latitude,longitude:g.longitude,
+    members:g.members,value,perHaz,ead,eadPct:pct,band:bandOf(pct),heatDays:days,
+    byInsured,multi:byInsured.length>1};
+}
+/* the group analogue of markerFill: combined -> combined band; dominant ->
+   leading peril's own colour; peril -> the active peril's band on the group's
+   summed loss ratio (heat by hot-days band). */
+function groupMarkerFill(gr,mode,activeHz){
+  if(mode==="combined")return BAND_COLOR[gr.band];
+  if(mode==="dominant"){let best=null,bv=-1;ACUTE.forEach(hz=>{if(gr.perHaz[hz]>bv){bv=gr.perHaz[hz];best=hz;}});return (bv>0&&best)?HAZARD_BY[best].color:BAND_COLOR.Minimal;}
+  if(activeHz==="heat")return BAND_COLOR[heatBand(gr.heatDays)];
+  const p=gr.value?(gr.perHaz[activeHz]||0)/gr.value*100:0;
+  return BAND_COLOR[bandOf(p)];
+}
+/* portfolio-level acute EAD by named insured (across every site), for the
+   summary breakout: who carries the exposure, and to what degree. */
+function insuredRollup(rows,sc){
+  const m={};
+  rows.forEach(s=>{const k=insuredOf(s);const r=m[k]||(m[k]={insured:k,value:0,ead:0,n:0});
+    r.value+=s.asset_value_usd;r.n++;for(const hz of ACUTE)r.ead+=hzSite(s,hz,sc).ead;});
+  return Object.values(m).map(r=>Object.assign(r,{eadPct:r.value?r.ead/r.value*100:0,
+    band:bandOf(r.value?r.ead/r.value*100:0)})).sort((a,b)=>b.ead-a.ead);
+}
+function hasNamedInsured(rows){ return rows.some(s=>insuredOf(s)!=="Unspecified"); }
+
+/* ============================================================
    Multi-hazard interim layer
    Adds coastal flood, riverine flood, and extreme heat alongside the
    wind model. Every proxy here is screening-grade and clearly labelled;
