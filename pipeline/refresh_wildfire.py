@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import tempfile
 import json
 import logging
 from datetime import datetime, timezone
@@ -192,6 +193,46 @@ def filter_firms_to_regions(df, regions=FIRE_REGIONS):
 # CLIMADA Petals seam (version-sensitive, mocked in tests)
 # ---------------------------------------------------------------------------
 
+def _ensure_cartopy_cache():
+    """CLIMADA/Petals use cartopy, which caches Natural Earth shapefiles in
+    ~/.local/share/cartopy by default. On locked-down machines that path is not
+    writable ('[Errno 13] Permission denied: .../.local/share/cartopy'), which
+    kills the WildFire build. If the default is not writable, redirect cartopy to
+    a writable directory (CLAM_CARTOPY_DIR, then ~/.cache/cartopy, then a temp
+    dir). A no-op when the default already works or cartopy is absent. Set the
+    override BEFORE the WildFire call downloads, since cartopy reads
+    config['data_dir'] at download time."""
+    try:
+        import cartopy
+    except Exception:
+        return
+    cur = cartopy.config.get("data_dir")
+    if cur is not None:
+        cur = str(cur)
+        try:
+            os.makedirs(cur, exist_ok=True)
+            if os.access(cur, os.W_OK):
+                return
+        except Exception:
+            pass
+    for cand in (os.environ.get("CLAM_CARTOPY_DIR"),
+                 os.path.join(os.path.expanduser("~"), ".cache", "cartopy"),
+                 os.path.join(tempfile.gettempdir(), "clam-cartopy")):
+        if not cand:
+            continue
+        try:
+            os.makedirs(cand, exist_ok=True)
+            if os.access(cand, os.W_OK):
+                cartopy.config["data_dir"] = cand
+                LOG.info("  cartopy cache redirected to %s (default not writable)",
+                         cand)
+                return
+        except Exception:
+            continue
+    LOG.warning("  no writable cartopy cache found; the WildFire build may fail. "
+                "Set CLAM_CARTOPY_DIR to a writable directory.")
+
+
 def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
                           year_start=None, year_end=None, n_proba_seasons=0):
     """Probabilistic wildfire Hazard from a FIRMS DataFrame via Petals' WildFire.
@@ -202,6 +243,7 @@ def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
     releases. Optionally augments the historic fire seasons with probabilistic
     ones for a smoother burn probability; historic-only (0) is the robust
     screening default."""
+    _ensure_cartopy_cache()
     from climada_petals.hazard import WildFire
     ctor = getattr(WildFire, "from_hist_fire_seasons_FIRMS", None)
     if ctor is not None:

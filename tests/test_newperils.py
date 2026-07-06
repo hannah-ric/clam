@@ -99,6 +99,7 @@ class FakeRainHaz:
 def test_firms_io():
     """load_firms + filter_firms_to_regions (the pure FIRMS input path) and the
     graceful no-FIRMS degradation, none of which needs CLIMADA."""
+    rw._ensure_cartopy_cache()   # import-safe no-op when cartopy is absent
     modis = pd.DataFrame({"LATITUDE": [34.0, 12.0], "LONGITUDE": [-116.5, 40.0],
                           "ACQ_DATE": ["2020-08-01", "2020-01-01"],
                           "INSTRUMENT": ["MODIS", "MODIS"],
