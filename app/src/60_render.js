@@ -179,7 +179,7 @@ function renderTolerance(){
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
     ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
-    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+

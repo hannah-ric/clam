@@ -290,11 +290,11 @@
         </select>
       </div>
       <div class="seg"><label class="mini-l">Pathway</label>
-        <select class="scen" id="pathSel" title="Emissions pathway" aria-label="Emissions pathway">
+        <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
           <option value="present">Present day</option>
-          <option value="ssp126">SSP1-2.6</option>
-          <option value="ssp245">SSP2-4.5</option>
-          <option value="ssp585">SSP5-8.5</option>
+          <option value="ssp126">Lower emissions (SSP1-2.6)</option>
+          <option value="ssp245">Middle path (SSP2-4.5)</option>
+          <option value="ssp585">Higher emissions (SSP5-8.5)</option>
         </select>
       </div>
       <div class="seg"><label class="mini-l">Horizon</label>
@@ -473,17 +473,18 @@
     <p class="sub">Ranked by expected annual damage. Click a row for detail, or add a site.</p>
     <div class="grid2" style="grid-template-columns:1.4fr 1fr">
       <div class="panel" style="overflow:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <h3 style="margin:0">Portfolio</h3>
           <button class="lightbtn" id="addSiteBtn">+ Add site</button>
         </div>
+        <div class="hint" style="margin-bottom:8px">Ratings columns, each coloured by risk band: <b>W</b> wind, <b>F</b> coastal flood, <b>R</b> river flood, <b>H</b> heat, <b>B</b> wildfire, <b>P</b> rainfall. "Annual damage" is expected physical damage per year (EAD).</div>
         <table class="tbl" id="siteTbl">
           <thead><tr>
             <th data-sort="name">Site</th>
             <th data-sort="brand">Brand</th>
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="ead">EAD $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="eadPct">EAD %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -2389,7 +2390,7 @@ function renderTolerance(){
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
     ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
-    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+
