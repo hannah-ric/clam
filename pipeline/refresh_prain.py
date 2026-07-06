@@ -123,6 +123,11 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="prain_grid.csv")
     args = ap.parse_args(argv)
 
+    # calc_perturbed_trajectories and TCRain resolve land geometry through
+    # cartopy; redirect its cache before the first fetch so a non-writable
+    # default (~/.local/share/cartopy) does not skip every country.
+    rh.ensure_cartopy_cache()
+
     meta = {"generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "script": "refresh_prain.py v1 (increment 3)",
             "method": "Petals TCRain over IBTrACS-derived synthetic tracks; "

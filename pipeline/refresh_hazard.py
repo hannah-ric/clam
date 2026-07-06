@@ -101,6 +101,7 @@ import gc
 import json
 import logging
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,6 +150,57 @@ def parallel_map(func, items, workers):
         for fut in _futures.as_completed(futs):
             results[futs[fut]] = fut.result()
     return results
+
+
+# ---------------------------------------------------------------------------
+# Environment guard, shared by every producer that builds a CLIMADA hazard from
+# local data (winds/surge here, tracks+TCRain in refresh_prain, FIRMS+WildFire
+# in refresh_wildfire). Those builds resolve land/coast geometry through
+# cartopy, which caches Natural Earth shapefiles in ~/.local/share/cartopy by
+# default; on locked-down machines that path is not writable
+# ("[Errno 13] Permission denied: .../cartopy") and the build dies. Call this
+# once BEFORE the CLIMADA download so cartopy reads a writable data_dir.
+# ---------------------------------------------------------------------------
+
+def ensure_cartopy_cache():
+    """Point cartopy at a writable cache when its default dir is not writable.
+
+    If cartopy's configured data_dir cannot be written, redirect it to the
+    first writable candidate (CLAM_CARTOPY_DIR, then ~/.cache/cartopy, then a
+    temp dir). A no-op when the default already works or cartopy is absent, so
+    it is safe to call unconditionally at the top of any producer. Cartopy
+    reads config['data_dir'] at download time, so this must run before the
+    CLIMADA/Petals call that fetches Natural Earth geometry."""
+    try:
+        import cartopy
+    except Exception:
+        return
+    cur = cartopy.config.get("data_dir")
+    if cur is not None:
+        cur = str(cur)
+        try:
+            os.makedirs(cur, exist_ok=True)
+            if os.access(cur, os.W_OK):
+                return
+        except Exception:
+            pass
+    for cand in (os.environ.get("CLAM_CARTOPY_DIR"),
+                 os.path.join(os.path.expanduser("~"), ".cache", "cartopy"),
+                 os.path.join(tempfile.gettempdir(), "clam-cartopy")):
+        if not cand:
+            continue
+        try:
+            os.makedirs(cand, exist_ok=True)
+            if os.access(cand, os.W_OK):
+                cartopy.config["data_dir"] = cand
+                LOG.info("  cartopy cache redirected to %s (default not writable)",
+                         cand)
+                return
+        except Exception:
+            continue
+    LOG.warning("  no writable cartopy cache found; the hazard build may fail. "
+                "Set CLAM_CARTOPY_DIR to a writable directory.")
+
 
 # ---------------------------------------------------------------------------
 # Configuration. These are the only knobs you would ordinarily touch.
@@ -725,6 +777,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     workers = resolve_workers(args.workers)
+    ensure_cartopy_cache()      # before any CLIMADA build touches cartopy's cache
     surge_enabled = not args.no_surge
     if surge_enabled and not TOPO_PATH.exists():
         LOG.warning("DEM not found at %s: the cflood layer will be SKIPPED this run. "
