@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import tempfile
 import warnings
 import json
 import logging
@@ -257,44 +256,10 @@ def resolve_sites(path):
 # CLIMADA Petals seam (version-sensitive, mocked in tests)
 # ---------------------------------------------------------------------------
 
-def _ensure_cartopy_cache():
-    """CLIMADA/Petals use cartopy, which caches Natural Earth shapefiles in
-    ~/.local/share/cartopy by default. On locked-down machines that path is not
-    writable ('[Errno 13] Permission denied: .../.local/share/cartopy'), which
-    kills the WildFire build. If the default is not writable, redirect cartopy to
-    a writable directory (CLAM_CARTOPY_DIR, then ~/.cache/cartopy, then a temp
-    dir). A no-op when the default already works or cartopy is absent. Set the
-    override BEFORE the WildFire call downloads, since cartopy reads
-    config['data_dir'] at download time."""
-    try:
-        import cartopy
-    except Exception:
-        return
-    cur = cartopy.config.get("data_dir")
-    if cur is not None:
-        cur = str(cur)
-        try:
-            os.makedirs(cur, exist_ok=True)
-            if os.access(cur, os.W_OK):
-                return
-        except Exception:
-            pass
-    for cand in (os.environ.get("CLAM_CARTOPY_DIR"),
-                 os.path.join(os.path.expanduser("~"), ".cache", "cartopy"),
-                 os.path.join(tempfile.gettempdir(), "clam-cartopy")):
-        if not cand:
-            continue
-        try:
-            os.makedirs(cand, exist_ok=True)
-            if os.access(cand, os.W_OK):
-                cartopy.config["data_dir"] = cand
-                LOG.info("  cartopy cache redirected to %s (default not writable)",
-                         cand)
-                return
-        except Exception:
-            continue
-    LOG.warning("  no writable cartopy cache found; the WildFire build may fail. "
-                "Set CLAM_CARTOPY_DIR to a writable directory.")
+# The cartopy-cache guard lives in refresh_hazard (shared by every producer that
+# builds a hazard from local data). Kept here under its original name so the
+# WildFire seam and its test call the same shorthand.
+_ensure_cartopy_cache = rh.ensure_cartopy_cache
 
 
 def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
