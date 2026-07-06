@@ -240,6 +240,27 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  tolerance:{t:"Risk tolerance",b:
+    "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
+    "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
+    "<p>Each breach is routed to a lane: <b>capex</b> when a measure at that site clears breakeven, <b>risk transfer or acceptance</b> when none does. Disclosure standards (IFRS S2) expect the entity to set and document its own materiality threshold; editing these numbers is exactly that act.</p>",
+    s:"A policy layer only: thresholds flag numbers, they never change them."},
+  quote:{t:"Broker quote vs technical premium",b:
+    "<p>The <b>technical premium</b> is the transferred expected loss times the loading you set: the model's benchmark for what the configured layer is worth. Enter your broker's quoted annual premium and the app states the gap.</p>"+
+    "<p>Read the gap as grounds for a conversation, not a verdict. A technical premium is a negotiation benchmark, not a market price: capacity cycles, terms, deductible structure, and the insurer's own model all move real quotes. When a results pack is loaded, the event-set benchmark is the stronger anchor because its loss curve is joint across sites rather than an approximation.</p>"+
+    "<p>What moves quotes most is submission data quality: documented roof age, opening protection, and floor elevation routinely swing modeled pricing by double-digit percentages. That is what the broker evidence pack is for.</p>"},
+  retention:{t:"Retention: which attachment to buy",b:
+    "<p>Each row prices the same insurance structure at a different attachment point. Raising the attachment keeps more of the frequent losses in-house (the <b>retained below</b> column grows) and cuts the premium; the <b>cost of certainty</b> column is what you pay the insurer above the expected loss they take on.</p>"+
+    "<p>There is no single right answer to optimize toward: with any loading above 1.0, insuring less always looks cheaper on average, because that is what loading means. What the table answers is what each step of volatility protection costs, so the attachment can be matched to how much loss the business can absorb in a bad year.</p>"+
+    "<p>The retained-below figure is also the <b>working layer</b>: the expected annual loss a higher retention or a captive would need to fund.</p>"},
+  queue:{t:"Action queue and funding cutline",b:
+    "<p>Every site-and-measure pair the model finds in scope, ranked by benefit-cost ratio. With a program budget set, funding fills from the top: nothing below breakeven is funded, and what does not fit is kept on the list as unfunded rather than dropped, the same defer-not-delete discipline the pipeline's capital plan uses.</p>"+
+    "<p>Rows are appraised one measure at a time. The program roll-up recomputes the funded set jointly per site, so overlapping measures are never double-counted; the joint figure is the one to quote.</p>"+
+    "<p>When a CLIMADA results pack is loaded, its capital plan is the canonical appraisal (full event sets, refurbishment-window phasing) and is shown beside this interactive queue and included in the export. Measure costs here are planning-grade defaults until replaced with engineering estimates; the export carries the assumptions so every number can be traced.</p>"},
+  brokerPack:{t:"Broker evidence pack",b:
+    "<p>A CSV built for the renewal submission: per site, the verified construction and protection attributes underwriters call secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes), plus this model's present-day damage view, so your broker can put a documented alternative view beside the insurer's model.</p>"+
+    "<p>Documented attributes are the highest-return lever in renewal pricing: they change the insurer's modeled loss, not just the negotiation. Blank cells are honest blanks; fill them from surveys rather than guesses.</p>"+
+    "<p>The modeled columns state their source (CLIMADA grid or interim screening model). Interim figures are for exploration; load a grid before putting these numbers in front of an underwriter.</p>"},
 };
 let _infoPop=null,_infoBtn=null;
 function ensureInfoPop(){

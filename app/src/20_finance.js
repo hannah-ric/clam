@@ -1,6 +1,12 @@
 const ACUTE=["tc","cflood","rflood","prain","wfire"];
 const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
 let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+/* Risk tolerance (Wave 1 decision layer): the operator's documented
+   materiality thresholds. A policy layer only: these values never change a
+   computed figure, they only decide what counts as a breach. Defaults are
+   anchored to stated practice (see the INFO entry) and are meant to be
+   edited; edits persist and become the portfolio's documented tolerance. */
+let tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
 function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
 function finSite(s,sc){
   const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;

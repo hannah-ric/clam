@@ -222,6 +222,8 @@
   details.trace{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:8px;background:var(--surface-2)}
   details.trace summary{cursor:pointer;font-size:13px}
   details.trace[open] summary{margin-bottom:4px}
+  /* ---- Wave 1: tolerance breach marker ---- */
+  .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -335,6 +337,11 @@
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
         <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
+      </div>
+      <div class="panel" id="tolPanel" style="display:none">
+        <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
+        <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
+        <div id="tolBody"></div>
       </div>
       <div class="grid2">
         <div class="panel">
@@ -505,9 +512,19 @@
             <label>Premium loading factor <span class="mono" id="loadVal">1.5x</span><button type="button" class="info" data-info="loading" aria-label="How this is used" aria-expanded="false">i</button></label>
             <input type="range" id="load" min="1" max="3" step="0.1" value="1.5">
           </div>
+          <div class="field">
+            <label>Broker quote, annual premium (USD)<button type="button" class="info" data-info="quote" aria-label="How the quote is judged" aria-expanded="false">i</button></label>
+            <input type="number" id="quoteIn" min="0" step="10000" placeholder="blank = no quote yet">
+          </div>
           <div class="kv" id="layerStats" style="margin-top:8px"></div>
         </div>
         <div id="layerChart"></div>
+      </div>
+      <div id="sweepHost"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="lightbtn" id="brokerBtn">Export broker evidence pack (CSV)</button>
+        <button type="button" class="info" data-info="brokerPack" aria-label="What the evidence pack is" aria-expanded="false">i</button>
+        <span class="hint">Secondary modifiers plus the modeled view, for the renewal submission.</span>
       </div>
     </div>
     <div class="panel">
@@ -518,6 +535,23 @@
         <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">BCR</th></tr></thead>
         <tbody id="recBody"></tbody>
       </table>
+    </div>
+    <div class="panel">
+      <h3>Action queue &amp; funding cutline<button type="button" class="info" data-info="queue" aria-label="How the queue is built" aria-expanded="false">i</button></h3>
+      <div class="hint">Every in-scope site-and-measure pair, ranked by benefit-cost ratio. Set a program budget to draw the funding cutline: greedy fill from the top, nothing below breakeven, nothing dropped. The export is the capital-committee artifact.</div>
+      <div class="field" style="max-width:340px">
+        <label>Program budget (USD; blank funds everything above breakeven)</label>
+        <input type="number" id="budgetIn" min="0" step="500000" placeholder="no budget cap">
+      </div>
+      <div class="note" id="queueRoll" style="margin-bottom:10px"></div>
+      <table class="tbl" id="queueTbl">
+        <thead><tr><th>#</th><th>Site</th><th>Measure</th><th class="num">Averted $/yr</th>
+        <th class="num">Cost</th><th class="num">BCR</th><th>Status</th></tr></thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+      <div class="hint" id="queueMore" style="margin-top:6px"></div>
+      <div id="queuePack"></div>
+      <div style="margin-top:10px"><button class="lightbtn" id="actionBtn">Export action list (CSV)</button></div>
     </div>
   </section>
 
@@ -621,6 +655,27 @@
   <section class="tabpane" id="tab-method" role="tabpanel" aria-label="Method and data">
     <h2 class="sec">Method &amp; data</h2>
     <p class="sub">What the numbers mean and how to make them authoritative. Built to be audit-ready.</p>
+    <div class="panel">
+      <h3>How to read this app, in plain language</h3>
+      <div class="hint">The short version of every concept the numbers rely on. Each figure in the app also carries its own <b>i</b> button with the specifics, and every site scorecard can trace a number back to its data source.</div>
+      <div class="grid2">
+        <div class="kv">
+          <span class="k">Expected annual cost (AAL)</span><span class="v">The average yearly bill if this year could be rerun thousands of times: most runs cost little, rare disaster runs cost a lot, and this is the long-run average. It is the number insurers price from.</span>
+          <span class="k">Return period</span><span class="v">"1-in-100" means a 1% chance each year, not an event that arrives on schedule. Two can land in one decade; that is chance behaving normally, not a broken model.</span>
+          <span class="k">Value at Risk</span><span class="v">The size of a bad year at a stated rarity: what a 1-in-100 year would cost the whole portfolio, damage plus lost operating profit.</span>
+          <span class="k">Risk bands</span><span class="v">Plain-language grades (Minimal to Severe) cut from expected loss as a share of value, so sites can be sorted and discussed without decimals.</span>
+          <span class="k">Pathways and horizons</span><span class="v">SSP pathways are IPCC emissions futures (SSP1-2.6 low, SSP2-4.5 middle, SSP5-8.5 high) at 2030, 2050, and 2080. They are what-ifs to compare, not forecasts to believe.</span>
+          <span class="k">Benefit-cost ratio (BCR)</span><span class="v">Averted losses over the appraisal horizon, brought to today's dollars, divided by the upfront cost. Above 1.0, the measure returns more than it costs in avoided loss alone.</span>
+        </div>
+        <div class="kv">
+          <span class="k">Technical premium</span><span class="v">The expected loss an insurance layer takes on, times a loading for the insurer's capital and expenses. A benchmark for judging quotes, not a market price.</span>
+          <span class="k">Risk tolerance</span><span class="v">Your stated line between monitor and act, set on the Summary tab. The app flags whatever crosses it; where the line sits is a business decision the app never makes for you.</span>
+          <span class="k">Uncertainty band</span><span class="v">No single number here is exact. The low-to-high range says how far the truth could plausibly sit from the central estimate, and the tornado chart names the largest single reason.</span>
+          <span class="k">Where the data comes from</span><span class="v">Public climate science, run through the CLIMADA pipeline into a hazard grid this app reads. The per-peril chips on this tab show green when that is live; until then a clearly labeled interim approximation fills in, for exploration only.</span>
+          <span class="k">What this app never does</span><span class="v">Fill a data gap silently. Perils without data score zero and say why, interim figures are labeled everywhere they appear, and nothing you load ever leaves your browser.</span>
+        </div>
+      </div>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h3>Hazard source</h3>
@@ -680,11 +735,13 @@
             <span class="k">Vulnerability attributes</span><span class="v">Optional per-site modifiers: construction frame x1.3 / masonry x1.0 / engineered x0.75 on wind damage; pre-1995 x1.15, post-2010 x0.9; defended adds 0.5 m flood freeboard</span>
             <span class="k">Uncertainty</span><span class="v">One-at-a-time sweeps over hazard intensity, damage steepness, exposure, revenue, and reopen time, combined by root-sum-square (screening unsequa)</span>
             <span class="k">Backtest</span><span class="v">Observed annual losses vs modeled present-day damage AAL; portfolio bias flags systematic mis-calibration</span>
+            <span class="k">Decision layer</span><span class="v">Operator-set tolerance thresholds route breaches to lanes (capex, or transfer and accept); the action queue, retention sweep, and quote benchmark are all derived from the figures above and never alter them</span>
           </div>
         </div>
       </div>
       <div class="note" style="margin-bottom:8px"><b>Known interim limits.</b> Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level basins (for example New Orleans behind levees) are understated, and the latitude-based heat proxy underrepresents arid inland microclimates. These resolve when a CLIMADA hazard grid is loaded. Measure costs and strengths are planning-grade defaults drawn from published mitigation studies; replace them with engineering estimates before committing capital. Treat figures as screening estimates, not disclosure, until then.</div>
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
+      <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
     <div class="panel">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
@@ -711,7 +768,7 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.1.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.2.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>
@@ -1170,6 +1227,12 @@ function explainPeril(site,hz,sc){
 const ACUTE=["tc","cflood","rflood","prain","wfire"];
 const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
 let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+/* Risk tolerance (Wave 1 decision layer): the operator's documented
+   materiality thresholds. A policy layer only: these values never change a
+   computed figure, they only decide what counts as a breach. Defaults are
+   anchored to stated practice (see the INFO entry) and are meant to be
+   edited; edits persist and become the portfolio's documented tolerance. */
+let tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
 function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
 function finSite(s,sc){
   const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;
@@ -1241,7 +1304,7 @@ function aggregatePortfolio(sites,sc){
    modifier on one part of the risk chain. Modifiers compose, so the
    combined portfolio of measures never double-counts averted loss.
    ============================================================ */
-let adapt={growth:2.0,attach:25,exhaust:250,load:1.5,
+let adapt={growth:2.0,attach:25,exhaust:250,load:1.5,quote:0,budget:0,
   m:{wind:{on:true,strength:65,cost:1.0},
      flood:{on:true,fb:0.5,cost:0.6},
      buffer:{on:false,red:0.3,cost:0.4},
@@ -1374,6 +1437,185 @@ function layerStatsCalc(varByRp,acuteAal){
   const frac=Math.min(lay/tot,1);
   const transferred=acuteAal*frac;
   return {A,E,limit:Math.max(E-A,0),transferred,retained:acuteAal-transferred,premium:transferred*adapt.load,frac};
+}
+
+/* ============================================================
+   Wave 1 decision layer (business-ready roadmap R1-R3).
+   Everything here is ADDITIVE: pure functions over the same math the
+   parity suite pins. finPortfolio, adaptedFinSite, and layerStatsCalc
+   are called, never modified, so no existing number can change.
+   ============================================================ */
+
+/* R1: screen the portfolio against the operator's tolerance thresholds and
+   route every breach to a decision lane: capex when a measure at that site
+   clears breakeven, risk transfer or acceptance when none does. af is the
+   annuity factor used for the breakeven screen. */
+function toleranceFlags(sitesArr,sc,af){
+  const f=finPortfolio(sitesArr,sc);
+  const portPct=f.value?f.totalAal/f.value*100:0;
+  const varPct=f.value?f.var100/f.value*100:0;
+  const siteBreaches=[];
+  f.rows.forEach(r=>{
+    const bps=r.value?r.totalAal/r.value*1e4:0;
+    if(bps<=tolerance.siteAalBps)return;
+    const s=sitesArr.find(x=>x.id===r.id);
+    let best=null;
+    if(s){
+      const sBase=adaptedFinSite(s,sc,{}).totalAal;
+      MEASURES.forEach(m=>{
+        if(!m.inScope(s,sc))return;
+        const st=adapt.m[m.key];
+        const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+        const cost=m.siteCost(s,st);
+        const bcr=cost>0?averted*af/cost:0;
+        if(!best||bcr>best.bcr)best={name:m.name,bcr};
+      });
+    }
+    siteBreaches.push({id:r.id,name:r.name,aal:r.totalAal,bps,
+      bestBcr:best?best.bcr:0,bestMeasure:best?best.name:null,
+      lane:(best&&best.bcr>=1)?"capex":"transfer"});
+  });
+  siteBreaches.sort((a,b)=>b.bps-a.bps);
+  const portBreach=portPct>tolerance.portAalPct, varBreach=varPct>tolerance.varPctValue;
+  return {portPct,varPct,portBreach,varBreach,siteBreaches,
+    anyBreach:portBreach||varBreach||siteBreaches.length>0};
+}
+
+/* R2: the acute loss curve split into retained-below, transferred layer,
+   and tail beyond the limit, at an EXPLICIT attachment and exhaustion.
+   Same trapezoid integral as layerStatsCalc (untouched: parity-pinned);
+   the three slices always reconcile to the acute AAL. */
+function layerSlices(varByRp,acuteAal,attach,exhaust,load){
+  const A=varByRp[attach]||0,E=varByRp[exhaust]||0;
+  const integ=tr=>{
+    const pts=RPS.map(rp=>({f:1/rp,L:tr(varByRp[rp]||0)})).sort((a,b)=>b.f-a.f);
+    let s2=0;for(let i=0;i<pts.length-1;i++)s2+=0.5*(pts[i].L+pts[i+1].L)*(pts[i].f-pts[i+1].f);
+    return s2+pts[pts.length-1].L*pts[pts.length-1].f;
+  };
+  const tot=integ(L=>L)||1;
+  const below=acuteAal*Math.min(integ(L=>Math.min(L,A))/tot,1);
+  const layer=acuteAal*Math.min(integ(L=>Math.min(Math.max(L-A,0),Math.max(E-A,0)))/tot,1);
+  const above=Math.max(acuteAal-below-layer,0);
+  return {attach,exhaust,A,E,below,layer,above,premium:layer*load,certainty:layer*load-layer};
+}
+/* R2: the same layer economics at every candidate attachment below the
+   exhaustion point, so "raise the attachment" is a readable trade instead
+   of a guess. below is the working layer a higher retention or a captive
+   would fund. */
+function retentionSweep(varByRp,acuteAal,exhaust,load){
+  return RPS.filter(rp=>rp<exhaust).map(rp=>layerSlices(varByRp,acuteAal,rp,exhaust,load));
+}
+/* R2: a broker quote against the modeled technical premium, as a signed
+   percent gap. null when either side is missing: no verdict without data. */
+function quoteGapPct(quote,premium){
+  if(!(quote>0)||!(premium>0))return null;
+  return (quote/premium-1)*100;
+}
+
+/* R3: the portfolio action queue. Every in-scope (site, measure) pair is
+   appraised individually and ranked by BCR, then a funding cutline is
+   drawn: with a budget, fill greedily from the top (never fund below
+   breakeven, never drop what does not fit: it stays listed as unfunded,
+   the pipeline's defer-not-delete discipline); with no budget the cutline
+   is breakeven. The roll-up recomputes the funded set JOINTLY per site
+   (merged measure modifiers), so overlapping measures at one site are
+   never double-counted in the program figure. */
+function actionQueue(sitesArr,sc,af,budget){
+  const items=[];
+  sitesArr.forEach(s=>{
+    const sBase=adaptedFinSite(s,sc,{}).totalAal;
+    MEASURES.forEach(m=>{
+      if(!m.inScope(s,sc))return;
+      const st=adapt.m[m.key];
+      const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+      const cost=m.siteCost(s,st);
+      items.push({id:s.id,site:s.name,measure:m.name,key:m.key,target:m.target,
+        averted,cost,bcr:cost>0?averted*af/cost:0});
+    });
+  });
+  items.sort((a,b)=>b.bcr-a.bcr);
+  let spent=0;
+  items.forEach(it=>{
+    if(it.bcr<1){it.funded=false;return;}
+    if(budget>0&&spent+it.cost>budget){it.funded=false;return;}
+    it.funded=true;spent+=it.cost;
+  });
+  const funded=items.filter(i=>i.funded);
+  const bySite={};
+  funded.forEach(i=>{(bySite[i.id]||(bySite[i.id]=[])).push(i.key);});
+  let jointAverted=0;
+  Object.keys(bySite).forEach(id=>{
+    const s=sitesArr.find(x=>x.id===+id); if(!s)return;
+    const mods={};
+    bySite[id].forEach(k=>{const m=MEASURES.find(x=>x.key===k);Object.assign(mods,m.mods(adapt.m[k]));});
+    jointAverted+=adaptedFinSite(s,sc,{}).totalAal-adaptedFinSite(s,sc,mods).totalAal;
+  });
+  const cost=funded.reduce((a,i)=>a+i.cost,0);
+  return {items,spent,budget,
+    roll:{n:funded.length,cost,averted:jointAverted,bcr:cost>0?jointAverted*af/cost:0}};
+}
+
+/* R2: the broker evidence pack. Renewal pricing keys off submission data
+   quality: documented secondary modifiers (roof, openings, floor height,
+   defenses) change the insurer's modeled loss, not just the negotiation.
+   One row per site: the verified attributes plus this model's present-day
+   direct-damage view, with its source stated honestly. */
+function brokerPackCsv(){
+  const src=hazardGrid?"climada_grid":"interim_model";
+  const cols=["name","brand","latitude","longitude","asset_value_usd","annual_revenue_usd",
+    "construction","year_built","roof_type","roof_year","opening_protection",
+    "first_floor_elev_m","equipment_elevated","defended","wui_class",
+    "defensible_space_m","roof_class_a",
+    "modeled_direct_ead_usd_present","modeled_top_peril_present",
+    "modeled_loss_rp100_usd_present","hazard_source"];
+  let csv=cols.join(",")+"\n";
+  sites.forEach(s=>{
+    let ead=0,top=null,rp100=0;
+    ACUTE.forEach(hz=>{
+      const r=hzSite(s,hz,"present");ead+=r.ead;
+      const c=r.curve.find(x=>x.rp===100);rp100+=c?c.loss:0;
+      if(!top||r.ead>top.ead)top={hz,ead:r.ead};
+    });
+    csv+=[csvCell(s.name),csvCell(s.brand||""),s.latitude,s.longitude,s.asset_value_usd,
+      s.annual_revenue_usd!=null?s.annual_revenue_usd:"",
+      s.construction||"",s.year_built||"",s.roof_type||"",s.roof_year||"",
+      s.opening_protection||"",
+      s.first_floor_elev_m!=null?s.first_floor_elev_m:"",
+      s.equipment_elevated?"true":"",s.defended?"true":"",
+      s.wui_class||"",s.defensible_space_m!=null?s.defensible_space_m:"",
+      s.roof_class_a?"true":"",
+      ead.toFixed(0),top?top.hz:"",rp100.toFixed(0),src].join(",")+"\n";
+  });
+  return csv;
+}
+
+/* R3: the action-list artifact for a capital committee. Live-model rows are
+   the interactive appraisal at current settings; when a results pack is
+   loaded, its capital-plan rows are included and labeled canonical (full
+   event sets, refurbishment phasing). The owner column is deliberately
+   blank: assigning it is the committee's decision, not the model's. */
+function actionListCsv(sc,horizon,discPct){
+  const af=annuity(horizon,discPct/100);
+  const q=actionQueue(sites,sc,af,adapt.budget||0);
+  const cols=["source","rank","site","measure","targets","averted_usd_per_yr","cost_usd","bcr",
+    "status","renovation_synergy","scenario","appraisal_horizon_years","discount_rate_pct","owner"];
+  let csv=cols.join(",")+"\n";
+  q.items.forEach((it,i)=>{
+    csv+=["live_model",i+1,csvCell(it.site),csvCell(it.measure),csvCell(it.target),
+      it.averted.toFixed(0),it.cost.toFixed(0),it.bcr.toFixed(2),
+      it.funded?"funded":"unfunded","",sc,horizon,discPct.toFixed(1),""].join(",")+"\n";
+  });
+  const pk=resultsPack&&resultsPack.data;
+  if(pk&&pk.capital_plan&&pk.capital_plan.projects){
+    pk.capital_plan.projects.forEach((cp,i)=>{
+      csv+=["climada_pack",i+1,csvCell(cp.site),csvCell(cp.measure),csvCell(cp.peril||""),
+        (+cp.averted_direct_aal_usd||0).toFixed(0),(+cp.cost_usd||0).toFixed(0),(+cp.bcr||0).toFixed(2),
+        cp.year!=null?("year_"+cp.year):"deferred",cp.renovation_synergy?"true":"",
+        csvCell(pk.capital_plan.scenario||""),pk.capital_plan.horizon_years!=null?pk.capital_plan.horizon_years:"",
+        pk.capital_plan.discount_rate!=null?(pk.capital_plan.discount_rate*100).toFixed(1):"",""].join(",")+"\n";
+    });
+  }
+  return csv;
 }
 
 /* ============================================================
@@ -1674,6 +1916,27 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  tolerance:{t:"Risk tolerance",b:
+    "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
+    "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
+    "<p>Each breach is routed to a lane: <b>capex</b> when a measure at that site clears breakeven, <b>risk transfer or acceptance</b> when none does. Disclosure standards (IFRS S2) expect the entity to set and document its own materiality threshold; editing these numbers is exactly that act.</p>",
+    s:"A policy layer only: thresholds flag numbers, they never change them."},
+  quote:{t:"Broker quote vs technical premium",b:
+    "<p>The <b>technical premium</b> is the transferred expected loss times the loading you set: the model's benchmark for what the configured layer is worth. Enter your broker's quoted annual premium and the app states the gap.</p>"+
+    "<p>Read the gap as grounds for a conversation, not a verdict. A technical premium is a negotiation benchmark, not a market price: capacity cycles, terms, deductible structure, and the insurer's own model all move real quotes. When a results pack is loaded, the event-set benchmark is the stronger anchor because its loss curve is joint across sites rather than an approximation.</p>"+
+    "<p>What moves quotes most is submission data quality: documented roof age, opening protection, and floor elevation routinely swing modeled pricing by double-digit percentages. That is what the broker evidence pack is for.</p>"},
+  retention:{t:"Retention: which attachment to buy",b:
+    "<p>Each row prices the same insurance structure at a different attachment point. Raising the attachment keeps more of the frequent losses in-house (the <b>retained below</b> column grows) and cuts the premium; the <b>cost of certainty</b> column is what you pay the insurer above the expected loss they take on.</p>"+
+    "<p>There is no single right answer to optimize toward: with any loading above 1.0, insuring less always looks cheaper on average, because that is what loading means. What the table answers is what each step of volatility protection costs, so the attachment can be matched to how much loss the business can absorb in a bad year.</p>"+
+    "<p>The retained-below figure is also the <b>working layer</b>: the expected annual loss a higher retention or a captive would need to fund.</p>"},
+  queue:{t:"Action queue and funding cutline",b:
+    "<p>Every site-and-measure pair the model finds in scope, ranked by benefit-cost ratio. With a program budget set, funding fills from the top: nothing below breakeven is funded, and what does not fit is kept on the list as unfunded rather than dropped, the same defer-not-delete discipline the pipeline's capital plan uses.</p>"+
+    "<p>Rows are appraised one measure at a time. The program roll-up recomputes the funded set jointly per site, so overlapping measures are never double-counted; the joint figure is the one to quote.</p>"+
+    "<p>When a CLIMADA results pack is loaded, its capital plan is the canonical appraisal (full event sets, refurbishment-window phasing) and is shown beside this interactive queue and included in the export. Measure costs here are planning-grade defaults until replaced with engineering estimates; the export carries the assumptions so every number can be traced.</p>"},
+  brokerPack:{t:"Broker evidence pack",b:
+    "<p>A CSV built for the renewal submission: per site, the verified construction and protection attributes underwriters call secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes), plus this model's present-day damage view, so your broker can put a documented alternative view beside the insurer's model.</p>"+
+    "<p>Documented attributes are the highest-return lever in renewal pricing: they change the insurer's modeled loss, not just the negotiation. Blank cells are honest blanks; fill them from surveys rather than guesses.</p>"+
+    "<p>The modeled columns state their source (CLIMADA grid or interim screening model). Interim figures are for exploration; load a grid before putting these numbers in front of an underwriter.</p>"},
 };
 let _infoPop=null,_infoBtn=null;
 function ensureInfoPop(){
@@ -1840,6 +2103,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderTolerance();
   renderScrub();
   renderSites();
   renderAdaptation();
@@ -1918,6 +2182,63 @@ function perilZeroNote(hz){
   if(hz==="prain")return "TC rainfall has no interim model by design, so it stays zero until a rainfall grid is loaded. "+
     "Run the pipeline with <span class=\"mono\">--rain</span> (or <span class=\"mono\">--all</span>) and load the merged grid on the Method tab.";
   return null;
+}
+/* Wave 1 R1: the tolerance panel. Reads the appraisal sliders for the
+   breakeven screen (defaults when unset) so the lane routing matches the
+   Adaptation tab's own appraisal. Render-only: every figure comes from
+   toleranceFlags over the parity-pinned finPortfolio. */
+function tolAf(){
+  const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
+  return annuity(hv===""?20:+hv,(dv===""?2:+dv)/100);
+}
+function renderTolerance(){
+  const host=document.getElementById("tolBody"); if(!host)return;
+  const panel=document.getElementById("tolPanel");
+  if(!sites.length){ if(panel)panel.style.display="none"; return; }
+  if(panel)panel.style.display="block";
+  const t=toleranceFlags(sites,scenario,tolAf());
+  const fld=(key,label,val,step,unit)=>'<div class="field" style="margin-bottom:4px"><label>'+label+'</label>'+
+    '<input type="number" data-tol="'+key+'" min="0" step="'+step+'" value="'+val+'" style="width:100%"> <span class="hint">'+unit+'</span></div>';
+  const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
+    ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
+  let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
+    fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
+    '</div><div class="kv" style="margin-top:8px">'+
+    line("Portfolio expected cost",t.portPct.toFixed(2)+"%",tolerance.portAalPct+"%",t.portBreach)+
+    line("1-in-100 Value at Risk",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
+    '<span class="k">Sites above threshold</span><span class="v mono">'+t.siteBreaches.length+' of '+sites.length+'</span>'+
+    '</div>';
+  if(t.siteBreaches.length){
+    h+='<table class="tbl" style="margin-top:8px"><thead><tr><th>Site</th><th class="num">Cost $/yr</th><th class="num">bps of value</th><th>Best in-scope measure</th><th class="num">BCR</th><th>Lane</th></tr></thead><tbody>'+
+      t.siteBreaches.map(b=>'<tr class="rowclick" data-focus="'+b.id+'"><td>'+esc(b.name)+'</td><td class="num mono">'+fmt$(b.aal)+'</td>'+
+        '<td class="num mono">'+b.bps.toFixed(0)+'</td><td>'+(b.bestMeasure?esc(b.bestMeasure):'<span class="hint">none in scope</span>')+'</td>'+
+        '<td class="num mono" style="color:'+(b.bestBcr>=1?"#2E8B6F":"#B23A32")+'">'+b.bestBcr.toFixed(2)+'x</td>'+
+        '<td>'+(b.lane==="capex"?"Harden (capex)":"Transfer or accept")+'</td></tr>').join("")+'</tbody></table>';
+  }
+  const acts=[];
+  const capex=t.siteBreaches.filter(b=>b.lane==="capex"),xfer=t.siteBreaches.filter(b=>b.lane==="transfer");
+  if(capex.length)acts.push("<b>Harden first:</b> "+capex.map(b=>esc(b.name)).join(", ")+" (a measure clears breakeven at each; the action queue on the Adaptation tab ranks the projects).");
+  if(xfer.length)acts.push("<b>Review transfer or accept:</b> "+xfer.map(b=>esc(b.name)).join(", ")+" (no measure clears breakeven at current settings; the risk-layering panel prices the transfer).");
+  if(t.varBreach)acts.push("<b>Tail above tolerance:</b> review the insurance attachment and limit against the retention table on the Adaptation tab.");
+  if(t.portBreach)acts.push("<b>Portfolio expected cost above tolerance:</b> fund the action queue and carry the plan into the disclosure table and the board brief.");
+  h+='<div class="note" style="margin-top:10px">'+(t.anyBreach
+    ?acts.join("<br>")
+    :"Within tolerance at "+esc(SCEN_LABEL[scenario]||scenario)+". These thresholds, and this statement, are the documented screening basis; they are editable above and travel with your saved session.")+'</div>';
+  host.innerHTML=h;
+  host.querySelectorAll("input[data-tol]").forEach(inp=>inp.onchange=()=>{
+    const v=+inp.value;
+    if(isFinite(v)&&v>=0){tolerance[inp.dataset.tol]=v;persist();render();}
+  });
+  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  // one-line position statement on the executive read-out
+  const ro=document.getElementById("sumReadout");
+  if(ro&&ro.innerHTML)ro.innerHTML+=" "+(t.anyBreach
+    ?'Against the stated risk tolerance, <b>'+(t.siteBreaches.length?t.siteBreaches.length+" site"+(t.siteBreaches.length>1?"s":""):"")+
+      (t.siteBreaches.length&&(t.portBreach||t.varBreach)?" and ":"")+
+      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; see Position vs tolerance below.'
+    :"The portfolio sits within its stated risk tolerance at this scenario.");
 }
 function renderOverview(scored){
   const hz=activeHazard, heat=hz==="heat", hazName=HAZARD_LABEL[hz];
@@ -2020,9 +2341,10 @@ function renderSites(){
   });
   const ratingCell=r=>'<div class="ratecell">'+HAZARDS.map(h=>
     '<span class="pill mini '+r.ratings[h.key]+'" title="'+h.label+': '+r.ratings[h.key]+'">'+h.short+'</span>').join("")+'</div>';
+  const tolIds=new Set(sites.length?toleranceFlags(sites,scenario,tolAf()).siteBreaches.map(b=>b.id):[]);
   document.getElementById("siteBody").innerHTML=rows.map(r=>
     '<tr class="rowclick '+(r.id===selectedId?"sel":"")+'" data-id="'+r.id+'">'+
-    '<td>'+esc(r.name)+'</td><td>'+esc(r.brand||"")+'</td>'+
+    '<td>'+(tolIds.has(r.id)?'<span class="tolbreach" title="Expected annual cost above the site tolerance ('+tolerance.siteAalBps+' bps of value); see Position vs tolerance on the Summary tab"></span>':'')+esc(r.name)+'</td><td>'+esc(r.brand||"")+'</td>'+
     '<td class="num mono">'+fmt$(r.asset_value_usd)+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.ead))+'</td>'+
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
@@ -2080,7 +2402,8 @@ function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
   if(!sites.length){
     host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
-    ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary",
+     "sweepHost","queueRoll","queueBody","queuePack","queueMore"].forEach(id=>document.getElementById(id).innerHTML="");
     return;
   }
   // read shared settings
@@ -2090,6 +2413,8 @@ function renderAdaptation(){
   adapt.load=+document.getElementById("load").value;
   adapt.attach=+document.getElementById("attachSel").value;
   adapt.exhaust=+document.getElementById("exhaustSel").value;
+  adapt.quote=+document.getElementById("quoteIn").value||0;
+  adapt.budget=+document.getElementById("budgetIn").value||0;
   if(adapt.exhaust<=adapt.attach){adapt.exhaust=RPS.find(rp=>rp>adapt.attach)||500;document.getElementById("exhaustSel").value=adapt.exhaust;}
   document.getElementById("horizonVal").textContent=horizon;
   document.getElementById("discVal").textContent=(disc*100).toFixed(1)+"%";
@@ -2156,8 +2481,24 @@ function renderAdaptation(){
     '<span class="k">Indicative premium</span><span class="v mono">'+fmt$(ls.premium)+'/yr</span>'+
     '<span class="k">Cost of certainty</span><span class="v mono">'+fmt$(ls.premium-ls.transferred)+'/yr</span>'+
     (function(){const ps=packLayerStats(scenario);return (ps&&ps.limit>0)?
-      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})();
+      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})()+
+    (function(){ // Wave 1 R2: quoted premium vs the modeled benchmark
+      if(!(adapt.quote>0))return '';
+      const gapM=quoteGapPct(adapt.quote,ls.premium);
+      const psq=packLayerStats(scenario);
+      const gapP=(psq&&psq.limit>0)?quoteGapPct(adapt.quote,psq.premium):null;
+      const wd=g=>Math.abs(g)<=15?"broadly in line with":(g>0?g.toFixed(0)+"% above":Math.abs(g).toFixed(0)+"% below");
+      const hint=gapM==null?"No modeled premium to compare at this layer.":
+        gapM>15?"Grounds to negotiate, or to raise the attachment (see the retention table below).":
+        gapM<-15?"Below the technical benchmark: attractive if terms and exclusions are equivalent.":
+        "Within the range a benchmark can resolve.";
+      return '<span class="k">Broker quote'+infoBtn("quote")+'</span><span class="v mono">'+fmt$(adapt.quote)+'/yr'+
+        (gapM!=null?': '+wd(gapM)+' the modeled technical premium':'')+
+        (gapP!=null?'; '+wd(gapP)+' the event-set benchmark':'')+
+        '. <small>'+hint+' The '+adapt.load.toFixed(1)+'x loading assumption is yours to set.</small></span>';
+    })();
   document.getElementById("layerChart").innerHTML=layerSvg(f.varByRp,ls);
+  document.getElementById("sweepHost").innerHTML=sweepTable(f.varByRp,f.acuteAal);
   // per-site recommendations: best measure by site BCR
   const rec=sites.map(s=>{
     const sBase=adaptedFinSite(s,scenario,{}).totalAal;
@@ -2176,6 +2517,50 @@ function renderAdaptation(){
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
     (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
   document.querySelectorAll("#recBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+
+  // Wave 1 R3: the action queue with its funding cutline
+  const q=actionQueue(sites,scenario,af,adapt.budget);
+  const unf=q.items.filter(i=>!i.funded&&i.bcr>=1);
+  document.getElementById("queueRoll").innerHTML=q.items.length?
+    "<b>Program:</b> "+q.roll.n+" funded project"+(q.roll.n===1?"":"s")+", cost "+fmt$(q.roll.cost)+
+    (adapt.budget>0?" of the "+fmt$(adapt.budget)+" budget":"")+
+    ", jointly averting <b>"+fmt$(q.roll.averted)+"/yr</b> (program BCR "+q.roll.bcr.toFixed(2)+
+    "x; the roll-up is computed jointly per site, so overlapping measures never double-count)."+
+    (unf.length?" <b>"+unf.length+"</b> project"+(unf.length===1?"":"s")+" above breakeven sit"+(unf.length===1?"s":"")+
+      " unfunded ("+fmt$(unf.reduce((a,i)=>a+i.cost,0))+"): deferred by the budget, not dropped.":"")+
+    " Nothing below breakeven is ever funded.":
+    "No in-scope measures for this portfolio at current settings.";
+  const QSHOW=12;
+  document.getElementById("queueBody").innerHTML=q.items.slice(0,QSHOW).map((it,i)=>
+    '<tr class="rowclick" data-focus="'+it.id+'"><td class="mono">'+(i+1)+'</td><td>'+esc(it.site)+'</td><td>'+esc(it.measure)+'</td>'+
+    '<td class="num mono">'+fmt$(it.averted)+'</td><td class="num mono">'+fmt$(it.cost)+'</td>'+
+    '<td class="num mono" style="color:'+(it.bcr>=1?"#2E8B6F":"#B23A32")+'">'+it.bcr.toFixed(2)+'x</td>'+
+    '<td style="color:'+(it.funded?"#2E8B6F":"#7A8893")+';font-weight:600">'+(it.funded?"funded":"unfunded")+'</td></tr>').join("");
+  document.getElementById("queueMore").textContent=q.items.length>QSHOW?
+    ("Top "+QSHOW+" of "+q.items.length+" pairs shown; the export carries the full list."):"";
+  const pkq=resultsPack&&resultsPack.data;
+  document.getElementById("queuePack").innerHTML=(pkq&&pkq.capital_plan&&pkq.capital_plan.projects&&pkq.capital_plan.projects.length)?
+    '<div class="note" style="margin-top:10px"><b>Canonical plan (CLIMADA results pack):</b><br>'+
+    pkq.capital_plan.projects.slice(0,5).map(cp=>(cp.year!=null?"Y"+esc(cp.year):"deferred")+" · "+esc(cp.site)+" · "+esc(cp.measure)+" · BCR "+esc(cp.bcr)).join("<br>")+
+    '<br><small>Event-set appraisal at '+esc(pkq.capital_plan.scenario||"")+
+    (pkq.capital_plan.budget_annual_usd?', '+fmt$(pkq.capital_plan.budget_annual_usd)+'/yr budget':'')+
+    '. This is the authoritative ranking; the interactive queue above is the live estimate. Both go into the export.</small></div>':"";
+  document.querySelectorAll("#queueBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* Wave 1 R2: the retention table. Every candidate attachment priced on the
+   same curve, exhaustion and loading held fixed. */
+function sweepTable(varByRp,acuteAal){
+  const rows=retentionSweep(varByRp,acuteAal,adapt.exhaust,adapt.load);
+  if(!rows.length)return "";
+  return '<h3 style="margin-top:14px">Retention: the attachment trade'+infoBtn("retention")+'</h3>'+
+    '<table class="tbl"><thead><tr><th>Attachment</th><th class="num">Retained below</th><th class="num">Transferred</th><th class="num">Premium</th><th class="num">Cost of certainty</th><th class="num">Tail beyond limit</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr'+(r.attach===adapt.attach?' style="background:#F2F5F3;font-weight:600"':'')+'>'+
+      '<td class="mono">1-in-'+r.attach+(r.attach===adapt.attach?" (current)":"")+'</td>'+
+      '<td class="num mono">'+fmt$(r.below)+'/yr</td><td class="num mono">'+fmt$(r.layer)+'/yr</td>'+
+      '<td class="num mono">'+fmt$(r.premium)+'/yr</td><td class="num mono">'+fmt$(r.certainty)+'/yr</td>'+
+      '<td class="num mono">'+fmt$(r.above)+'/yr</td></tr>').join("")+'</tbody></table>'+
+    '<div class="hint" style="margin-top:6px">Same exhaustion (1-in-'+adapt.exhaust+') and loading ('+adapt.load.toFixed(1)+
+    'x) on every row; only the attachment moves. Retained below is the working layer a higher retention or a captive would fund. The three slices always add up to the acute expected annual loss.</div>';
 }
 /* ECA-style adaptation cost curve: width = averted AAL, height = BCR */
 function costCurveSvg(appraised){
@@ -2989,7 +3374,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -3006,6 +3391,7 @@ function restore(){
         adapt=Object.assign({},adapt,s.adapt);
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
+      if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -3082,6 +3468,26 @@ function exportCsv(){
   a.href=URL.createObjectURL(blob);a.download="rtv_portfolio_multihazard_"+scenario+".csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   toast("Exported "+sites.length+" rows (multi-hazard Power BI schema)");
+}
+/* Wave 1 R2/R3: new artifacts get NEW files. The Power BI export above is a
+   frozen contract and never changes; these two exports carry the decision
+   layer's outputs on their own schemas, documented on the Method tab. */
+function exportBrokerPack(){
+  if(!sites.length){toast("Load a portfolio first.");return;}
+  const csv=brokerPackCsv();
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_broker_evidence_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Broker evidence pack exported ("+sites.length+" sites)");
+}
+function exportActionList(){
+  if(!sites.length){toast("Load a portfolio first.");return;}
+  const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
+  const csv=actionListCsv(scenario,hv===""?20:+hv,dv===""?2:+dv);
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_action_list_"+scenario+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Action list exported (live model"+(resultsPack?" + canonical pack plan":"")+")");
 }
 function downloadTemplate(){
   // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country.
@@ -3171,6 +3577,13 @@ function wire(){
   ["horizon","disc","growth","load"].forEach(id=>document.getElementById(id).oninput=renderAdaptation);
   document.getElementById("attachSel").onchange=renderAdaptation;
   document.getElementById("exhaustSel").onchange=renderAdaptation;
+  // Wave 1 decision layer: quote, budget, and the two new export artifacts
+  document.getElementById("quoteIn").value=adapt.quote||"";
+  document.getElementById("budgetIn").value=adapt.budget||"";
+  document.getElementById("quoteIn").oninput=()=>{persist();renderAdaptation();};
+  document.getElementById("budgetIn").oninput=()=>{persist();renderAdaptation();};
+  document.getElementById("brokerBtn").onclick=exportBrokerPack;
+  document.getElementById("actionBtn").onclick=exportActionList;
   // finance assumption sliders
   const finInit={revRatio:Math.round(finAssume.revRatio*100),gop:Math.round(finAssume.gopMargin*100),reopen:finAssume.reopenMonths,heatDrop:Math.round(finAssume.heatDrop*100),corr:Math.round(finAssume.corr*100)};
   Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});

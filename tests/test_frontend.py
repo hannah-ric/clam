@@ -384,6 +384,124 @@ brandFilter="Gone";_lastBrandKey="";
 syncBrandFilter([{brand:"A"}]);
 assert(brandFilter==="","a vanished brand resets the map filter instead of blanking the map");
 
+/* ---------------- Wave 1: the decision layer (v2.2.0) ---------------- */
+/* tolerance, lanes, retention sweep, quote gap, action queue, artifacts.
+   All additive: the parity suite already proved no pinned number moved. */
+gridByHazard={};clearHazCache();resultsPack=null;hazardGrid=null;
+scenario="present";
+sites=[
+ {id:1,name:"Reef",brand:"A",latitude:25.01,longitude:-80.01,asset_value_usd:80e6,
+  construction:"frame",year_built:1988},
+ {id:2,name:"Plains",brand:"B",latitude:39.0,longitude:-97.0,asset_value_usd:60e6,
+  construction:"engineered",year_built:2015,defended:true},
+];
+const afW=annuity(20,0.02);
+const fW=finPortfolio(sites,"present");
+const bpsArr=fW.rows.map(r=>r.value?r.totalAal/r.value*1e4:0);
+const hiBps=Math.max.apply(null,bpsArr), loBps=Math.min.apply(null,bpsArr);
+const hiName=fW.rows[bpsArr.indexOf(hiBps)].name;
+assert(hiBps>loBps,"decision fixture has a risk spread between sites");
+tolerance.siteAalBps=(hiBps+loBps)/2;
+tolerance.portAalPct=0.0001;      // force a portfolio breach
+tolerance.varPctValue=1e9;        // never a tail breach
+const tf=toleranceFlags(sites,"present",afW);
+assert(tf.siteBreaches.length===1&&tf.siteBreaches[0].name===hiName,
+  "only the site above the threshold breaches, and it is the risky one");
+assert(tf.portBreach===true&&tf.varBreach===false,
+  "portfolio breach and tail non-breach both detected");
+assert((tf.siteBreaches[0].bestBcr>=1)===(tf.siteBreaches[0].lane==="capex"),
+  "the decision lane follows the breakeven screen exactly");
+assert(tf.anyBreach===true,"anyBreach aggregates the three screens");
+
+/* tolerance persistence: round trip, and legacy state keeps defaults */
+tolerance.siteAalBps=123;persist();
+tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
+restore();
+assert(tolerance.siteAalBps===123&&tolerance.varPctValue===1e9,
+  "tolerance thresholds persist and restore");
+const stW=JSON.parse(localStorage.getItem("rtv_state_v1"));
+delete stW.tolerance;localStorage.setItem("rtv_state_v1",JSON.stringify(stW));
+tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
+restore();
+assert(tolerance.siteAalBps===75&&tolerance.portAalPct===1.0,
+  "legacy saved state without tolerance keeps the defaults (backward safe)");
+hazardGrid=null;gridByHazard={};clearHazCache();   // restore() re-loaded the Phase 4 grid; back to interim
+
+/* tolerance panel renders the breach and hides without sites */
+tolerance={siteAalBps:(hiBps+loBps)/2,portAalPct:1.0,varPctValue:10};
+document.getElementById("sumReadout").innerHTML="Base readout.";
+renderTolerance();
+const tolB=document.getElementById("tolBody");
+assert(tolB.innerHTML.indexOf(hiName)>=0&&tolB.innerHTML.indexOf("tolerance")>=0,
+  "the tolerance panel names the breaching site");
+assert(document.getElementById("sumReadout").innerHTML.indexOf("tolerance")>=0,
+  "the executive read-out carries a position-vs-tolerance sentence");
+const savedSites=sites;
+sites=[];renderTolerance();
+assert(document.getElementById("tolPanel").style.display==="none",
+  "no sites: the tolerance panel hides");
+sites=savedSites;
+
+/* retention sweep: slices reconcile and match the parity-pinned integral */
+adapt.attach=25;adapt.exhaust=250;adapt.load=1.5;
+const slW=layerSlices(fW.varByRp,fW.acuteAal,25,250,1.5);
+assert(Math.abs(slW.below+slW.layer+slW.above-fW.acuteAal)<1e-6,
+  "layer slices reconcile to the acute AAL");
+assert(Math.abs(slW.layer-layerStatsCalc(fW.varByRp,fW.acuteAal).transferred)<1e-6,
+  "the sweep's layer slice equals the parity-pinned layerStatsCalc integral");
+const swW=retentionSweep(fW.varByRp,fW.acuteAal,250,1.5);
+assert(swW.length===RPS.filter(rp=>rp<250).length,
+  "the sweep covers every attachment below the exhaust");
+for(let i=1;i<swW.length;i++)assert(swW[i].layer<=swW[i-1].layer+1e-9,
+  "transferred loss falls as the attachment rises ("+swW[i].attach+")");
+assert(quoteGapPct(150,100)===50&&quoteGapPct(50,100)===-50
+  &&quoteGapPct(0,100)===null&&quoteGapPct(100,0)===null,
+  "quote gap: signed percent, and no verdict without both sides");
+
+/* action queue: ranking, cutline semantics, joint roll-up */
+const qW=actionQueue(sites,"present",afW,0);
+assert(qW.items.length>0,"the queue lists in-scope site-measure pairs");
+for(let i=1;i<qW.items.length;i++)assert(qW.items[i].bcr<=qW.items[i-1].bcr+1e-12,
+  "the queue is ranked by BCR");
+assert(qW.items.every(it=>it.funded===(it.bcr>=1)),
+  "no budget: the cutline is breakeven");
+assert(qW.roll.cost===qW.items.filter(i=>i.funded).reduce((a,i)=>a+i.cost,0),
+  "the roll-up cost sums the funded set");
+assert(qW.roll.averted<=qW.items.filter(i=>i.funded).reduce((a,i)=>a+i.averted,0)+1e-6,
+  "the joint program benefit never exceeds the itemized sum (no double-counting)");
+if(qW.items[0].bcr>=1){
+  const qB=actionQueue(sites,"present",afW,qW.items[0].cost);
+  assert(qB.items.length===qW.items.length,"a budget never drops items from the list");
+  assert(qB.items[0].funded===true,"greedy fill funds the top of the list first");
+  assert(qB.items.filter(i=>i.funded).reduce((a,i)=>a+i.cost,0)<=qW.items[0].cost+1e-9,
+    "funding respects the budget");
+}
+
+/* the two new artifacts: own schemas, honest sourcing, frozen export untouched */
+const bpW=brokerPackCsv();
+assert(bpW.indexOf("roof_type")>=0&&bpW.indexOf("opening_protection")>=0
+  &&bpW.indexOf("modeled_direct_ead_usd_present")>=0,
+  "the broker pack carries secondary modifiers and the modeled view");
+assert(bpW.trim().split("\\n").length===sites.length+1,"broker pack: one row per site");
+assert(bpW.indexOf("interim_model")>=0,
+  "the broker pack states its hazard source honestly (interim here)");
+const alW=actionListCsv("present",20,2);
+assert(alW.indexOf("live_model")>=0&&alW.split("\\n")[0].indexOf("owner")>=0,
+  "the action list carries the source label and a blank owner column");
+resultsPack={data:goodPack,name:"results_pack.json",loaded:"x"};
+const alP=actionListCsv("present",20,2);
+assert(alP.indexOf("climada_pack")>=0&&alP.indexOf("deferred")>=0,
+  "pack capital-plan rows join the export, deferral preserved");
+resultsPack=null;
+
+/* transparency: every new surface carries an authored explanation */
+assert(INFO.tolerance&&INFO.quote&&INFO.retention&&INFO.queue&&INFO.brokerPack,
+  "the Wave 1 surfaces all carry INFO popovers");
+assert(INFO.tolerance.b.indexOf("materiality")>=0,
+  "the tolerance INFO states the materiality basis");
+assert(INFO.quote.b.indexOf("not a market price")>=0,
+  "the quote INFO is honest about what a technical premium is not");
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

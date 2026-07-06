@@ -4,7 +4,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -21,6 +21,7 @@ function restore(){
         adapt=Object.assign({},adapt,s.adapt);
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
+      if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -97,6 +98,26 @@ function exportCsv(){
   a.href=URL.createObjectURL(blob);a.download="rtv_portfolio_multihazard_"+scenario+".csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   toast("Exported "+sites.length+" rows (multi-hazard Power BI schema)");
+}
+/* Wave 1 R2/R3: new artifacts get NEW files. The Power BI export above is a
+   frozen contract and never changes; these two exports carry the decision
+   layer's outputs on their own schemas, documented on the Method tab. */
+function exportBrokerPack(){
+  if(!sites.length){toast("Load a portfolio first.");return;}
+  const csv=brokerPackCsv();
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_broker_evidence_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Broker evidence pack exported ("+sites.length+" sites)");
+}
+function exportActionList(){
+  if(!sites.length){toast("Load a portfolio first.");return;}
+  const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
+  const csv=actionListCsv(scenario,hv===""?20:+hv,dv===""?2:+dv);
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="rtv_action_list_"+scenario+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("Action list exported (live model"+(resultsPack?" + canonical pack plan":"")+")");
 }
 function downloadTemplate(){
   // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country.
@@ -186,6 +207,13 @@ function wire(){
   ["horizon","disc","growth","load"].forEach(id=>document.getElementById(id).oninput=renderAdaptation);
   document.getElementById("attachSel").onchange=renderAdaptation;
   document.getElementById("exhaustSel").onchange=renderAdaptation;
+  // Wave 1 decision layer: quote, budget, and the two new export artifacts
+  document.getElementById("quoteIn").value=adapt.quote||"";
+  document.getElementById("budgetIn").value=adapt.budget||"";
+  document.getElementById("quoteIn").oninput=()=>{persist();renderAdaptation();};
+  document.getElementById("budgetIn").oninput=()=>{persist();renderAdaptation();};
+  document.getElementById("brokerBtn").onclick=exportBrokerPack;
+  document.getElementById("actionBtn").onclick=exportActionList;
   // finance assumption sliders
   const finInit={revRatio:Math.round(finAssume.revRatio*100),gop:Math.round(finAssume.gopMargin*100),reopen:finAssume.reopenMonths,heatDrop:Math.round(finAssume.heatDrop*100),corr:Math.round(finAssume.corr*100)};
   Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});
