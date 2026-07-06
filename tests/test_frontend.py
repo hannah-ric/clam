@@ -460,6 +460,10 @@ const _siteTot=mxSite.reduce((a,r)=>a+r.combined.ead,0),
       _brandTot=mxBrand.reduce((a,r)=>a+r.combined.ead,0);
 assert(Math.abs(_siteTot-_brandTot)<1e-6,
   "risk matrix by-brand conserves total combined cost");
+renderQuadrant();
+const _qv=document.getElementById("riskValue").innerHTML;
+assert((_qv.match(/openScorecard\\(/g)||[]).length===sites.length,
+  "risk-vs-value plots one clickable bubble per site");
 ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
 ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
 restore();

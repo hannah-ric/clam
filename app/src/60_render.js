@@ -10,6 +10,7 @@ function render(){
   if(hasData){ renderOverview(scored); }
   renderSummary();
   renderRiskMatrix();
+  renderQuadrant();
   renderTolerance();
   renderScrub();
   renderSites();
@@ -133,6 +134,15 @@ function renderRiskMatrix(){
     '<span style="color:var(--muted)">Columns: W wind, F coastal, R river, H heat, B wildfire, P rainfall, All combined</span></div>';
   host.innerHTML=h;
   if(group==="site")host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* SVP review: the risk-vs-value quadrant. Plots each site by value and by cost
+   share, coloured by combined band, over scorePhysTotal (parity-pinned). Display
+   only: it moves no number. */
+function renderQuadrant(){
+  const host=document.getElementById("riskValue"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const pts=scorePhysTotal(sites,scenario).rows.map(r=>({id:r.id,name:r.name,value:r.asset_value_usd,ead:r.ead,eadPct:r.eadPct,band:r.band}));
+  host.innerHTML=quadrantSvg(pts);
 }
 /* why a damage peril reads zero everywhere, phrased as the user's next step.
    Mirrors explainPeril's source logic at portfolio level: only the two perils

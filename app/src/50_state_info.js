@@ -250,6 +250,11 @@ const INFO={
     "<p>Read <b>across a row</b> for one site's full risk profile, or <b>down a column</b> to see which sites drive the portfolio's exposure to a single peril. Rows are ordered by combined expected annual cost, so the most exposed sit at the top.</p>"+
     "<p>The <b>View</b> control regroups the rows by site or by brand; the <b>Show</b> control switches each cell between percent of value, dollars per year, and the band name. Heat is a chronic indicator, so its cell is coloured but carries no dollar figure (its cost is on the Financial impact tab). Click any site row to open its scorecard.</p>",
     s:"A display lens only: the matrix reads the same per-site figures as every other tab and changes none of them."},
+  riskValue:{t:"Risk vs value",b:
+    "<p>The classic capital-allocation picture. Each bubble is a site, placed by its <b>asset value</b> (left to right) and its <b>expected annual cost as a share of that value</b> (bottom to top), and sized by the <b>dollars at risk each year</b>. Colour is the site's combined risk band.</p>"+
+    "<p>The dashed lines split the portfolio into four quadrants: the vertical at the portfolio's median value, the horizontal at this app's Moderate-to-High band boundary. <b>Top right</b> is high value meeting high risk, where hardening usually pays back first; <b>top left</b> is smaller but exposed, often a transfer-or-harden call; <b>bottom right</b> is valuable but calmer, worth monitoring; <b>bottom left</b> is low on both, usually accepted.</p>"+
+    "<p>Click any bubble to open that site's scorecard.</p>",
+    s:"A display lens only: bubbles plot the same per-site figures shown elsewhere and change none of them."},
   tolerance:{t:"Risk tolerance",b:
     "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
     "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
@@ -420,6 +425,41 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
     s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
     s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
+  s+="</svg>";return s;
+}
+function median(a){ if(!a.length)return 0; const s=a.slice().sort((x,y)=>x-y),m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+/* SVP review: risk-vs-value quadrant. X = asset value, Y = expected annual cost
+   as a share of value, bubble area tracks EAD dollars, colour is the combined
+   band. The dashed dividers (median value, and the Moderate/High band boundary)
+   split the portfolio into the classic capital-allocation quadrants. A bubble
+   click opens the site scorecard, the same as the map and the matrix. Pure over
+   its inputs: it plots figures the engine already computed, changing none. */
+function quadrantSvg(pts){
+  const W=480,H=300,padL=54,padR=16,padT=20,padB=44;
+  if(!pts.length)return svgEl(W,H)+"</svg>";
+  const xmax=(Math.max.apply(null,pts.map(p=>p.value))*1.06)||1;
+  const ymax=Math.max(0.6,Math.max.apply(null,pts.map(p=>p.eadPct))*1.12);
+  const rmax=Math.max.apply(null,pts.map(p=>p.ead))||1;
+  const xDiv=median(pts.map(p=>p.value)), yDiv=0.75;
+  const X=v=>padL+(v/xmax)*(W-padL-padR);
+  const Y=v=>H-padB-(v/ymax)*(H-padB-padT);
+  const R=e=>5+15*Math.sqrt(Math.max(e,0)/rmax);
+  let s=svgEl(W,H);
+  [0,.25,.5,.75,1].forEach(t=>{const yv=t*ymax,y=Y(yv);
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+yv.toFixed(1)+'%</text>';});
+  [0.5,1].forEach(t=>{const xv=t*xmax,x=X(xv);
+    s+='<text x="'+x+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(xv)+'</text>';});
+  s+='<line x1="'+X(xDiv)+'" y1="'+padT+'" x2="'+X(xDiv)+'" y2="'+(H-padB)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  if(yDiv<ymax)s+='<line x1="'+padL+'" y1="'+Y(yDiv)+'" x2="'+(W-padR)+'" y2="'+Y(yDiv)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  const tag=(x,y,anc,txt)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+anc+'" font-size="9.5" fill="#9AA7A0" font-style="italic">'+txt+'</text>';
+  s+=tag(W-padR-2,padT+11,"end","protect first")+tag(padL+2,padT+11,"start","harden / transfer")+
+     tag(W-padR-2,H-padB-5,"end","monitor")+tag(padL+2,H-padB-5,"start","accept");
+  pts.slice().sort((a,b)=>b.ead-a.ead).forEach(p=>{
+    s+='<circle cx="'+X(p.value).toFixed(1)+'" cy="'+Y(Math.min(p.eadPct,ymax)).toFixed(1)+'" r="'+R(p.ead).toFixed(1)+'" fill="'+BAND_COLOR[p.band]+'" fill-opacity="0.72" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="openScorecard('+(+p.id)+')"><title>'+esc(p.name)+' · '+fmt$(p.value)+' value · '+p.eadPct.toFixed(2)+'% cost · '+fmt$(p.ead)+'/yr · '+p.band+'</title></circle>';});
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Asset value</text>';
+  const ymid=(padT+H-padB)/2;
+  s+='<text x="14" y="'+ymid+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 14 '+ymid+')">Annual cost, % of value</text>';
   s+="</svg>";return s;
 }
 

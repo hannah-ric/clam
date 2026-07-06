@@ -379,6 +379,11 @@
         <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
         <div id="riskMatrix" style="overflow-x:auto"></div>
       </div>
+      <div class="panel" id="quadrantPanel">
+        <h3>Risk vs value<button type="button" class="info" data-info="riskValue" aria-label="How to read the risk-versus-value chart" aria-expanded="false">i</button></h3>
+        <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
+        <div id="riskValue" style="overflow-x:auto"></div>
+      </div>
       <div class="grid2">
         <div class="panel">
           <h3>Cost by peril<button type="button" class="info" data-info="aggPeril" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
