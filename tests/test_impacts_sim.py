@@ -110,7 +110,7 @@ class FakeRainHaz2:
 
 RF_MISSING = {"ssp126_2030"}
 
-def fake_fetch_river(iso3, app_key, meta):
+def fake_fetch_river(iso3, app_key, meta, cache=None):
     if app_key in RF_MISSING:
         return []
     meta.setdefault("rflood_sources", {})[f"{iso3}:{app_key}"] = {"n_members": 2}

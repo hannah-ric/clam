@@ -70,6 +70,10 @@ bash run_pipeline.sh                # standard run: wind + both floods + heat
 bash run_pipeline.sh --all          # FULL SIX-PERIL run: adds wildfire + TC rainfall
 bash run_pipeline.sh --fire --rain  # or opt the extra layers in individually
 # other flags: --fast / --preflight / --no-heat / --dry-run
+# speed: --workers N tunes concurrent Data API wind fetches per country
+#        (default 4; --workers 1 is the exact serial fetch), and the heat layer
+#        runs alongside the CLIMADA layers unless --no-overlap. Both keep the
+#        output byte-for-byte identical to a serial run.
 ```
 
 The wildfire layer needs a one-time NASA FIRMS download: CLIMADA Petals builds

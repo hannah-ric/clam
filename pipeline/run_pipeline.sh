@@ -22,7 +22,19 @@
 #   bash run_pipeline.sh --fast          # iteration run: VIR PRI only, 10yr heat
 #   bash run_pipeline.sh --preflight     # run the preflights first, then pipeline
 #   bash run_pipeline.sh --no-heat       # skip the heat layer this run
+#   bash run_pipeline.sh --workers N     # concurrent Data API wind fetches per
+#                                        # country (default CLAM_WORKERS or 4;
+#                                        # use 1 for the exact serial fetch)
+#   bash run_pipeline.sh --no-overlap    # run heat serially instead of alongside
+#                                        # the CLIMADA layers (lower peak memory)
 #   bash run_pipeline.sh --dry-run       # print every command without executing
+#
+# Speed: refresh_hazard fetches its wind sources concurrently (--workers), and
+# the non-CLIMADA heat layer runs in the BACKGROUND alongside the CLIMADA layers,
+# joined before the merge. Both keep the OUTPUT byte-for-byte identical to the
+# serial run; --workers 1 and --no-overlap fall back to fully serial. On a cold
+# machine the first run still spends most of its time downloading (the Data API,
+# CPC, and DEM caches); parallelism helps most once those caches are warm.
 #
 # Flags combine, e.g.:  bash run_pipeline.sh --preflight --fast
 # Without --all/--fire/--rain the app scores wildfire and TC rainfall zero
@@ -31,12 +43,26 @@
 set -euo pipefail
 
 ENV_NAME="climada_env"
-FAST=0; PREFLIGHT=0; NO_HEAT=0; DRY=0; FIRE=0; RAIN=0
-for a in "$@"; do case "$a" in
+FAST=0; PREFLIGHT=0; NO_HEAT=0; DRY=0; FIRE=0; RAIN=0; OVERLAP=1; WORKERS=""
+while [ $# -gt 0 ]; do case "$1" in
   --fast) FAST=1;; --preflight) PREFLIGHT=1;; --no-heat) NO_HEAT=1;; --dry-run) DRY=1;;
   --fire) FIRE=1;; --rain) RAIN=1;; --all) FIRE=1; RAIN=1;;
-  *) echo "Unknown flag: $a"; exit 2;;
-esac; done
+  --no-overlap) OVERLAP=0;;
+  --workers) WORKERS="${2:-}"; shift;;
+  --workers=*) WORKERS="${1#*=}";;
+  *) echo "Unknown flag: $1"; exit 2;;
+esac; shift; done
+
+# refresh_hazard fetches its wind sources concurrently; --workers N tunes how
+# many at once and is passed straight through. Left unset, the producer uses its
+# own default (CLAM_WORKERS or 4); --workers 1 restores the exact serial fetch.
+HZ_EXTRA=""
+[ -n "$WORKERS" ] && HZ_EXTRA="--workers $WORKERS"
+
+# heat is the one non-CLIMADA producer (NOAA CPC), so it can run alongside the
+# CLIMADA layers with no shared state; joined before the merge (see STEP 2d).
+MERGE_IN="hazard_grid.csv"; HEAT_PID=""; HEAT_LOG=""
+heat_argv(){ if [ "$FAST" -eq 1 ]; then echo "--years 2015 2024"; fi; }
 
 run(){ echo "+ $*"; if [ "$DRY" -eq 0 ]; then "$@"; fi; }
 
@@ -62,26 +88,30 @@ if [ "$PREFLIGHT" -eq 1 ]; then
   run python check_phase1.py
 fi
 
-# --- 1. CLIMADA layers: wind + surge + river flood ---------------------------
-echo; echo "== STEP 1  CLIMADA layers (tc, cflood, rflood) ======================"
-if [ "$FAST" -eq 1 ]; then
-  run python refresh_hazard.py --countries VIR PRI
-else
-  run python refresh_hazard.py
+# --- heat: launch in the BACKGROUND to overlap the CLIMADA producers ----------
+# Heat (NOAA CPC) shares no data source or process with CLIMADA and often
+# dominates wall clock (a ~2 GB first-time download), so running it alongside the
+# CLIMADA layers is free wall clock. It writes heat_grid.csv, joined at STEP 2d.
+# --no-overlap (and --dry-run) keep it in a plain serial slot. The heavier
+# CLIMADA producers stay serial with EACH OTHER to keep peak memory bounded.
+if [ "$NO_HEAT" -eq 0 ] && [ "$OVERLAP" -eq 1 ] && [ "$DRY" -eq 0 ]; then
+  echo; echo "== Heat layer launched in background (overlaps CLIMADA; joined 2d) ==="
+  HEAT_LOG="$(mktemp)"
+  # shellcheck disable=SC2046
+  python refresh_heat.py $(heat_argv) > "$HEAT_LOG" 2>&1 &
+  HEAT_PID=$!
+  # never leave the background job orphaned if a CLIMADA step aborts under set -e
+  trap 'if [ -n "$HEAT_PID" ]; then kill "$HEAT_PID" 2>/dev/null || true; fi' EXIT
+  echo "  heat running as PID $HEAT_PID; its log is shown when joined at STEP 2d"
 fi
 
-# --- 2. heat layer ------------------------------------------------------------
-MERGE_IN="hazard_grid.csv"
-if [ "$NO_HEAT" -eq 0 ]; then
-  echo; echo "== STEP 2  Heat layer (CPC climatology + AR6 deltas) ================"
-  if [ "$FAST" -eq 1 ]; then
-    run python refresh_heat.py --years 2015 2024
-  else
-    run python refresh_heat.py
-  fi
-  MERGE_IN="$MERGE_IN heat_grid.csv"
+# --- 1. CLIMADA layers: wind + surge + river flood ---------------------------
+echo; echo "== STEP 1  CLIMADA layers (tc, cflood, rflood) ======================"
+# shellcheck disable=SC2086
+if [ "$FAST" -eq 1 ]; then
+  run python refresh_hazard.py --countries VIR PRI $HZ_EXTRA
 else
-  echo; echo "== STEP 2  Heat layer skipped (--no-heat) ==========================="
+  run python refresh_hazard.py $HZ_EXTRA
 fi
 
 # --- 2b. optional fifth and sixth perils (opt-in: --fire, --rain) --------------
@@ -104,6 +134,27 @@ if [ "$RAIN" -eq 1 ]; then
   echo; echo "== STEP 2c  TC rainfall layer (Petals TCRain, mm at RPs) ============"
   run python refresh_prain.py
   MERGE_IN="$MERGE_IN prain_grid.csv"
+fi
+
+# --- 2d. heat layer: join the background job (or run it now if not overlapped) -
+if [ "$NO_HEAT" -eq 0 ]; then
+  if [ -n "$HEAT_PID" ]; then
+    echo; echo "== STEP 2d  Heat layer (joining background PID $HEAT_PID) ==========="
+    set +e; wait "$HEAT_PID"; HEAT_RC=$?; set -e
+    [ -n "$HEAT_LOG" ] && { cat "$HEAT_LOG"; rm -f "$HEAT_LOG"; }
+    HEAT_PID=""
+    if [ "$HEAT_RC" -ne 0 ]; then
+      echo "ERROR: the background heat layer failed (exit $HEAT_RC); see its log above."
+      exit "$HEAT_RC"
+    fi
+  else
+    echo; echo "== STEP 2d  Heat layer (CPC climatology + AR6 deltas) =============="
+    # shellcheck disable=SC2046
+    run python refresh_heat.py $(heat_argv)
+  fi
+  MERGE_IN="$MERGE_IN heat_grid.csv"
+else
+  echo; echo "== STEP 2d  Heat layer skipped (--no-heat) ========================="
 fi
 
 # --- 3. merge everything into the single app-ready file -------------------------

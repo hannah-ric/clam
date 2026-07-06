@@ -96,6 +96,7 @@ version-sensitive spots below are all you touch if ETH revises things.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as _futures
 import gc
 import json
 import logging
@@ -108,6 +109,46 @@ import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_hazard")
+
+
+# ---------------------------------------------------------------------------
+# Concurrency helper. Every wind source is an independent Data API download, so
+# the pipeline spends most of its wall clock waiting on the network; fetching a
+# few sources at once overlaps that waiting. The reduce that follows each fetch
+# (thin_to_grid, the surge bathtub) is numpy/CLIMADA C code that releases the
+# GIL, so threads overlap it too. Peak memory is bounded by the worker count
+# because each task frees its hazard before returning.
+#
+# workers<=1 runs inline: BYTE-FOR-BYTE identical to the old serial loop, and
+# the escape hatch if the Data API's local cache ever contends under concurrency
+# on a cold first run (pass --workers 1 or set CLAM_WORKERS=1).
+# ---------------------------------------------------------------------------
+
+def resolve_workers(requested=None, default=4):
+    """Concurrent-fetch worker count: --workers if given, else CLAM_WORKERS,
+    else `default`. Always at least 1."""
+    val = requested if requested is not None else os.environ.get("CLAM_WORKERS", default)
+    try:
+        return max(1, int(val))
+    except (TypeError, ValueError):
+        return default
+
+
+def parallel_map(func, items, workers):
+    """Apply func to each item, returning results in INPUT order regardless of
+    completion order, so callers can assemble output deterministically. Runs
+    inline for workers<=1 or a single item. func is expected to catch its own
+    anticipated failures and return a result object; unexpected exceptions
+    propagate (fail loud)."""
+    items = list(items)
+    if workers <= 1 or len(items) <= 1:
+        return [func(x) for x in items]
+    results = [None] * len(items)
+    with _futures.ThreadPoolExecutor(max_workers=min(workers, len(items))) as ex:
+        futs = {ex.submit(func, x): i for i, x in enumerate(items)}
+        for fut in _futures.as_completed(futs):
+            results[futs[fut]] = fut.result()
+    return results
 
 # ---------------------------------------------------------------------------
 # Configuration. These are the only knobs you would ordinarily touch.
@@ -457,36 +498,55 @@ def rf_pick(infos, app_key, max_models=RF_MAX_MODELS):
     return [], None, None
 
 
-def fetch_river_flood_grid(iso3: str, app_key: str, meta: dict):
+def fetch_river_flood_grid(iso3: str, app_key: str, meta: dict, cache=None):
     """Ensemble-mean thinned RP-depth grid for one country + app scenario.
 
     Discovery-driven (see rf_pick). Returns None when the API has no river
     flood for the country/scenario: the app then keeps its interim model for
     sites there, which the meta sidecar records explicitly.
+
+    `cache` (a dict, one per country) lets the ten app scenarios share a single
+    Data API dataset listing instead of re-querying it once per scenario, and
+    reuses the thinned grid of any dataset that more than one scenario selects
+    (e.g. a country that serves only a historical set). The thinned grids are
+    tiny, so caching them costs almost no memory.
     """
     from climada.util.api_client import Client   # (1) Data API property names
-    client = Client()
-    infos = client.list_dataset_infos("river_flood",
-                                      properties={"country_iso3alpha": iso3})
+    cache = {} if cache is None else cache
+    client = cache.get("client")
+    if client is None:
+        client = cache["client"] = Client()
+    infos = cache.get("infos")
+    if infos is None:
+        infos = cache["infos"] = client.list_dataset_infos(
+            "river_flood", properties={"country_iso3alpha": iso3})
     chosen, scen, _yr = rf_pick(infos, app_key)
     if not chosen:
         return None, {"reason": f"no river_flood dataset for {iso3}/{app_key} "
                                 f"(scenario prefs {RF_SCEN_PREF['present' if app_key == 'present' else app_key.split('_')[0]]})"}
+    grid_cache = cache.setdefault("grids", {})
     grids, members = [], []
     for info in chosen:
+        name = getattr(info, "name", None)
         try:
-            LOG.info("Fetching river flood: %s / %s  dataset=%s",
-                     iso3, app_key, getattr(info, "name", "?"))
-            haz = client.get_hazard("river_flood", name=getattr(info, "name", None))
-            lat = np.asarray(haz.centroids.lat, dtype=float)
-            lon = np.asarray(haz.centroids.lon, dtype=float)
-            inten = local_rp_intensity(haz, RETURN_PERIODS)
-            grids.append(thin_to_grid(lat, lon,
-                                      {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)}))
-            members.append({"dataset_name": getattr(info, "name", "?"),
+            if name is not None and name in grid_cache:
+                g = grid_cache[name]
+            else:
+                LOG.info("Fetching river flood: %s / %s  dataset=%s",
+                         iso3, app_key, name or "?")
+                haz = client.get_hazard("river_flood", name=name)
+                lat = np.asarray(haz.centroids.lat, dtype=float)
+                lon = np.asarray(haz.centroids.lon, dtype=float)
+                inten = local_rp_intensity(haz, RETURN_PERIODS)
+                g = thin_to_grid(lat, lon,
+                                 {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)})
+                if name is not None:
+                    grid_cache[name] = g
+                del haz
+                gc.collect()
+            grids.append(g)
+            members.append({"dataset_name": name or "?",
                             "properties": rf_props_of(info)})
-            del haz
-            gc.collect()
         except Exception as exc:
             LOG.warning("  member failed, continuing ensemble: %s", str(exc)[:160])
     if not grids:
@@ -506,31 +566,38 @@ def unique_sources(recipes: dict) -> list:
     return out
 
 
-def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: dict):
-    """Fetch every needed wind source once; derive wind and surge grids from
-    it while it is in memory; free it; then blend sources into app scenarios.
+def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: dict,
+                    workers: int = 1):
+    """Fetch every needed wind source (concurrently when workers>1); derive wind
+    and surge grids from each while it is in memory; free it; then blend sources
+    into app scenarios. Each source's fetch-and-reduce is self-contained (its
+    surge is aligned to that source's own wind grid), so parallelism only changes
+    the order fetches COMPLETE, never the result: sources are folded back into
+    the grids in a fixed order below, so the CSV and meta are byte-for-byte the
+    same as the serial run.
     Returns a list of output DataFrames (scenario + hazard columns attached)."""
-    wind_by_source = {}                    # source_key -> thinned wind grid
-    surge_by_pair = {}                     # (source_key, app_key) -> grid
+    sources = unique_sources(APP_SCENARIOS)
 
-    for source in unique_sources(APP_SCENARIOS):
+    def _wind_task(source):
+        """Fetch one wind source and reduce it to a thinned wind grid plus (when
+        enabled) its per-scenario surge grids. A per-task meta dict keeps
+        concurrent fetches from racing on the shared one; it is merged in source
+        order during assembly. Anticipated failures are captured, not raised."""
         skey = source_key(source)
+        tmeta = {}
+        out = {"skey": skey, "wgrid": None, "surge": {}, "tmeta": tmeta,
+               "wind_error": None, "surge_skipped": []}
         try:
-            haz = fetch_wind(iso3, source, meta)
-        except Exception as exc:
-            LOG.warning("Skipping wind source %s / %s: %s", iso3, skey, exc)
-            meta["skipped"].append({"country": iso3, "source": skey,
-                                    "layer": "tc", "reason": str(exc)[:300]})
-            continue
-
+            haz = fetch_wind(iso3, source, tmeta)
+        except Exception as exc:                  # 0 or >1 dataset matches
+            out["wind_error"] = str(exc)[:300]
+            return out
         cent = haz.centroids
         lat = np.asarray(cent.lat, dtype=float)
         lon = np.asarray(cent.lon, dtype=float)
         inten = local_rp_intensity(haz, RETURN_PERIODS)
-        wgrid = thin_to_grid(lat, lon, {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)})
-        wind_by_source[skey] = wgrid
-        LOG.info("  wind %s / %s -> %d cells", iso3, skey, len(wgrid))
-
+        out["wgrid"] = thin_to_grid(
+            lat, lon, {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)})
         if surge_enabled:
             # Surge is computed per (source, app scenario) because SLR enters
             # BEFORE the elevation subtraction: post-hoc addition would miss
@@ -547,19 +614,38 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
                                          {rp: s_int[i] for i, rp in enumerate(RETURN_PERIODS)})
                     # Petals may subset centroids to the coastal band: restore
                     # full coverage with explicit zeros inland (see docstring).
-                    sgrid = align_to_cells(sgrid, wgrid)
-                    surge_by_pair[(skey, app_key)] = sgrid
-                    LOG.info("  surge %s / %s @ %s (SLR %.2f m) -> %d wet cells",
-                             iso3, skey, app_key, SLR_M[app_key],
-                             int((sgrid["v100"] > 0).sum()))
+                    out["surge"][app_key] = align_to_cells(sgrid, out["wgrid"])
                     del surge
                 except Exception as exc:
-                    LOG.warning("Surge failed %s / %s @ %s: %s", iso3, skey, app_key, exc)
-                    meta["skipped"].append({"country": iso3, "source": skey,
-                                            "scenario": app_key, "layer": "cflood",
-                                            "reason": str(exc)[:300]})
+                    out["surge_skipped"].append(
+                        {"country": iso3, "source": skey, "scenario": app_key,
+                         "layer": "cflood", "reason": str(exc)[:300]})
         del haz
         gc.collect()
+        return out
+
+    wind_by_source = {}                    # source_key -> thinned wind grid
+    surge_by_pair = {}                     # (source_key, app_key) -> grid
+    for out in parallel_map(_wind_task, sources, workers):
+        skey = out["skey"]
+        for k, v in out["tmeta"].get("wind_sources", {}).items():
+            meta.setdefault("wind_sources", {})[k] = v
+        if out["wind_error"] is not None:
+            LOG.warning("Skipping wind source %s / %s: %s", iso3, skey, out["wind_error"])
+            meta["skipped"].append({"country": iso3, "source": skey,
+                                    "layer": "tc", "reason": out["wind_error"]})
+            continue
+        wind_by_source[skey] = out["wgrid"]
+        LOG.info("  wind %s / %s -> %d cells", iso3, skey, len(out["wgrid"]))
+        for app_key, sgrid in out["surge"].items():
+            surge_by_pair[(skey, app_key)] = sgrid
+            LOG.info("  surge %s / %s @ %s (SLR %.2f m) -> %d wet cells",
+                     iso3, skey, app_key, SLR_M[app_key],
+                     int((sgrid["v100"] > 0).sum()))
+        for sk in out["surge_skipped"]:
+            LOG.warning("Surge failed %s / %s @ %s: %s",
+                        iso3, sk["source"], sk["scenario"], sk["reason"])
+            meta["skipped"].append(sk)
 
     frames = []
     for app_key, recipe in APP_SCENARIOS.items():
@@ -598,9 +684,10 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
         base = wind_by_source.get("present")
         if base is None and wind_by_source:
             base = next(iter(wind_by_source.values()))
+        river_cache = {}          # one Data API listing + thinned-grid memo per country
         for app_key in APP_SCENARIOS:
             try:
-                grid, info = fetch_river_flood_grid(iso3, app_key, meta)
+                grid, info = fetch_river_flood_grid(iso3, app_key, meta, cache=river_cache)
             except Exception as exc:
                 grid, info = None, {"reason": str(exc)[:300]}
             if grid is None:
@@ -631,9 +718,13 @@ def main(argv=None) -> int:
                     help="Skip the Phase 1 cflood layer even if the DEM is present")
     ap.add_argument("--no-river", action="store_true",
                     help="Skip the Phase 2 rflood layer")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="concurrent Data API wind fetches per country (default: "
+                         "CLAM_WORKERS or 4; pass 1 for the exact serial run)")
     ap.add_argument("--out", default=OUT_CSV)
     args = ap.parse_args(argv)
 
+    workers = resolve_workers(args.workers)
     surge_enabled = not args.no_surge
     if surge_enabled and not TOPO_PATH.exists():
         LOG.warning("DEM not found at %s: the cflood layer will be SKIPPED this run. "
@@ -646,6 +737,7 @@ def main(argv=None) -> int:
         "grid_deg": GRID_DEG,
         "return_periods": RETURN_PERIODS,
         "nb_synth_tracks": NB_SYNTH_TRACKS,
+        "fetch_workers": workers,
         "countries": args.countries,
         "scenario_recipes": {k: [[w, source_key(s)] for w, s in v]
                              for k, v in APP_SCENARIOS.items()},
@@ -672,7 +764,8 @@ def main(argv=None) -> int:
 
     frames = []
     for iso3 in args.countries:
-        frames.extend(process_country(iso3, surge_enabled, not args.no_river, meta))
+        frames.extend(process_country(iso3, surge_enabled, not args.no_river,
+                                      meta, workers))
 
     if not frames:
         LOG.error("No hazard produced. Check network access and the countries list.")
