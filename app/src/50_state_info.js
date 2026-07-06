@@ -23,12 +23,18 @@ let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is load
 let scenario="present";
 let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
+let _scorecardId=null;     // the site whose scorecard is open (for the Edit button)
 let sortKey="ead", sortDir=-1;
 let nextId=1;
 let brandFilter="";        // map-only brand filter (session, not persisted)
 let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
 let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
 let scrubTimer=null;       // scenario scrubber playback
+/* View/UI preferences (persisted, defensively merged like finAssume). Holds the
+   chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
+   later, first-run and simple-view flags. Never affects a computed number: these
+   keys only change how existing figures are shown. */
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -61,7 +67,8 @@ const INFO={
   controls:{t:"Peril, pathway and horizon",b:
     "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, extreme heat, wildfire, or TC rainfall. The Overview risk-driver panel always shows all perils together.</p>"+
     "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
-    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
+    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>"+
+    "<p><b>Brand</b> filters which sites appear on the map. <b>Map colour</b> is a display lens: colour the markers by the selected peril's band, by combined all-peril risk, or by each site's dominant peril. It changes the map only, never a figure.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
   scrub:{t:"The scenario timeline",b:
     "<p>The timeline steps the whole app through <b>Present, 2030, 2050, and 2080</b> under the pathway selected in the top bar (SSP2-4.5 if the top bar is on Present day). Every figure on every tab recomputes at each step: it is the same model, walked through time.</p>"+
@@ -128,7 +135,8 @@ const INFO={
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
-    "<p>The site's insured or replacement value. Every dollar loss scales with it. Edit it on any site to test sensitivity.</p>"},
+    "<p>The site's insured or replacement value. Every dollar loss scales with it.</p>"+
+    "<p>Use <b>Edit site</b> (on the site detail or its scorecard) to change the value, the revenue, the construction, and the other building facts, and everything recomputes.</p>"},
   scenarios:{t:"Combined physical risk by pathway",b:
     "<p>All acute perils summed into one physical expected-annual-damage figure, compared across emissions pathways at the horizon selected in the top bar.</p>"+
     "<p><b>Band migration</b> shows how many sites move into higher bands as the climate warms.</p>"},
@@ -205,6 +213,10 @@ const INFO={
   assumptions:{t:"Assumptions",b:
     "<p>These five levers turn hazard into money. They are deliberately visible and adjustable so the logic is auditable and you can fit them to your own portfolio.</p>"+
     "<p>A per-site <code>annual_revenue_usd</code> column in the upload overrides the revenue lever for that site.</p>"},
+  brandAssume:{t:"Per-brand overrides",b:
+    "<p>The three revenue-and-operations assumptions above are portfolio-wide defaults. A resort brand often runs a different economic model, so you can override the revenue ratio, the operating margin, or the reopening time for any brand, and only that brand's sites recompute.</p>"+
+    "<p>Blank means "+"\"use the portfolio default,\" so an untouched table reproduces the global numbers exactly. Reset clears a brand back to the defaults. A per-site <code>annual_revenue_usd</code> value still wins over both, for that one site.</p>",
+    s:"A per-brand input to the same model; it changes which assumption a site uses, not the math."},
   revRatio:{t:"Revenue as % of asset value",b:
     "<p>Sets each site's annual revenue as a share of its value, used for business interruption and heat costs when no per-site revenue is supplied.</p>"+
     "<p>Hospitality real estate commonly runs 25 to 45%.</p>"},
@@ -240,6 +252,16 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  riskMatrix:{t:"Portfolio risk matrix",b:
+    "<p>One grid for the whole portfolio: each <b>row</b> is a site (or a brand), each <b>column</b> is a peril, and the last column is the combined physical risk. Every cell is coloured by its risk band, from Minimal to Severe, so hot spots jump out without reading a single number.</p>"+
+    "<p>Read <b>across a row</b> for one site's full risk profile, or <b>down a column</b> to see which sites drive the portfolio's exposure to a single peril. Rows are ordered by combined expected annual cost, so the most exposed sit at the top.</p>"+
+    "<p>The <b>View</b> control regroups the rows by site or by brand; the <b>Show</b> control switches each cell between percent of value, dollars per year, and the band name. Heat is a chronic indicator, so its cell is coloured but carries no dollar figure (its cost is on the Financial impact tab). Click any site row to open its scorecard.</p>",
+    s:"A display lens only: the matrix reads the same per-site figures as every other tab and changes none of them."},
+  riskValue:{t:"Risk vs value",b:
+    "<p>The classic capital-allocation picture. Each bubble is a site, placed by its <b>asset value</b> (left to right) and its <b>expected annual cost as a share of that value</b> (bottom to top), and sized by the <b>dollars at risk each year</b>. Colour is the site's combined risk band.</p>"+
+    "<p>The dashed lines split the portfolio into four quadrants: the vertical at the portfolio's median value, the horizontal at this app's Moderate-to-High band boundary. <b>Top right</b> is high value meeting high risk, where hardening usually pays back first; <b>top left</b> is smaller but exposed, often a transfer-or-harden call; <b>bottom right</b> is valuable but calmer, worth monitoring; <b>bottom left</b> is low on both, usually accepted.</p>"+
+    "<p>Click any bubble to open that site's scorecard.</p>",
+    s:"A display lens only: bubbles plot the same per-site figures shown elsewhere and change none of them."},
   tolerance:{t:"Risk tolerance",b:
     "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
     "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
@@ -319,6 +341,15 @@ function initMap(){
   }catch(err){ showMapUnavailable(); }
 }
 const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+/* SVP review: what a map marker is coloured by (the map's "change views" lens).
+   Pure, so the node tests can pin the two new modes. "peril" keeps the legacy
+   behaviour (the selected peril's band); "combined" uses the all-perils band;
+   "dominant" uses the leading peril's own colour. */
+function markerFill(r,mode,sc,perilBand){
+  if(mode==="combined")return BAND_COLOR[scorePhysTotal([r],sc).rows[0].band];
+  if(mode==="dominant"){let best=null,bv=-1;for(const hz of ACUTE){const e=hzSite(r,hz,sc).ead;if(e>bv){bv=e;best=hz;}}return (bv>0&&best)?HAZARD_BY[best].color:BAND_COLOR.Minimal;}
+  return BAND_COLOR[perilBand!=null?perilBand:hzSite(r,activeHazard,sc).band];
+}
 let legendCtl=null;
 function updateLegend(){
   if(!mapOk)return;
@@ -326,9 +357,16 @@ function updateLegend(){
   legendCtl=L.control({position:"bottomright"});
   legendCtl.onAdd=function(){
     const d=L.DomUtil.create("div","maplegend");
-    const bands=["Minimal","Low","Moderate","High","Severe"];
-    d.innerHTML='<div class="lh">'+HAZARD_LABEL[activeHazard]+' rating</div>'+
-      bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    const mode=ui.views.mapColor;
+    if(mode==="dominant"){
+      d.innerHTML='<div class="lh">Dominant peril</div>'+
+        ACUTE.map(hz=>'<span class="li"><i style="background:'+HAZARD_BY[hz].color+'"></i>'+HAZARD_LABEL[hz]+'</span>').join("");
+    }else{
+      const title=(mode==="combined")?"Combined risk":(HAZARD_LABEL[activeHazard]+" rating");
+      const bands=["Minimal","Low","Moderate","High","Severe"];
+      d.innerHTML='<div class="lh">'+title+'</div>'+
+        bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    }
     return d;
   };
   legendCtl.addTo(map);
@@ -353,10 +391,11 @@ function drawMarkers(scored){
   if(!rows.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
   const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  const colorMode=ui.views.mapColor;
   rows.forEach(r=>{
     const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
     const m=L.circleMarker([r.latitude,r.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
+      radius:rad,color:"#fff",weight:1.5,fillColor:markerFill(r,colorMode,scenario,r.band),fillOpacity:.85
     }).addTo(map);
     const metric=heat
       ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
@@ -410,6 +449,41 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
     s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
     s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
+  s+="</svg>";return s;
+}
+function median(a){ if(!a.length)return 0; const s=a.slice().sort((x,y)=>x-y),m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+/* SVP review: risk-vs-value quadrant. X = asset value, Y = expected annual cost
+   as a share of value, bubble area tracks EAD dollars, colour is the combined
+   band. The dashed dividers (median value, and the Moderate/High band boundary)
+   split the portfolio into the classic capital-allocation quadrants. A bubble
+   click opens the site scorecard, the same as the map and the matrix. Pure over
+   its inputs: it plots figures the engine already computed, changing none. */
+function quadrantSvg(pts){
+  const W=480,H=300,padL=54,padR=16,padT=20,padB=44;
+  if(!pts.length)return svgEl(W,H)+"</svg>";
+  const xmax=(Math.max.apply(null,pts.map(p=>p.value))*1.06)||1;
+  const ymax=Math.max(0.6,Math.max.apply(null,pts.map(p=>p.eadPct))*1.12);
+  const rmax=Math.max.apply(null,pts.map(p=>p.ead))||1;
+  const xDiv=median(pts.map(p=>p.value)), yDiv=0.75;
+  const X=v=>padL+(v/xmax)*(W-padL-padR);
+  const Y=v=>H-padB-(v/ymax)*(H-padB-padT);
+  const R=e=>5+15*Math.sqrt(Math.max(e,0)/rmax);
+  let s=svgEl(W,H);
+  [0,.25,.5,.75,1].forEach(t=>{const yv=t*ymax,y=Y(yv);
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+yv.toFixed(1)+'%</text>';});
+  [0.5,1].forEach(t=>{const xv=t*xmax,x=X(xv);
+    s+='<text x="'+x+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(xv)+'</text>';});
+  s+='<line x1="'+X(xDiv)+'" y1="'+padT+'" x2="'+X(xDiv)+'" y2="'+(H-padB)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  if(yDiv<ymax)s+='<line x1="'+padL+'" y1="'+Y(yDiv)+'" x2="'+(W-padR)+'" y2="'+Y(yDiv)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  const tag=(x,y,anc,txt)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+anc+'" font-size="9.5" fill="#9AA7A0" font-style="italic">'+txt+'</text>';
+  s+=tag(W-padR-2,padT+11,"end","protect first")+tag(padL+2,padT+11,"start","harden / transfer")+
+     tag(W-padR-2,H-padB-5,"end","monitor")+tag(padL+2,H-padB-5,"start","accept");
+  pts.slice().sort((a,b)=>b.ead-a.ead).forEach(p=>{
+    s+='<circle cx="'+X(p.value).toFixed(1)+'" cy="'+Y(Math.min(p.eadPct,ymax)).toFixed(1)+'" r="'+R(p.ead).toFixed(1)+'" fill="'+BAND_COLOR[p.band]+'" fill-opacity="0.72" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="openScorecard('+(+p.id)+')"><title>'+esc(p.name)+' · '+fmt$(p.value)+' value · '+p.eadPct.toFixed(2)+'% cost · '+fmt$(p.ead)+'/yr · '+p.band+'</title></circle>';});
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Asset value</text>';
+  const ymid=(padT+H-padB)/2;
+  s+='<text x="14" y="'+ymid+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 14 '+ymid+')">Annual cost, % of value</text>';
   s+="</svg>";return s;
 }
 

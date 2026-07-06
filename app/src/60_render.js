@@ -9,6 +9,8 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderRiskMatrix();
+  renderQuadrant();
   renderTolerance();
   renderScrub();
   renderSites();
@@ -30,6 +32,17 @@ function renderSummary(){
   const premium=ff.totalAal-pf.totalAal, premiumPct=pf.totalAal?premium/pf.totalAal*100:0;
   const futLabel=SCEN_LABEL[futureSc]||futureSc, curLabel=SCEN_LABEL[scenario]||scenario;
   document.getElementById("sumSub").innerHTML="Every peril and every cost type in one view, at "+esc(curLabel)+". "+(hazardGrid?"Using the loaded CLIMADA grid.":"Interim screening model.");
+  const db=document.getElementById("dataBanner");
+  if(db){
+    if(hazardGrid){
+      const live=perilAuthority().filter(a=>a.live).length;
+      db.style.borderLeftColor="#2E8B6F";
+      db.innerHTML="<b>Running on your loaded climate data</b> ("+live+" of "+HAZARDS.length+" perils authoritative). These figures are disclosure-grade for those perils; any peril still on the built-in estimate is labelled where it appears.";
+    }else{
+      db.style.borderLeftColor="#E0A43B";
+      db.innerHTML="<b>You are exploring with built-in estimates.</b> Good for a first look, not for disclosure. To sharpen every number, load your climate data on the Method and data tab (or ask your analytics team for the CLIMADA grid).";
+    }
+  }
   const card=(l,v,foot,info)=>'<div class="card"><div class="l">'+l+(info?infoBtn(info):"")+'</div><div class="v" style="font-size:22px">'+v+'</div><div class="foot">'+foot+'</div></div>';
   const u=uncRange(sites,scenario);
   host.innerHTML=
@@ -73,6 +86,75 @@ function renderSummary(){
     (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
     "Financial assumptions are set on the Financial impact tab.";
 }
+/* SVP review: the portfolio risk matrix (a heatmap of every row against every
+   peril at the current scenario, coloured by risk band). matrixRows is pure over
+   hzSite / bandOf / heatBand; renderRiskMatrix only paints it. No computed figure
+   changes, so the parity surface is untouched. The View and Show selects are the
+   "change views" lens: regroup the rows, or switch what each cell reports. */
+function matrixRows(group){
+  if(group==="brand"){
+    const by={};
+    sites.forEach(s=>{const b=s.brand||"Unbranded";const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
+      g.value+=s.asset_value_usd; g.n++;
+      ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
+      const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
+    return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
+      ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
+      row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
+      const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
+      return row;
+    }).sort((a,b)=>b.combined.ead-a.combined.ead);
+  }
+  return sites.map(s=>{const row={label:s.name,id:s.id,value:s.asset_value_usd,cells:{},combined:null};let comb=0;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);row.cells[hz]={ead:r.ead,eadPct:r.eadPct,band:r.band};comb+=r.ead;});
+    const hr=hzSite(s,"heat",scenario); row.cells.heat={ead:0,eadPct:0,band:hr.band,days:hr.indicators?hr.indicators.daysOver32:0,isHeat:true};
+    const cpct=s.asset_value_usd?comb/s.asset_value_usd*100:0; row.combined={ead:comb,eadPct:cpct,band:bandOf(cpct)};
+    return row;
+  }).sort((a,b)=>b.combined.ead-a.combined.ead);
+}
+function renderRiskMatrix(){
+  const host=document.getElementById("riskMatrix"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const group=(ui.views.matrixGroup==="brand")?"brand":"site";
+  const metric=["pct","usd","band"].indexOf(ui.views.matrixMetric)>=0?ui.views.matrixMetric:"pct";
+  const gsel=document.getElementById("mtxGroup"); if(gsel)gsel.value=group;
+  const msel=document.getElementById("mtxMetric"); if(msel)msel.value=metric;
+  const cols=HAZARDS.slice();
+  const rows=matrixRows(group);
+  const cellText=c=>{ if(c.isHeat)return ""; if(c.ead<=0&&c.eadPct<=0)return "0";
+    if(metric==="usd")return fmt$(c.ead); if(metric==="band")return c.band; return c.eadPct.toFixed(2); };
+  const cellTitle=(label,hzLabel,c)=>c.isHeat
+    ? esc(label)+" · "+hzLabel+": "+c.band+" ("+c.days+" days over 32C)"
+    : esc(label)+" · "+hzLabel+": "+c.band+" · "+fmt$(c.ead)+"/yr · "+c.eadPct.toFixed(2)+"% of value";
+  let h='<table class="mtx"><thead><tr><th class="rowh">'+(group==="brand"?"Brand":"Site")+'</th>';
+  cols.forEach(H=>h+='<th title="'+esc(H.label)+'">'+H.short+'</th>');
+  h+='<th title="Combined physical risk across all perils">All</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const click=(group==="site")?' class="rowclick" data-focus="'+r.id+'"':'';
+    h+='<tr'+click+'><td class="rowh" title="'+esc(r.label)+'">'+esc(r.label)+'</td>';
+    cols.forEach(H=>{const c=r.cells[H.key];const zero=(!c.isHeat&&c.ead<=0&&c.eadPct<=0);
+      h+='<td class="cell'+(zero?' zero':'')+'" style="background:'+BAND_COLOR[c.band]+'" title="'+cellTitle(r.label,H.label,c)+'">'+cellText(c)+'</td>';});
+    const cc=r.combined;
+    h+='<td class="cell comb" style="background:'+BAND_COLOR[cc.band]+'" title="'+esc(r.label)+' · combined: '+cc.band+' · '+fmt$(cc.ead)+'/yr · '+cc.eadPct.toFixed(2)+'%">'+
+      (metric==="usd"?fmt$(cc.ead):(metric==="band"?cc.band:cc.eadPct.toFixed(2)))+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  const bands=["Minimal","Low","Moderate","High","Severe"];
+  h+='<div class="mtxlegend"><span>Cell colour is the risk band:</span>'+
+    bands.map(b=>'<span><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("")+
+    '<span style="color:var(--muted)">Columns: W wind, F coastal, R river, H heat, B wildfire, P rainfall, All combined</span></div>';
+  host.innerHTML=h;
+  if(group==="site")host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* SVP review: the risk-vs-value quadrant. Plots each site by value and by cost
+   share, coloured by combined band, over scorePhysTotal (parity-pinned). Display
+   only: it moves no number. */
+function renderQuadrant(){
+  const host=document.getElementById("riskValue"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const pts=scorePhysTotal(sites,scenario).rows.map(r=>({id:r.id,name:r.name,value:r.asset_value_usd,ead:r.ead,eadPct:r.eadPct,band:r.band}));
+  host.innerHTML=quadrantSvg(pts);
+}
 /* why a damage peril reads zero everywhere, phrased as the user's next step.
    Mirrors explainPeril's source logic at portfolio level: only the two perils
    that can be honestly data-less (wildfire without a grid or wui_class,
@@ -108,7 +190,7 @@ function renderTolerance(){
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
     ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
-    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+
@@ -296,11 +378,11 @@ function renderDetail(r){
     ratingStrip+mid+table+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
-      '<button class="lightbtn" id="editVal">Edit value</button>'+
+      '<button class="lightbtn" id="editVal">Edit site</button>'+
       '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
     '</div>';
   document.getElementById("openCard").onclick=()=>openScorecard(r.id);
-  document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
+  document.getElementById("editVal").onclick=()=>{const s=sites.find(x=>x.id===r.id);if(s)openForm("edit",s);};
   document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
 }
 
@@ -585,13 +667,49 @@ function syncFinAssume(){
   g("corrVal").textContent=(+g("corr").value/100).toFixed(2);
   persist();renderFinance();
 }
+/* SVP review: optional per-brand overrides of the three site-level assumptions
+   (revenue ratio, operating margin, reopen months). Blank uses the global default;
+   a set value writes into finAssume.brandOverrides[brand], which assumeFor consumes.
+   State + display only, never a bespoke number. */
+function renderBrandAssume(){
+  const host=document.getElementById("brandAssume"); if(!host)return;
+  const brands=[];sites.forEach(s=>{const b=s.brand;if(b&&brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  if(!brands.length){host.innerHTML="";return;}
+  const ov=finAssume.brandOverrides||{};
+  const cell=(b,k,val,ph)=>'<td class="num"><input type="number" class="brandov" data-brand="'+esc(b)+'" data-key="'+k+'" min="0" step="1" value="'+val+'" placeholder="'+ph+'" style="width:72px;padding:5px 7px;text-align:right"></td>';
+  let h='<div style="font-weight:600;color:var(--primary);margin-bottom:4px">Per-brand overrides'+infoBtn("brandAssume")+'</div>'+
+    '<div class="hint" style="margin-bottom:8px">Optional. Blank uses the portfolio defaults above. Set a brand that runs a different revenue mix, margin, or reopening speed, and only its sites recompute.</div>'+
+    '<table class="tbl"><thead><tr><th>Brand</th><th class="num">Revenue % of value</th><th class="num">Operating margin %</th><th class="num">Months to reopen</th><th></th></tr></thead><tbody>';
+  brands.forEach(b=>{const o=ov[b]||{};
+    h+='<tr><td>'+esc(b)+'</td>'+
+      cell(b,"revRatio",o.revRatio!=null?Math.round(o.revRatio*100):"",Math.round(finAssume.revRatio*100))+
+      cell(b,"gopMargin",o.gopMargin!=null?Math.round(o.gopMargin*100):"",Math.round(finAssume.gopMargin*100))+
+      cell(b,"reopenMonths",o.reopenMonths!=null?o.reopenMonths:"",String(finAssume.reopenMonths))+
+      '<td class="num">'+(ov[b]?'<button class="lightbtn brandclear" data-brand="'+esc(b)+'" style="padding:3px 9px;font-size:11px">Reset</button>':'')+'</td></tr>';});
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input.brandov").forEach(inp=>inp.onchange=()=>{
+    const b=inp.dataset.brand,k=inp.dataset.key,raw=String(inp.value).trim();
+    const map=finAssume.brandOverrides||(finAssume.brandOverrides={});
+    const o=map[b]||(map[b]={});
+    if(raw===""){delete o[k];}
+    else{let v=+raw;if(!isFinite(v)||v<0){toast("Enter a non-negative number.");renderBrandAssume();return;}
+      if(k==="revRatio"||k==="gopMargin")v=v/100;o[k]=v;}
+    if(!Object.keys(o).length)delete map[b];
+    persist();render();
+  });
+  host.querySelectorAll("button.brandclear").forEach(btn=>btn.onclick=()=>{
+    const map=finAssume.brandOverrides||{};delete map[btn.dataset.brand];persist();render();});
+}
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
     kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
-    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }
+  renderBrandAssume();
   const f=finPortfolio(sites,scenario);
   const u=uncRange(sites,scenario);
   const indirect=f.biEad+f.heatCost;
@@ -640,6 +758,7 @@ function renderFinance(){
    ============================================================ */
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
+  _scorecardId=id;
   renderScorecard(s);
   document.getElementById("focusBg").classList.add("open");
 }
@@ -648,10 +767,11 @@ function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
   const vuln=vulnOf(s);
-  const gop=fin.gop, dailyGop=gop/365, maxDown=finAssume.reopenMonths/12*365;
+  const _asm=assumeFor(s);
+  const gop=fin.gop, dailyGop=gop/365, maxDown=_asm.reopenMonths/12*365;
   const perils=ACUTE.map(hz=>{
     const r=hzSite(s,hz,scenario);
-    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(finAssume.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
+    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(_asm.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
   });
   const heatR=hzSite(s,"heat",scenario);
   const phys=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?c.loss:0);},0);

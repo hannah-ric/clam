@@ -224,6 +224,22 @@
   details.trace[open] summary{margin-bottom:4px}
   /* ---- Wave 1: tolerance breach marker ---- */
   .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
+  /* ---- SVP review: view-lens controls + risk matrix heatmap ---- */
+  .viewlens{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .viewlens select{font-family:inherit;font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--ink);
+    padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+  table.mtx{border-collapse:separate;border-spacing:3px;font-size:12px;margin-top:10px}
+  table.mtx th{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);font-weight:600;padding:2px 6px;text-align:center;white-space:nowrap}
+  table.mtx th.rowh{text-align:left}
+  table.mtx td.rowh{text-align:left;font-size:12px;color:var(--ink);white-space:nowrap;padding-right:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  table.mtx tr.rowclick:hover td.rowh{color:var(--primary);text-decoration:underline}
+  table.mtx td.cell{min-width:50px;height:30px;text-align:center;color:#fff;border-radius:5px;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;cursor:default}
+  table.mtx td.cell.comb{outline:2px solid rgba(21,32,43,.20)}
+  table.mtx td.cell.zero{color:var(--muted);background:var(--surface-2)!important;font-weight:400}
+  .mtxlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--ink-2);align-items:center}
+  .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  /* ---- SVP review: executive / simple view hides the specialist panels ---- */
+  body.execview .pro-only{display:none!important}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -276,11 +292,11 @@
         </select>
       </div>
       <div class="seg"><label class="mini-l">Pathway</label>
-        <select class="scen" id="pathSel" title="Emissions pathway" aria-label="Emissions pathway">
+        <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
           <option value="present">Present day</option>
-          <option value="ssp126">SSP1-2.6</option>
-          <option value="ssp245">SSP2-4.5</option>
-          <option value="ssp585">SSP5-8.5</option>
+          <option value="ssp126">Lower emissions (SSP1-2.6)</option>
+          <option value="ssp245">Middle path (SSP2-4.5)</option>
+          <option value="ssp585">Higher emissions (SSP5-8.5)</option>
         </select>
       </div>
       <div class="seg"><label class="mini-l">Horizon</label>
@@ -295,8 +311,17 @@
           <option value="">All brands</option>
         </select>
       </div>
+      <div class="seg"><label class="mini-l">Map colour</label>
+        <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
+          <option value="peril">Selected peril</option>
+          <option value="combined">Combined risk</option>
+          <option value="dominant">Dominant peril</option>
+        </select>
+      </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
+    <button class="btn ghost" id="simpleBtn" title="Toggle a cleaner executive view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
@@ -328,6 +353,7 @@
     <div id="summaryBody" style="display:none">
       <h2 class="sec">Portfolio climate risk at a glance</h2>
       <p class="sub" id="sumSub"></p>
+      <div class="note" id="dataBanner" style="margin-bottom:14px"></div>
       <div class="panel scrubbar">
         <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
@@ -342,6 +368,33 @@
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
         <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
         <div id="tolBody"></div>
+      </div>
+      <div class="panel" id="matrixPanel">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">Portfolio risk matrix<button type="button" class="info" data-info="riskMatrix" aria-label="How to read the risk matrix" aria-expanded="false">i</button></h3>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <label class="viewlens">View
+              <select id="mtxGroup" aria-label="Group the risk matrix rows">
+                <option value="site">by site</option>
+                <option value="brand">by brand</option>
+              </select>
+            </label>
+            <label class="viewlens">Show
+              <select id="mtxMetric" aria-label="Value shown in each matrix cell">
+                <option value="pct">% of value</option>
+                <option value="usd">$ per year</option>
+                <option value="band">risk band</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
+        <div id="riskMatrix" style="overflow-x:auto"></div>
+      </div>
+      <div class="panel" id="quadrantPanel">
+        <h3>Risk vs value<button type="button" class="info" data-info="riskValue" aria-label="How to read the risk-versus-value chart" aria-expanded="false">i</button></h3>
+        <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
+        <div id="riskValue" style="overflow-x:auto"></div>
       </div>
       <div class="grid2">
         <div class="panel">
@@ -425,17 +478,18 @@
     <p class="sub">Ranked by expected annual damage. Click a row for detail, or add a site.</p>
     <div class="grid2" style="grid-template-columns:1.4fr 1fr">
       <div class="panel" style="overflow:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <h3 style="margin:0">Portfolio</h3>
           <button class="lightbtn" id="addSiteBtn">+ Add site</button>
         </div>
+        <div class="hint" style="margin-bottom:8px">Ratings columns, each coloured by risk band: <b>W</b> wind, <b>F</b> coastal flood, <b>R</b> river flood, <b>H</b> heat, <b>B</b> wildfire, <b>P</b> rainfall. "Annual damage" is expected physical damage per year (EAD).</div>
         <table class="tbl" id="siteTbl">
           <thead><tr>
             <th data-sort="name">Site</th>
             <th data-sort="brand">Brand</th>
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="ead">EAD $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="eadPct">EAD %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -520,7 +574,7 @@
         </div>
         <div id="layerChart"></div>
       </div>
-      <div id="sweepHost"></div>
+      <div id="sweepHost" class="pro-only"></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="lightbtn" id="brokerBtn">Export broker evidence pack (CSV)</button>
         <button type="button" class="info" data-info="brokerPack" aria-label="What the evidence pack is" aria-expanded="false">i</button>
@@ -591,7 +645,7 @@
         <div id="finAcuteChronic"></div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Uncertainty &amp; sensitivity<button type="button" class="info" data-info="unc" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">How confident to be in the central number, and which input moves it most. Each bar sweeps one input across its plausible range while the others hold.</div>
       <div class="grid2" style="grid-template-columns:1.3fr 0.7fr">
@@ -631,6 +685,7 @@
           </div>
         </div>
       </div>
+      <div id="brandAssume" style="margin-top:16px"></div>
     </div>
     <div class="panel">
       <h3>Climate-related financial disclosure<button type="button" class="info" data-info="disclosure" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
@@ -703,7 +758,7 @@
         </div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Model definition</h3>
       <div class="grid2">
         <div>
@@ -743,7 +798,7 @@
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
       <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">CLIMADA's calibration loop: compare modeled expected damage against your own loss history. Site names must match the loaded portfolio.</div>
       <div class="grid2" style="grid-template-columns:0.9fr 1.1fr">
@@ -775,16 +830,74 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-bg" id="onboardModal">
+  <div class="modal" style="width:min(560px,94vw)">
+    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
+    <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
+    <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
+    <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
+    <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
+      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+    </ul>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <div class="row">
+      <button class="lightbtn" id="obGlossary">Open the glossary</button>
+      <button class="lightbtn primary" id="obStart">Load the sample and explore</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="addModal">
-  <div class="modal">
-    <h3>Add a site</h3>
+  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+    <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="field">
+      <label>Location (search a place, or type coordinates below)</label>
+      <div class="searchwrap" style="width:100%">
+        <input type="text" id="mGeo" placeholder="Bonnet Creek, Orlando..." autocomplete="off" style="width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding-left:12px">
+        <div class="search-results" id="mGeoResults" role="listbox"></div>
+      </div>
+    </div>
     <div class="grid2" style="gap:10px">
       <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
       <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
     </div>
-    <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+      <div class="field"><label>Annual revenue (USD, optional)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
+    </div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Construction</label>
+        <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+      </div>
+      <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
+    </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
+    <details style="margin:2px 0 12px">
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--primary);font-weight:500">Advanced: sharpens the insurance view (all optional)</summary>
+      <div class="hint" style="margin:8px 0 10px">These are the documented "secondary modifiers" underwriters price on. Leave blank if unknown; blanks reproduce the basic estimate.</div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Roof type</label>
+          <select id="mRoofType"><option value="">Not specified</option><option value="shingle">Shingle</option><option value="tile">Tile</option><option value="metal">Metal</option><option value="membrane">Membrane / flat</option></select>
+        </div>
+        <div class="field"><label>Roof year</label><input type="number" id="mRoofYear" step="1" placeholder="e.g. 2018"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Opening protection</label>
+          <select id="mOpening"><option value="">Not specified</option><option value="impact">Impact-rated</option><option value="partial">Partial / shutters</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label>First-floor elevation (m)</label><input type="number" id="mFfe" step="0.1" placeholder="e.g. 1.5"></div>
+      </div>
+      <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mEquipElev" style="width:auto">Critical equipment elevated above flood level</label></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Wildfire exposure (WUI)</label>
+          <select id="mWui"><option value="">Not specified</option><option value="none">None</option><option value="interface">Interface</option><option value="intermix">Intermix</option></select>
+        </div>
+        <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
+      </div>
+    </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
       <button class="lightbtn primary" id="mAdd">Add site</button>
@@ -796,7 +909,10 @@
   <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
-      <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      <div style="display:flex;gap:8px">
+        <button class="lightbtn" id="focusEdit" aria-label="Edit this site">Edit site</button>
+        <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      </div>
     </div>
     <div id="focusBody"></div>
   </div>

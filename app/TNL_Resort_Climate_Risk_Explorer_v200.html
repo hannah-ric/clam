@@ -224,6 +224,22 @@
   details.trace[open] summary{margin-bottom:4px}
   /* ---- Wave 1: tolerance breach marker ---- */
   .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
+  /* ---- SVP review: view-lens controls + risk matrix heatmap ---- */
+  .viewlens{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .viewlens select{font-family:inherit;font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--ink);
+    padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+  table.mtx{border-collapse:separate;border-spacing:3px;font-size:12px;margin-top:10px}
+  table.mtx th{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);font-weight:600;padding:2px 6px;text-align:center;white-space:nowrap}
+  table.mtx th.rowh{text-align:left}
+  table.mtx td.rowh{text-align:left;font-size:12px;color:var(--ink);white-space:nowrap;padding-right:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  table.mtx tr.rowclick:hover td.rowh{color:var(--primary);text-decoration:underline}
+  table.mtx td.cell{min-width:50px;height:30px;text-align:center;color:#fff;border-radius:5px;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;cursor:default}
+  table.mtx td.cell.comb{outline:2px solid rgba(21,32,43,.20)}
+  table.mtx td.cell.zero{color:var(--muted);background:var(--surface-2)!important;font-weight:400}
+  .mtxlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--ink-2);align-items:center}
+  .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  /* ---- SVP review: executive / simple view hides the specialist panels ---- */
+  body.execview .pro-only{display:none!important}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -276,11 +292,11 @@
         </select>
       </div>
       <div class="seg"><label class="mini-l">Pathway</label>
-        <select class="scen" id="pathSel" title="Emissions pathway" aria-label="Emissions pathway">
+        <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
           <option value="present">Present day</option>
-          <option value="ssp126">SSP1-2.6</option>
-          <option value="ssp245">SSP2-4.5</option>
-          <option value="ssp585">SSP5-8.5</option>
+          <option value="ssp126">Lower emissions (SSP1-2.6)</option>
+          <option value="ssp245">Middle path (SSP2-4.5)</option>
+          <option value="ssp585">Higher emissions (SSP5-8.5)</option>
         </select>
       </div>
       <div class="seg"><label class="mini-l">Horizon</label>
@@ -295,8 +311,17 @@
           <option value="">All brands</option>
         </select>
       </div>
+      <div class="seg"><label class="mini-l">Map colour</label>
+        <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
+          <option value="peril">Selected peril</option>
+          <option value="combined">Combined risk</option>
+          <option value="dominant">Dominant peril</option>
+        </select>
+      </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
+    <button class="btn ghost" id="simpleBtn" title="Toggle a cleaner executive view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
@@ -328,6 +353,7 @@
     <div id="summaryBody" style="display:none">
       <h2 class="sec">Portfolio climate risk at a glance</h2>
       <p class="sub" id="sumSub"></p>
+      <div class="note" id="dataBanner" style="margin-bottom:14px"></div>
       <div class="panel scrubbar">
         <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
@@ -342,6 +368,33 @@
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
         <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
         <div id="tolBody"></div>
+      </div>
+      <div class="panel" id="matrixPanel">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">Portfolio risk matrix<button type="button" class="info" data-info="riskMatrix" aria-label="How to read the risk matrix" aria-expanded="false">i</button></h3>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <label class="viewlens">View
+              <select id="mtxGroup" aria-label="Group the risk matrix rows">
+                <option value="site">by site</option>
+                <option value="brand">by brand</option>
+              </select>
+            </label>
+            <label class="viewlens">Show
+              <select id="mtxMetric" aria-label="Value shown in each matrix cell">
+                <option value="pct">% of value</option>
+                <option value="usd">$ per year</option>
+                <option value="band">risk band</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
+        <div id="riskMatrix" style="overflow-x:auto"></div>
+      </div>
+      <div class="panel" id="quadrantPanel">
+        <h3>Risk vs value<button type="button" class="info" data-info="riskValue" aria-label="How to read the risk-versus-value chart" aria-expanded="false">i</button></h3>
+        <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
+        <div id="riskValue" style="overflow-x:auto"></div>
       </div>
       <div class="grid2">
         <div class="panel">
@@ -425,17 +478,18 @@
     <p class="sub">Ranked by expected annual damage. Click a row for detail, or add a site.</p>
     <div class="grid2" style="grid-template-columns:1.4fr 1fr">
       <div class="panel" style="overflow:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <h3 style="margin:0">Portfolio</h3>
           <button class="lightbtn" id="addSiteBtn">+ Add site</button>
         </div>
+        <div class="hint" style="margin-bottom:8px">Ratings columns, each coloured by risk band: <b>W</b> wind, <b>F</b> coastal flood, <b>R</b> river flood, <b>H</b> heat, <b>B</b> wildfire, <b>P</b> rainfall. "Annual damage" is expected physical damage per year (EAD).</div>
         <table class="tbl" id="siteTbl">
           <thead><tr>
             <th data-sort="name">Site</th>
             <th data-sort="brand">Brand</th>
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="ead">EAD $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="eadPct">EAD %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -520,7 +574,7 @@
         </div>
         <div id="layerChart"></div>
       </div>
-      <div id="sweepHost"></div>
+      <div id="sweepHost" class="pro-only"></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="lightbtn" id="brokerBtn">Export broker evidence pack (CSV)</button>
         <button type="button" class="info" data-info="brokerPack" aria-label="What the evidence pack is" aria-expanded="false">i</button>
@@ -591,7 +645,7 @@
         <div id="finAcuteChronic"></div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Uncertainty &amp; sensitivity<button type="button" class="info" data-info="unc" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">How confident to be in the central number, and which input moves it most. Each bar sweeps one input across its plausible range while the others hold.</div>
       <div class="grid2" style="grid-template-columns:1.3fr 0.7fr">
@@ -631,6 +685,7 @@
           </div>
         </div>
       </div>
+      <div id="brandAssume" style="margin-top:16px"></div>
     </div>
     <div class="panel">
       <h3>Climate-related financial disclosure<button type="button" class="info" data-info="disclosure" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
@@ -703,7 +758,7 @@
         </div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Model definition</h3>
       <div class="grid2">
         <div>
@@ -743,7 +798,7 @@
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
       <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">CLIMADA's calibration loop: compare modeled expected damage against your own loss history. Site names must match the loaded portfolio.</div>
       <div class="grid2" style="grid-template-columns:0.9fr 1.1fr">
@@ -775,16 +830,74 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-bg" id="onboardModal">
+  <div class="modal" style="width:min(560px,94vw)">
+    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
+    <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
+    <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
+    <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
+    <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
+      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+    </ul>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <div class="row">
+      <button class="lightbtn" id="obGlossary">Open the glossary</button>
+      <button class="lightbtn primary" id="obStart">Load the sample and explore</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="addModal">
-  <div class="modal">
-    <h3>Add a site</h3>
+  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+    <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
+    <div class="field">
+      <label>Location (search a place, or type coordinates below)</label>
+      <div class="searchwrap" style="width:100%">
+        <input type="text" id="mGeo" placeholder="Bonnet Creek, Orlando..." autocomplete="off" style="width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--line);padding-left:12px">
+        <div class="search-results" id="mGeoResults" role="listbox"></div>
+      </div>
+    </div>
     <div class="grid2" style="gap:10px">
       <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
       <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
     </div>
-    <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+      <div class="field"><label>Annual revenue (USD, optional)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
+    </div>
+    <div class="grid2" style="gap:10px">
+      <div class="field"><label>Construction</label>
+        <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+      </div>
+      <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
+    </div>
+    <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
+    <details style="margin:2px 0 12px">
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--primary);font-weight:500">Advanced: sharpens the insurance view (all optional)</summary>
+      <div class="hint" style="margin:8px 0 10px">These are the documented "secondary modifiers" underwriters price on. Leave blank if unknown; blanks reproduce the basic estimate.</div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Roof type</label>
+          <select id="mRoofType"><option value="">Not specified</option><option value="shingle">Shingle</option><option value="tile">Tile</option><option value="metal">Metal</option><option value="membrane">Membrane / flat</option></select>
+        </div>
+        <div class="field"><label>Roof year</label><input type="number" id="mRoofYear" step="1" placeholder="e.g. 2018"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Opening protection</label>
+          <select id="mOpening"><option value="">Not specified</option><option value="impact">Impact-rated</option><option value="partial">Partial / shutters</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label>First-floor elevation (m)</label><input type="number" id="mFfe" step="0.1" placeholder="e.g. 1.5"></div>
+      </div>
+      <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mEquipElev" style="width:auto">Critical equipment elevated above flood level</label></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Wildfire exposure (WUI)</label>
+          <select id="mWui"><option value="">Not specified</option><option value="none">None</option><option value="interface">Interface</option><option value="intermix">Intermix</option></select>
+        </div>
+        <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
+      </div>
+    </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
       <button class="lightbtn primary" id="mAdd">Add site</button>
@@ -796,7 +909,10 @@
   <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
-      <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      <div style="display:flex;gap:8px">
+        <button class="lightbtn" id="focusEdit" aria-label="Edit this site">Edit site</button>
+        <button class="lightbtn" id="focusClose" aria-label="Close scorecard">Close</button>
+      </div>
     </div>
     <div id="focusBody"></div>
   </div>
@@ -1226,29 +1342,37 @@ function explainPeril(site,hz,sc){
    ============================================================ */
 const ACUTE=["tc","cflood","rflood","prain","wfire"];
 const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
-let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+/* Per-brand assumption overrides (SVP review): assumeFor returns the effective
+   revenue/margin/reopen for a site, a brand override shallow-merged over the
+   global. When a brand has no override it returns the GLOBAL OBJECT ITSELF, so an
+   empty overrides map reproduces today's numbers byte-for-byte (the parity fixture
+   sets none). Correlation stays global (it is a portfolio property, not per site).
+   Every per-site reader of finAssume goes through this so base and adapted agree. */
+function assumeFor(s){ const o=finAssume.brandOverrides&&finAssume.brandOverrides[s&&s.brand]; return o?Object.assign({},finAssume,o):finAssume; }
 /* Risk tolerance (Wave 1 decision layer): the operator's documented
    materiality thresholds. A policy layer only: these values never change a
    computed figure, they only decide what counts as a breach. Defaults are
    anchored to stated practice (see the INFO entry) and are meant to be
    edited; edits persist and become the portfolio's documented tolerance. */
 let tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
-function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
+function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*assumeFor(s).revRatio; }
 function finSite(s,sc){
-  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;
-  const maxDownDays=finAssume.reopenMonths/12*365, dailyGop=gop/365;
+  const a=assumeFor(s);
+  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*a.gopMargin;
+  const maxDownDays=a.reopenMonths/12*365, dailyGop=gop/365;
   const directByRp={},biByRp={}; RPS.forEach(rp=>{directByRp[rp]=0;biByRp[rp]=0;});
   let directEad=0,biEad=0;
   for(const hz of ACUTE){
     const r=hzSite(s,hz,sc);                              // direct damage for this peril
     directEad+=r.ead;
-    biEad+=gop*(finAssume.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
+    biEad+=gop*(a.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
     r.curve.forEach(c=>{ directByRp[c.rp]+=c.loss; biByRp[c.rp]+=dailyGop*maxDownDays*(value?c.loss/value:0); });
   }
   // chronic heat: profit at risk from dangerous-heat days (over 35C) above a comfort baseline
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=dailyGop*excess*finAssume.heatDrop;
+  const heatCost=dailyGop*excess*a.heatDrop;
   const totalAal=directEad+biEad+heatCost;
   return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
@@ -1283,10 +1407,9 @@ function finDisclosure(sites,pathway){
    This is the single all-risk picture the Summary tab is built on. */
 function aggregatePortfolio(sites,sc){
   const f=finPortfolio(sites,sc);
-  const gopShare=finAssume.reopenMonths/12;
   const byPeril={};ACUTE.forEach(hz=>byPeril[hz]=0);byPeril.heat=f.heatCost;
   sites.forEach(s=>{
-    const gop=siteRevenue(s)*finAssume.gopMargin;
+    const a=assumeFor(s), gop=siteRevenue(s)*a.gopMargin, gopShare=a.reopenMonths/12;
     ACUTE.forEach(hz=>{const r=hzSite(s,hz,sc);byPeril[hz]+=r.ead+gop*gopShare*(r.eadPct/100);});
   });
   const byType={direct:f.directEad,bi:f.biEad,heat:f.heatCost};
@@ -1369,10 +1492,11 @@ function adaptedFinSite(s,sc,mods){
   const exp=mods.expMult==null?1:mods.expMult;             // exposure uncertainty: scales value and revenue
   const haz=mods.hazMult==null?1:mods.hazMult;             // hazard-intensity uncertainty: scales wind speed and flood depth
   const dmgK=mods.dmgScale==null?1:mods.dmgScale;          // damage-curve steepness uncertainty
+  const a=assumeFor(s);
   const value=s.asset_value_usd*exp;
   const revenue=siteRevenue(s)*exp*(mods.revMult==null?1:mods.revMult);
-  const gop=revenue*finAssume.gopMargin;
-  const reopenShare=(finAssume.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
+  const gop=revenue*a.gopMargin;
+  const reopenShare=(a.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
   const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
   let directEad=0,biEad=0;
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
@@ -1391,7 +1515,7 @@ function adaptedFinSite(s,sc,mods){
   directEad+=fFrac*value; biEad+=gop*reopenShare*fFrac;
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=(gop/365)*excess*finAssume.heatDrop*(mods.heatMult==null?1:mods.heatMult);
+  const heatCost=(gop/365)*excess*a.heatDrop*(mods.heatMult==null?1:mods.heatMult);
   return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
 }
 function adaptedTotal(sitesArr,sc,mods){
@@ -1699,12 +1823,18 @@ let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is load
 let scenario="present";
 let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
+let _scorecardId=null;     // the site whose scorecard is open (for the Edit button)
 let sortKey="ead", sortDir=-1;
 let nextId=1;
 let brandFilter="";        // map-only brand filter (session, not persisted)
 let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
 let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
 let scrubTimer=null;       // scenario scrubber playback
+/* View/UI preferences (persisted, defensively merged like finAssume). Holds the
+   chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
+   later, first-run and simple-view flags. Never affects a computed number: these
+   keys only change how existing figures are shown. */
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -1737,7 +1867,8 @@ const INFO={
   controls:{t:"Peril, pathway and horizon",b:
     "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, extreme heat, wildfire, or TC rainfall. The Overview risk-driver panel always shows all perils together.</p>"+
     "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
-    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>",
+    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>"+
+    "<p><b>Brand</b> filters which sites appear on the map. <b>Map colour</b> is a display lens: colour the markers by the selected peril's band, by combined all-peril risk, or by each site's dominant peril. It changes the map only, never a figure.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
   scrub:{t:"The scenario timeline",b:
     "<p>The timeline steps the whole app through <b>Present, 2030, 2050, and 2080</b> under the pathway selected in the top bar (SSP2-4.5 if the top bar is on Present day). Every figure on every tab recomputes at each step: it is the same model, walked through time.</p>"+
@@ -1804,7 +1935,8 @@ const INFO={
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
-    "<p>The site's insured or replacement value. Every dollar loss scales with it. Edit it on any site to test sensitivity.</p>"},
+    "<p>The site's insured or replacement value. Every dollar loss scales with it.</p>"+
+    "<p>Use <b>Edit site</b> (on the site detail or its scorecard) to change the value, the revenue, the construction, and the other building facts, and everything recomputes.</p>"},
   scenarios:{t:"Combined physical risk by pathway",b:
     "<p>All acute perils summed into one physical expected-annual-damage figure, compared across emissions pathways at the horizon selected in the top bar.</p>"+
     "<p><b>Band migration</b> shows how many sites move into higher bands as the climate warms.</p>"},
@@ -1881,6 +2013,10 @@ const INFO={
   assumptions:{t:"Assumptions",b:
     "<p>These five levers turn hazard into money. They are deliberately visible and adjustable so the logic is auditable and you can fit them to your own portfolio.</p>"+
     "<p>A per-site <code>annual_revenue_usd</code> column in the upload overrides the revenue lever for that site.</p>"},
+  brandAssume:{t:"Per-brand overrides",b:
+    "<p>The three revenue-and-operations assumptions above are portfolio-wide defaults. A resort brand often runs a different economic model, so you can override the revenue ratio, the operating margin, or the reopening time for any brand, and only that brand's sites recompute.</p>"+
+    "<p>Blank means "+"\"use the portfolio default,\" so an untouched table reproduces the global numbers exactly. Reset clears a brand back to the defaults. A per-site <code>annual_revenue_usd</code> value still wins over both, for that one site.</p>",
+    s:"A per-brand input to the same model; it changes which assumption a site uses, not the math."},
   revRatio:{t:"Revenue as % of asset value",b:
     "<p>Sets each site's annual revenue as a share of its value, used for business interruption and heat costs when no per-site revenue is supplied.</p>"+
     "<p>Hospitality real estate commonly runs 25 to 45%.</p>"},
@@ -1916,6 +2052,16 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  riskMatrix:{t:"Portfolio risk matrix",b:
+    "<p>One grid for the whole portfolio: each <b>row</b> is a site (or a brand), each <b>column</b> is a peril, and the last column is the combined physical risk. Every cell is coloured by its risk band, from Minimal to Severe, so hot spots jump out without reading a single number.</p>"+
+    "<p>Read <b>across a row</b> for one site's full risk profile, or <b>down a column</b> to see which sites drive the portfolio's exposure to a single peril. Rows are ordered by combined expected annual cost, so the most exposed sit at the top.</p>"+
+    "<p>The <b>View</b> control regroups the rows by site or by brand; the <b>Show</b> control switches each cell between percent of value, dollars per year, and the band name. Heat is a chronic indicator, so its cell is coloured but carries no dollar figure (its cost is on the Financial impact tab). Click any site row to open its scorecard.</p>",
+    s:"A display lens only: the matrix reads the same per-site figures as every other tab and changes none of them."},
+  riskValue:{t:"Risk vs value",b:
+    "<p>The classic capital-allocation picture. Each bubble is a site, placed by its <b>asset value</b> (left to right) and its <b>expected annual cost as a share of that value</b> (bottom to top), and sized by the <b>dollars at risk each year</b>. Colour is the site's combined risk band.</p>"+
+    "<p>The dashed lines split the portfolio into four quadrants: the vertical at the portfolio's median value, the horizontal at this app's Moderate-to-High band boundary. <b>Top right</b> is high value meeting high risk, where hardening usually pays back first; <b>top left</b> is smaller but exposed, often a transfer-or-harden call; <b>bottom right</b> is valuable but calmer, worth monitoring; <b>bottom left</b> is low on both, usually accepted.</p>"+
+    "<p>Click any bubble to open that site's scorecard.</p>",
+    s:"A display lens only: bubbles plot the same per-site figures shown elsewhere and change none of them."},
   tolerance:{t:"Risk tolerance",b:
     "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
     "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
@@ -1995,6 +2141,15 @@ function initMap(){
   }catch(err){ showMapUnavailable(); }
 }
 const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+/* SVP review: what a map marker is coloured by (the map's "change views" lens).
+   Pure, so the node tests can pin the two new modes. "peril" keeps the legacy
+   behaviour (the selected peril's band); "combined" uses the all-perils band;
+   "dominant" uses the leading peril's own colour. */
+function markerFill(r,mode,sc,perilBand){
+  if(mode==="combined")return BAND_COLOR[scorePhysTotal([r],sc).rows[0].band];
+  if(mode==="dominant"){let best=null,bv=-1;for(const hz of ACUTE){const e=hzSite(r,hz,sc).ead;if(e>bv){bv=e;best=hz;}}return (bv>0&&best)?HAZARD_BY[best].color:BAND_COLOR.Minimal;}
+  return BAND_COLOR[perilBand!=null?perilBand:hzSite(r,activeHazard,sc).band];
+}
 let legendCtl=null;
 function updateLegend(){
   if(!mapOk)return;
@@ -2002,9 +2157,16 @@ function updateLegend(){
   legendCtl=L.control({position:"bottomright"});
   legendCtl.onAdd=function(){
     const d=L.DomUtil.create("div","maplegend");
-    const bands=["Minimal","Low","Moderate","High","Severe"];
-    d.innerHTML='<div class="lh">'+HAZARD_LABEL[activeHazard]+' rating</div>'+
-      bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    const mode=ui.views.mapColor;
+    if(mode==="dominant"){
+      d.innerHTML='<div class="lh">Dominant peril</div>'+
+        ACUTE.map(hz=>'<span class="li"><i style="background:'+HAZARD_BY[hz].color+'"></i>'+HAZARD_LABEL[hz]+'</span>').join("");
+    }else{
+      const title=(mode==="combined")?"Combined risk":(HAZARD_LABEL[activeHazard]+" rating");
+      const bands=["Minimal","Low","Moderate","High","Severe"];
+      d.innerHTML='<div class="lh">'+title+'</div>'+
+        bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
+    }
     return d;
   };
   legendCtl.addTo(map);
@@ -2029,10 +2191,11 @@ function drawMarkers(scored){
   if(!rows.length){_lastFitKey="";updateLegend();return;}
   const heat=activeHazard==="heat";
   const maxV=Math.max.apply(null,rows.map(r=>r.asset_value_usd))||1;
+  const colorMode=ui.views.mapColor;
   rows.forEach(r=>{
     const rad=7+16*Math.sqrt(Math.max(r.asset_value_usd,0)/maxV);
     const m=L.circleMarker([r.latitude,r.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:BAND_COLOR[r.band],fillOpacity:.85
+      radius:rad,color:"#fff",weight:1.5,fillColor:markerFill(r,colorMode,scenario,r.band),fillOpacity:.85
     }).addTo(map);
     const metric=heat
       ? (r.indicators?r.indicators.daysOver32+" days &gt;32&deg;C":"")
@@ -2088,6 +2251,41 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
     s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
   s+="</svg>";return s;
 }
+function median(a){ if(!a.length)return 0; const s=a.slice().sort((x,y)=>x-y),m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+/* SVP review: risk-vs-value quadrant. X = asset value, Y = expected annual cost
+   as a share of value, bubble area tracks EAD dollars, colour is the combined
+   band. The dashed dividers (median value, and the Moderate/High band boundary)
+   split the portfolio into the classic capital-allocation quadrants. A bubble
+   click opens the site scorecard, the same as the map and the matrix. Pure over
+   its inputs: it plots figures the engine already computed, changing none. */
+function quadrantSvg(pts){
+  const W=480,H=300,padL=54,padR=16,padT=20,padB=44;
+  if(!pts.length)return svgEl(W,H)+"</svg>";
+  const xmax=(Math.max.apply(null,pts.map(p=>p.value))*1.06)||1;
+  const ymax=Math.max(0.6,Math.max.apply(null,pts.map(p=>p.eadPct))*1.12);
+  const rmax=Math.max.apply(null,pts.map(p=>p.ead))||1;
+  const xDiv=median(pts.map(p=>p.value)), yDiv=0.75;
+  const X=v=>padL+(v/xmax)*(W-padL-padR);
+  const Y=v=>H-padB-(v/ymax)*(H-padB-padT);
+  const R=e=>5+15*Math.sqrt(Math.max(e,0)/rmax);
+  let s=svgEl(W,H);
+  [0,.25,.5,.75,1].forEach(t=>{const yv=t*ymax,y=Y(yv);
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#EEF0EC"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+yv.toFixed(1)+'%</text>';});
+  [0.5,1].forEach(t=>{const xv=t*xmax,x=X(xv);
+    s+='<text x="'+x+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(xv)+'</text>';});
+  s+='<line x1="'+X(xDiv)+'" y1="'+padT+'" x2="'+X(xDiv)+'" y2="'+(H-padB)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  if(yDiv<ymax)s+='<line x1="'+padL+'" y1="'+Y(yDiv)+'" x2="'+(W-padR)+'" y2="'+Y(yDiv)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
+  const tag=(x,y,anc,txt)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+anc+'" font-size="9.5" fill="#9AA7A0" font-style="italic">'+txt+'</text>';
+  s+=tag(W-padR-2,padT+11,"end","protect first")+tag(padL+2,padT+11,"start","harden / transfer")+
+     tag(W-padR-2,H-padB-5,"end","monitor")+tag(padL+2,H-padB-5,"start","accept");
+  pts.slice().sort((a,b)=>b.ead-a.ead).forEach(p=>{
+    s+='<circle cx="'+X(p.value).toFixed(1)+'" cy="'+Y(Math.min(p.eadPct,ymax)).toFixed(1)+'" r="'+R(p.ead).toFixed(1)+'" fill="'+BAND_COLOR[p.band]+'" fill-opacity="0.72" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="openScorecard('+(+p.id)+')"><title>'+esc(p.name)+' · '+fmt$(p.value)+' value · '+p.eadPct.toFixed(2)+'% cost · '+fmt$(p.ead)+'/yr · '+p.band+'</title></circle>';});
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Asset value</text>';
+  const ymid=(padT+H-padB)/2;
+  s+='<text x="14" y="'+ymid+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 14 '+ymid+')">Annual cost, % of value</text>';
+  s+="</svg>";return s;
+}
 
 /* ============================================================
    Rendering
@@ -2103,6 +2301,8 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderRiskMatrix();
+  renderQuadrant();
   renderTolerance();
   renderScrub();
   renderSites();
@@ -2124,6 +2324,17 @@ function renderSummary(){
   const premium=ff.totalAal-pf.totalAal, premiumPct=pf.totalAal?premium/pf.totalAal*100:0;
   const futLabel=SCEN_LABEL[futureSc]||futureSc, curLabel=SCEN_LABEL[scenario]||scenario;
   document.getElementById("sumSub").innerHTML="Every peril and every cost type in one view, at "+esc(curLabel)+". "+(hazardGrid?"Using the loaded CLIMADA grid.":"Interim screening model.");
+  const db=document.getElementById("dataBanner");
+  if(db){
+    if(hazardGrid){
+      const live=perilAuthority().filter(a=>a.live).length;
+      db.style.borderLeftColor="#2E8B6F";
+      db.innerHTML="<b>Running on your loaded climate data</b> ("+live+" of "+HAZARDS.length+" perils authoritative). These figures are disclosure-grade for those perils; any peril still on the built-in estimate is labelled where it appears.";
+    }else{
+      db.style.borderLeftColor="#E0A43B";
+      db.innerHTML="<b>You are exploring with built-in estimates.</b> Good for a first look, not for disclosure. To sharpen every number, load your climate data on the Method and data tab (or ask your analytics team for the CLIMADA grid).";
+    }
+  }
   const card=(l,v,foot,info)=>'<div class="card"><div class="l">'+l+(info?infoBtn(info):"")+'</div><div class="v" style="font-size:22px">'+v+'</div><div class="foot">'+foot+'</div></div>';
   const u=uncRange(sites,scenario);
   host.innerHTML=
@@ -2167,6 +2378,75 @@ function renderSummary(){
     (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
     "Financial assumptions are set on the Financial impact tab.";
 }
+/* SVP review: the portfolio risk matrix (a heatmap of every row against every
+   peril at the current scenario, coloured by risk band). matrixRows is pure over
+   hzSite / bandOf / heatBand; renderRiskMatrix only paints it. No computed figure
+   changes, so the parity surface is untouched. The View and Show selects are the
+   "change views" lens: regroup the rows, or switch what each cell reports. */
+function matrixRows(group){
+  if(group==="brand"){
+    const by={};
+    sites.forEach(s=>{const b=s.brand||"Unbranded";const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
+      g.value+=s.asset_value_usd; g.n++;
+      ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
+      const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
+    return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
+      ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
+      row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
+      const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
+      return row;
+    }).sort((a,b)=>b.combined.ead-a.combined.ead);
+  }
+  return sites.map(s=>{const row={label:s.name,id:s.id,value:s.asset_value_usd,cells:{},combined:null};let comb=0;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);row.cells[hz]={ead:r.ead,eadPct:r.eadPct,band:r.band};comb+=r.ead;});
+    const hr=hzSite(s,"heat",scenario); row.cells.heat={ead:0,eadPct:0,band:hr.band,days:hr.indicators?hr.indicators.daysOver32:0,isHeat:true};
+    const cpct=s.asset_value_usd?comb/s.asset_value_usd*100:0; row.combined={ead:comb,eadPct:cpct,band:bandOf(cpct)};
+    return row;
+  }).sort((a,b)=>b.combined.ead-a.combined.ead);
+}
+function renderRiskMatrix(){
+  const host=document.getElementById("riskMatrix"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const group=(ui.views.matrixGroup==="brand")?"brand":"site";
+  const metric=["pct","usd","band"].indexOf(ui.views.matrixMetric)>=0?ui.views.matrixMetric:"pct";
+  const gsel=document.getElementById("mtxGroup"); if(gsel)gsel.value=group;
+  const msel=document.getElementById("mtxMetric"); if(msel)msel.value=metric;
+  const cols=HAZARDS.slice();
+  const rows=matrixRows(group);
+  const cellText=c=>{ if(c.isHeat)return ""; if(c.ead<=0&&c.eadPct<=0)return "0";
+    if(metric==="usd")return fmt$(c.ead); if(metric==="band")return c.band; return c.eadPct.toFixed(2); };
+  const cellTitle=(label,hzLabel,c)=>c.isHeat
+    ? esc(label)+" · "+hzLabel+": "+c.band+" ("+c.days+" days over 32C)"
+    : esc(label)+" · "+hzLabel+": "+c.band+" · "+fmt$(c.ead)+"/yr · "+c.eadPct.toFixed(2)+"% of value";
+  let h='<table class="mtx"><thead><tr><th class="rowh">'+(group==="brand"?"Brand":"Site")+'</th>';
+  cols.forEach(H=>h+='<th title="'+esc(H.label)+'">'+H.short+'</th>');
+  h+='<th title="Combined physical risk across all perils">All</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const click=(group==="site")?' class="rowclick" data-focus="'+r.id+'"':'';
+    h+='<tr'+click+'><td class="rowh" title="'+esc(r.label)+'">'+esc(r.label)+'</td>';
+    cols.forEach(H=>{const c=r.cells[H.key];const zero=(!c.isHeat&&c.ead<=0&&c.eadPct<=0);
+      h+='<td class="cell'+(zero?' zero':'')+'" style="background:'+BAND_COLOR[c.band]+'" title="'+cellTitle(r.label,H.label,c)+'">'+cellText(c)+'</td>';});
+    const cc=r.combined;
+    h+='<td class="cell comb" style="background:'+BAND_COLOR[cc.band]+'" title="'+esc(r.label)+' · combined: '+cc.band+' · '+fmt$(cc.ead)+'/yr · '+cc.eadPct.toFixed(2)+'%">'+
+      (metric==="usd"?fmt$(cc.ead):(metric==="band"?cc.band:cc.eadPct.toFixed(2)))+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  const bands=["Minimal","Low","Moderate","High","Severe"];
+  h+='<div class="mtxlegend"><span>Cell colour is the risk band:</span>'+
+    bands.map(b=>'<span><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("")+
+    '<span style="color:var(--muted)">Columns: W wind, F coastal, R river, H heat, B wildfire, P rainfall, All combined</span></div>';
+  host.innerHTML=h;
+  if(group==="site")host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* SVP review: the risk-vs-value quadrant. Plots each site by value and by cost
+   share, coloured by combined band, over scorePhysTotal (parity-pinned). Display
+   only: it moves no number. */
+function renderQuadrant(){
+  const host=document.getElementById("riskValue"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const pts=scorePhysTotal(sites,scenario).rows.map(r=>({id:r.id,name:r.name,value:r.asset_value_usd,ead:r.ead,eadPct:r.eadPct,band:r.band}));
+  host.innerHTML=quadrantSvg(pts);
+}
 /* why a damage peril reads zero everywhere, phrased as the user's next step.
    Mirrors explainPeril's source logic at portfolio level: only the two perils
    that can be honestly data-less (wildfire without a grid or wui_class,
@@ -2202,7 +2482,7 @@ function renderTolerance(){
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
     ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
-    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+
@@ -2390,11 +2670,11 @@ function renderDetail(r){
     ratingStrip+mid+table+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
-      '<button class="lightbtn" id="editVal">Edit value</button>'+
+      '<button class="lightbtn" id="editVal">Edit site</button>'+
       '<button class="lightbtn" id="delSite" style="color:var(--r-sev)">Remove</button>'+
     '</div>';
   document.getElementById("openCard").onclick=()=>openScorecard(r.id);
-  document.getElementById("editVal").onclick=()=>{const v=prompt("Asset value (USD) for "+r.name,r.asset_value_usd);if(v!=null){const n=toNum(v);if(isFinite(n)&&n>=0){const s=sites.find(x=>x.id===r.id);s.asset_value_usd=n;persist();render();}else toast("Enter a non-negative number.");}};
+  document.getElementById("editVal").onclick=()=>{const s=sites.find(x=>x.id===r.id);if(s)openForm("edit",s);};
   document.getElementById("delSite").onclick=()=>{sites=sites.filter(x=>x.id!==r.id);selectedId=null;persist();render();};
 }
 
@@ -2679,13 +2959,49 @@ function syncFinAssume(){
   g("corrVal").textContent=(+g("corr").value/100).toFixed(2);
   persist();renderFinance();
 }
+/* SVP review: optional per-brand overrides of the three site-level assumptions
+   (revenue ratio, operating margin, reopen months). Blank uses the global default;
+   a set value writes into finAssume.brandOverrides[brand], which assumeFor consumes.
+   State + display only, never a bespoke number. */
+function renderBrandAssume(){
+  const host=document.getElementById("brandAssume"); if(!host)return;
+  const brands=[];sites.forEach(s=>{const b=s.brand;if(b&&brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  if(!brands.length){host.innerHTML="";return;}
+  const ov=finAssume.brandOverrides||{};
+  const cell=(b,k,val,ph)=>'<td class="num"><input type="number" class="brandov" data-brand="'+esc(b)+'" data-key="'+k+'" min="0" step="1" value="'+val+'" placeholder="'+ph+'" style="width:72px;padding:5px 7px;text-align:right"></td>';
+  let h='<div style="font-weight:600;color:var(--primary);margin-bottom:4px">Per-brand overrides'+infoBtn("brandAssume")+'</div>'+
+    '<div class="hint" style="margin-bottom:8px">Optional. Blank uses the portfolio defaults above. Set a brand that runs a different revenue mix, margin, or reopening speed, and only its sites recompute.</div>'+
+    '<table class="tbl"><thead><tr><th>Brand</th><th class="num">Revenue % of value</th><th class="num">Operating margin %</th><th class="num">Months to reopen</th><th></th></tr></thead><tbody>';
+  brands.forEach(b=>{const o=ov[b]||{};
+    h+='<tr><td>'+esc(b)+'</td>'+
+      cell(b,"revRatio",o.revRatio!=null?Math.round(o.revRatio*100):"",Math.round(finAssume.revRatio*100))+
+      cell(b,"gopMargin",o.gopMargin!=null?Math.round(o.gopMargin*100):"",Math.round(finAssume.gopMargin*100))+
+      cell(b,"reopenMonths",o.reopenMonths!=null?o.reopenMonths:"",String(finAssume.reopenMonths))+
+      '<td class="num">'+(ov[b]?'<button class="lightbtn brandclear" data-brand="'+esc(b)+'" style="padding:3px 9px;font-size:11px">Reset</button>':'')+'</td></tr>';});
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input.brandov").forEach(inp=>inp.onchange=()=>{
+    const b=inp.dataset.brand,k=inp.dataset.key,raw=String(inp.value).trim();
+    const map=finAssume.brandOverrides||(finAssume.brandOverrides={});
+    const o=map[b]||(map[b]={});
+    if(raw===""){delete o[k];}
+    else{let v=+raw;if(!isFinite(v)||v<0){toast("Enter a non-negative number.");renderBrandAssume();return;}
+      if(k==="revRatio"||k==="gopMargin")v=v/100;o[k]=v;}
+    if(!Object.keys(o).length)delete map[b];
+    persist();render();
+  });
+  host.querySelectorAll("button.brandclear").forEach(btn=>btn.onclick=()=>{
+    const map=finAssume.brandOverrides||{};delete map[btn.dataset.brand];persist();render();});
+}
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
     kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
-    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }
+  renderBrandAssume();
   const f=finPortfolio(sites,scenario);
   const u=uncRange(sites,scenario);
   const indirect=f.biEad+f.heatCost;
@@ -2734,6 +3050,7 @@ function renderFinance(){
    ============================================================ */
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
+  _scorecardId=id;
   renderScorecard(s);
   document.getElementById("focusBg").classList.add("open");
 }
@@ -2742,10 +3059,11 @@ function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
   const vuln=vulnOf(s);
-  const gop=fin.gop, dailyGop=gop/365, maxDown=finAssume.reopenMonths/12*365;
+  const _asm=assumeFor(s);
+  const gop=fin.gop, dailyGop=gop/365, maxDown=_asm.reopenMonths/12*365;
   const perils=ACUTE.map(hz=>{
     const r=hzSite(s,hz,scenario);
-    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(finAssume.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
+    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(_asm.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
   });
   const heatR=hzSite(s,"heat",scenario);
   const phys=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?c.loss:0);},0);
@@ -3221,6 +3539,33 @@ function loadSiteCsv(text){
   sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
   toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
 }
+/* SVP review: the in-app Add/Edit form's coercion, mirroring loadSiteCsv's
+   per-field guards exactly so a typed site is validated the same way an uploaded
+   one is. Blank or invalid optional fields are omitted, so an empty advanced
+   section reproduces today's six-field behaviour. Returns null when the required
+   location or value is invalid. Pure; defined before restore() so it is testable. */
+const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
+  "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
+  "wui_class","defensible_space_m"];
+function siteRecordFromFields(raw){
+  raw=raw||{};
+  const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
+  if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0)return null;
+  const rec={name:String(raw.name||"Site").slice(0,120),brand:String(raw.brand||"").slice(0,80),
+             latitude:lat,longitude:lon,asset_value_usd:val};
+  const rv=toNum(raw.annual_revenue_usd); if(isFinite(rv)&&rv>=0)rec.annual_revenue_usd=rv;
+  const cs=String(raw.construction||"").trim().toLowerCase(); if(CONSTR_FACTOR[cs]!=null)rec.construction=cs;
+  const yb=toNum(raw.year_built); if(isFinite(yb)&&yb>1800&&yb<2100)rec.year_built=Math.round(yb);
+  if(raw.defended!==undefined&&String(raw.defended).trim()!=="")rec.defended=truthy(raw.defended);
+  const rt=String(raw.roof_type||"").trim().toLowerCase(); if(ROOF_TYPE_FACTOR[rt]!=null)rec.roof_type=rt;
+  const ry=toNum(raw.roof_year); if(isFinite(ry)&&ry>1800&&ry<2100)rec.roof_year=Math.round(ry);
+  const op=String(raw.opening_protection||"").trim().toLowerCase(); if(OPENING_FACTOR[op]!=null)rec.opening_protection=op;
+  const ffe=toNum(raw.first_floor_elev_m); if(isFinite(ffe)&&ffe>=0)rec.first_floor_elev_m=ffe;
+  if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
+  const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
+  const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  return rec;
+}
 function buildGridsFromRows(rows){
   gridByHazard={};
   const byHaz={};
@@ -3374,7 +3719,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance,ui})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -3392,6 +3737,7 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
+      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -3404,29 +3750,77 @@ function restore(){
   }catch(e){}
 }
 
-/* ---- geocode (external; degrades quietly if blocked) ---- */
-let geoTimer=null;
-function geocode(q){
+/* ---- geocode (external; degrades quietly if blocked). geocodeInto is shared by
+   the top-bar search and the in-form search so both use one code path. ---- */
+let geoTimer=null, mGeoTimer=null;
+function geocodeInto(q,box,onPick){
   fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&q="+encodeURIComponent(q),{headers:{"Accept-Language":"en"}})
     .then(r=>r.json()).then(list=>{
-      const box=document.getElementById("geoResults");
       if(!Array.isArray(list)||!list.length){box.innerHTML='<div class="r"><small>No matches</small></div>';box.classList.add("open");return;}
-      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
+      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'" data-name="'+esc(p.display_name.split(",")[0])+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
       box.classList.add("open");
-      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{openAdd(+el.dataset.lat,+el.dataset.lon,document.getElementById("geo").value.split(",")[0]);box.classList.remove("open");document.getElementById("geo").value="";});
+      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{onPick(+el.dataset.lat,+el.dataset.lon,el.dataset.name);box.classList.remove("open");});
     }).catch(()=>toast("Search is unavailable on this network. Add sites by CSV or map click."));
 }
+function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
-/* ---- add modal ---- */
-function openAdd(lat,lon,name){
-  document.getElementById("mLat").value=lat.toFixed(4);
-  document.getElementById("mLon").value=lon.toFixed(4);
-  document.getElementById("mName").value=name||"";
-  document.getElementById("mBrand").value="";
-  document.getElementById("mVal").value=30000000;
-  document.getElementById("addModal").classList.add("open");
+/* ---- add / edit site form (SVP review) ---- */
+let _editId=null;
+function openForm(mode,site){
+  const g=id=>document.getElementById(id), s=site||{};
+  const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
+  const set=(id,v)=>{g(id).value=(v==null||(typeof v==="number"&&!isFinite(v)))?"":v;};
+  g("formTitle").textContent=(mode==="edit")?"Edit site":"Add a site";
+  g("mAdd").textContent=(mode==="edit")?"Save changes":"Add site";
+  set("mName",s.name); g("mBrand").value=s.brand||"";
+  set("mLat",(s.latitude!=null&&isFinite(+s.latitude))?(+s.latitude).toFixed(4):"");
+  set("mLon",(s.longitude!=null&&isFinite(+s.longitude))?(+s.longitude).toFixed(4):"");
+  set("mVal",s.asset_value_usd); set("mRev",s.annual_revenue_usd);
+  g("mConstr").value=s.construction||""; set("mYear",s.year_built);
+  g("mDefended").checked=!!s.defended;
+  g("mRoofType").value=s.roof_type||""; set("mRoofYear",s.roof_year);
+  g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
+  g("mEquipElev").checked=!!s.equipment_elevated;
+  g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mGeo").value=""; g("mGeoResults").classList.remove("open");
+  _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  g("addModal").classList.add("open");
 }
-function closeAdd(){document.getElementById("addModal").classList.remove("open");}
+function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
+function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function submitForm(){
+  const g=id=>document.getElementById(id);
+  const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
+    asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
+    year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
+    roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
+    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value};
+  const rec=siteRecordFromFields(raw);
+  if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
+  if(_editId!=null){
+    const s=sites.find(x=>x.id===_editId);
+    if(s){FORM_OPTIONAL_FIELDS.forEach(k=>delete s[k]);Object.assign(s,rec);clearHazCache();persist();render();toast("Site updated");}
+  }else{ clearHazCache();addSites([rec]);toast("Site added"); }
+  closeAdd();
+}
+
+/* ---- first-run orientation (SVP review) ---- */
+function closeOnboard(seen){ document.getElementById("onboardModal").classList.remove("open"); if(seen){ui.onboarded=true;persist();} }
+function openOnboard(){
+  const b=document.getElementById("obStart"); if(!b)return;
+  if(sites.length){ b.textContent="Got it"; b.onclick=()=>closeOnboard(true); }
+  else { b.textContent="Load the sample and explore"; b.onclick=()=>{closeOnboard(true);loadSample();}; }
+  document.getElementById("onboardModal").classList.add("open");
+}
+function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
+
+/* ---- executive / simple view (SVP review): hides the specialist panels via a
+   body class, exactly like body.printbrief. Never touches a number, and never
+   hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
+function applySimpleView(){
+  document.body.classList.toggle("execview", !!ui.simpleView);
+  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
 
 /* ---- export ---- */
 function exportCsv(){
@@ -3546,8 +3940,15 @@ function wire(){
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
+  const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
+  if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
+  if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
+  const mcSel=document.getElementById("mapColorSel");
+  if(mcSel){mcSel.value=["peril","combined","dominant"].indexOf(ui.views.mapColor)>=0?ui.views.mapColor:"peril";
+    mcSel.onchange=e=>{ui.views.mapColor=e.target.value;persist();render();};}
   document.getElementById("tmplBtn").onclick=downloadTemplate;
-  document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
+  document.getElementById("addSiteBtn").onclick=()=>openForm("add",{});
   // sort
   document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>th.onclick=e=>{
     if(e.target.closest(".info"))return;
@@ -3556,19 +3957,29 @@ function wire(){
   // geocode
   const geo=document.getElementById("geo");
   geo.oninput=()=>{clearTimeout(geoTimer);const q=geo.value.trim();if(q.length<3){document.getElementById("geoResults").classList.remove("open");return;}geoTimer=setTimeout(()=>geocode(q),400);};
-  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap"))document.getElementById("geoResults").classList.remove("open");});
+  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap")){document.getElementById("geoResults").classList.remove("open");document.getElementById("mGeoResults").classList.remove("open");}});
+  // in-form place search (fills the coordinate fields; keeps its own results box)
+  const mGeo=document.getElementById("mGeo");
+  if(mGeo)mGeo.oninput=()=>{clearTimeout(mGeoTimer);const q=mGeo.value.trim();if(q.length<3){document.getElementById("mGeoResults").classList.remove("open");return;}
+    mGeoTimer=setTimeout(()=>geocodeInto(q,document.getElementById("mGeoResults"),(lat,lon,name)=>{
+      document.getElementById("mLat").value=lat.toFixed(4);document.getElementById("mLon").value=lon.toFixed(4);
+      if(!document.getElementById("mName").value)document.getElementById("mName").value=name||"";mGeo.value="";}),400);};
   // modal
   document.getElementById("mCancel").onclick=closeAdd;
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
+  document.getElementById("mAdd").onclick=submitForm;
   document.getElementById("focusClose").onclick=closeScorecard;
+  const fe=document.getElementById("focusEdit");
+  if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();}});
-  document.getElementById("mAdd").onclick=()=>{
-    const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
-    if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
-    addSites([{name:(document.getElementById("mName").value||"New site").slice(0,120),brand:(document.getElementById("mBrand").value||"").slice(0,80),latitude:lat,longitude:lon,asset_value_usd:val}]);
-    closeAdd();toast("Site added");
-  };
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // executive / simple view
+  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
+  applySimpleView();
+  // first-run orientation
+  document.getElementById("guideBtn").onclick=openOnboard;
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;
   document.getElementById("load").value=adapt.load;
@@ -3603,6 +4014,7 @@ function wire(){
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
   dropZone(bd,f=>readFile(f,loadBacktestCsv));
   render();
+  maybeOnboard();
 }
 function dropZone(el,cb){
   el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});

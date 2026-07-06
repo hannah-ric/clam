@@ -442,6 +442,86 @@ assert(document.getElementById("tolPanel").style.display==="none",
   "no sites: the tolerance panel hides");
 sites=savedSites;
 
+/* SVP review: portfolio risk matrix (pure display lens) + ui.views persistence.
+   Additive; changes no computed figure, so the parity suite is untouched. */
+scenario="present";
+const mxSite=matrixRows("site");
+assert(mxSite.length===sites.length,"risk matrix: one row per site");
+assert(mxSite[0].combined.ead>=mxSite[mxSite.length-1].combined.ead,
+  "risk matrix rows sort by combined cost, most exposed first");
+assert(ACUTE.every(hz=>mxSite[0].cells[hz])&&mxSite[0].cells.heat&&mxSite[0].cells.heat.isHeat,
+  "risk matrix carries a cell per peril plus a heat indicator cell");
+const _combSum=ACUTE.reduce((a,hz)=>a+mxSite[0].cells[hz].ead,0);
+assert(Math.abs(_combSum-mxSite[0].combined.ead)<1e-6,
+  "risk matrix combined equals the sum of its per-peril EAD");
+const mxBrand=matrixRows("brand");
+assert(mxBrand.length===2,"risk matrix by-brand groups the two brands");
+const _siteTot=mxSite.reduce((a,r)=>a+r.combined.ead,0),
+      _brandTot=mxBrand.reduce((a,r)=>a+r.combined.ead,0);
+assert(Math.abs(_siteTot-_brandTot)<1e-6,
+  "risk matrix by-brand conserves total combined cost");
+renderQuadrant();
+const _qv=document.getElementById("riskValue").innerHTML;
+assert((_qv.match(/openScorecard\\(/g)||[]).length===sites.length,
+  "risk-vs-value plots one clickable bubble per site");
+const _rowA=sites[0];
+assert(markerFill(_rowA,"combined","present")===BAND_COLOR[scorePhysTotal([_rowA],"present").rows[0].band],
+  "map colour: combined mode uses the combined band");
+let _bst=null,_bv=-1;for(const hz of ACUTE){const e=hzSite(_rowA,hz,"present").ead;if(e>_bv){_bv=e;_bst=hz;}}
+assert(markerFill(_rowA,"dominant","present")===HAZARD_BY[_bst].color,
+  "map colour: dominant mode uses the leading peril's colour");
+assert(markerFill(_rowA,"peril","present",_rowA.band!=null?_rowA.band:hzSite(_rowA,activeHazard,"present").band)===BAND_COLOR[hzSite(_rowA,activeHazard,"present").band],
+  "map colour: peril mode keeps the selected-peril band");
+/* SVP review: the Add/Edit form's coercion mirrors the CSV loader's guards */
+const _blankRec=siteRecordFromFields({name:"X",latitude:25,longitude:-80,asset_value_usd:5e7});
+assert(_blankRec&&Object.keys(_blankRec).length===5&&_blankRec.construction===undefined,
+  "site form: a blank optional section yields exactly the required fields");
+assert(siteRecordFromFields({latitude:999,longitude:0,asset_value_usd:1})===null,
+  "site form: an out-of-range latitude is rejected");
+const _fullRec=siteRecordFromFields({name:"Y",latitude:25,longitude:-80,asset_value_usd:5e7,
+  construction:"frame",year_built:"1988",roof_type:"metal",opening_protection:"impact",
+  first_floor_elev_m:"1.5",defended:true,wui_class:"interface",annual_revenue_usd:"20000000"});
+assert(_fullRec.construction==="frame"&&_fullRec.roof_type==="metal"&&_fullRec.first_floor_elev_m===1.5&&_fullRec.defended===true&&_fullRec.annual_revenue_usd===20000000,
+  "site form: valid business and advanced fields are coerced and kept");
+assert(siteRecordFromFields({name:"Z",latitude:25,longitude:-80,asset_value_usd:5e7,construction:"brick"}).construction===undefined,
+  "site form: an invalid construction value is dropped, not stored");
+assert(vulnOf(_fullRec).windMult!==vulnOf(_blankRec).windMult,
+  "site form: the advanced fields actually change the wind vulnerability");
+ui.onboarded=true;ui.simpleView=true;ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
+restore();
+assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd"&&ui.onboarded===true&&ui.simpleView===true,
+  "ui.views lenses, onboarded, and simpleView persist and restore");
+const stU=JSON.parse(localStorage.getItem("rtv_state_v1"));
+delete stU.ui;localStorage.setItem("rtv_state_v1",JSON.stringify(stU));
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
+restore();
+assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="peril",
+  "legacy saved state without ui keeps the view defaults (backward safe)");
+hazardGrid=null;gridByHazard={};clearHazCache();
+sites=savedSites;scenario="present";
+
+/* SVP review: per-brand assumption overrides. Empty overrides are byte-identical
+   (assumeFor returns the global object); an override moves ONLY its brand, and it
+   flows through both the base (finSite) and the adapted (measure) path so they can
+   never desync. The parity fixture sets none, so this is the branch CI cannot see. */
+gridByHazard={};clearHazCache();hazardGrid=null;scenario="present";
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+const sAlpha={id:1,name:"A",brand:"Alpha",latitude:25.0,longitude:-80.0,asset_value_usd:80e6,construction:"masonry",year_built:2000};
+const sBeta={id:2,name:"B",brand:"Beta",latitude:25.0,longitude:-80.0,asset_value_usd:80e6,construction:"masonry",year_built:2000};
+sites=[sAlpha,sBeta];
+assert(assumeFor(sAlpha)===finAssume,"empty overrides: assumeFor returns the global object, so numbers stay byte-identical");
+const _baseA=finSite(sAlpha,"present").totalAal, _baseB=finSite(sBeta,"present").totalAal;
+const _adBaseA=adaptedFinSite(sAlpha,"present",{}).totalAal;
+finAssume.brandOverrides={Alpha:{revRatio:0.60}};clearHazCache();
+const _ovA=finSite(sAlpha,"present").totalAal, _ovB=finSite(sBeta,"present").totalAal;
+const _adOvA=adaptedFinSite(sAlpha,"present",{}).totalAal;
+assert(_ovA>_baseA,"a per-brand revenue override raises that brand's cost through finSite");
+assert(_ovB===_baseB,"a site of another brand is unchanged by the override");
+assert(_adOvA>_adBaseA,"the same override also flows through the adapted (measure) path");
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+sites=savedSites;clearHazCache();scenario="present";
+
 /* retention sweep: slices reconcile and match the parity-pinned integral */
 adapt.attach=25;adapt.exhaust=250;adapt.load=1.5;
 const slW=layerSlices(fW.varByRp,fW.acuteAal,25,250,1.5);

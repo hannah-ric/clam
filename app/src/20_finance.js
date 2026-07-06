@@ -1,28 +1,36 @@
 const ACUTE=["tc","cflood","rflood","prain","wfire"];
 const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
-let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+/* Per-brand assumption overrides (SVP review): assumeFor returns the effective
+   revenue/margin/reopen for a site, a brand override shallow-merged over the
+   global. When a brand has no override it returns the GLOBAL OBJECT ITSELF, so an
+   empty overrides map reproduces today's numbers byte-for-byte (the parity fixture
+   sets none). Correlation stays global (it is a portfolio property, not per site).
+   Every per-site reader of finAssume goes through this so base and adapted agree. */
+function assumeFor(s){ const o=finAssume.brandOverrides&&finAssume.brandOverrides[s&&s.brand]; return o?Object.assign({},finAssume,o):finAssume; }
 /* Risk tolerance (Wave 1 decision layer): the operator's documented
    materiality thresholds. A policy layer only: these values never change a
    computed figure, they only decide what counts as a breach. Defaults are
    anchored to stated practice (see the INFO entry) and are meant to be
    edited; edits persist and become the portfolio's documented tolerance. */
 let tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
-function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
+function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*assumeFor(s).revRatio; }
 function finSite(s,sc){
-  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;
-  const maxDownDays=finAssume.reopenMonths/12*365, dailyGop=gop/365;
+  const a=assumeFor(s);
+  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*a.gopMargin;
+  const maxDownDays=a.reopenMonths/12*365, dailyGop=gop/365;
   const directByRp={},biByRp={}; RPS.forEach(rp=>{directByRp[rp]=0;biByRp[rp]=0;});
   let directEad=0,biEad=0;
   for(const hz of ACUTE){
     const r=hzSite(s,hz,sc);                              // direct damage for this peril
     directEad+=r.ead;
-    biEad+=gop*(finAssume.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
+    biEad+=gop*(a.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
     r.curve.forEach(c=>{ directByRp[c.rp]+=c.loss; biByRp[c.rp]+=dailyGop*maxDownDays*(value?c.loss/value:0); });
   }
   // chronic heat: profit at risk from dangerous-heat days (over 35C) above a comfort baseline
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=dailyGop*excess*finAssume.heatDrop;
+  const heatCost=dailyGop*excess*a.heatDrop;
   const totalAal=directEad+biEad+heatCost;
   return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
@@ -57,10 +65,9 @@ function finDisclosure(sites,pathway){
    This is the single all-risk picture the Summary tab is built on. */
 function aggregatePortfolio(sites,sc){
   const f=finPortfolio(sites,sc);
-  const gopShare=finAssume.reopenMonths/12;
   const byPeril={};ACUTE.forEach(hz=>byPeril[hz]=0);byPeril.heat=f.heatCost;
   sites.forEach(s=>{
-    const gop=siteRevenue(s)*finAssume.gopMargin;
+    const a=assumeFor(s), gop=siteRevenue(s)*a.gopMargin, gopShare=a.reopenMonths/12;
     ACUTE.forEach(hz=>{const r=hzSite(s,hz,sc);byPeril[hz]+=r.ead+gop*gopShare*(r.eadPct/100);});
   });
   const byType={direct:f.directEad,bi:f.biEad,heat:f.heatCost};

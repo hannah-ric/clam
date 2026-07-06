@@ -4,7 +4,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance,ui})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -22,6 +22,7 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
+      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -34,29 +35,77 @@ function restore(){
   }catch(e){}
 }
 
-/* ---- geocode (external; degrades quietly if blocked) ---- */
-let geoTimer=null;
-function geocode(q){
+/* ---- geocode (external; degrades quietly if blocked). geocodeInto is shared by
+   the top-bar search and the in-form search so both use one code path. ---- */
+let geoTimer=null, mGeoTimer=null;
+function geocodeInto(q,box,onPick){
   fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&q="+encodeURIComponent(q),{headers:{"Accept-Language":"en"}})
     .then(r=>r.json()).then(list=>{
-      const box=document.getElementById("geoResults");
       if(!Array.isArray(list)||!list.length){box.innerHTML='<div class="r"><small>No matches</small></div>';box.classList.add("open");return;}
-      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
+      box.innerHTML=list.map(p=>'<div class="r" data-lat="'+esc(p.lat)+'" data-lon="'+esc(p.lon)+'" data-name="'+esc(p.display_name.split(",")[0])+'">'+esc(p.display_name.split(",")[0])+' <small>'+esc(p.display_name.split(",").slice(1,3).join(","))+'</small></div>').join("");
       box.classList.add("open");
-      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{openAdd(+el.dataset.lat,+el.dataset.lon,document.getElementById("geo").value.split(",")[0]);box.classList.remove("open");document.getElementById("geo").value="";});
+      box.querySelectorAll(".r[data-lat]").forEach(el=>el.onclick=()=>{onPick(+el.dataset.lat,+el.dataset.lon,el.dataset.name);box.classList.remove("open");});
     }).catch(()=>toast("Search is unavailable on this network. Add sites by CSV or map click."));
 }
+function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
-/* ---- add modal ---- */
-function openAdd(lat,lon,name){
-  document.getElementById("mLat").value=lat.toFixed(4);
-  document.getElementById("mLon").value=lon.toFixed(4);
-  document.getElementById("mName").value=name||"";
-  document.getElementById("mBrand").value="";
-  document.getElementById("mVal").value=30000000;
-  document.getElementById("addModal").classList.add("open");
+/* ---- add / edit site form (SVP review) ---- */
+let _editId=null;
+function openForm(mode,site){
+  const g=id=>document.getElementById(id), s=site||{};
+  const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
+  const set=(id,v)=>{g(id).value=(v==null||(typeof v==="number"&&!isFinite(v)))?"":v;};
+  g("formTitle").textContent=(mode==="edit")?"Edit site":"Add a site";
+  g("mAdd").textContent=(mode==="edit")?"Save changes":"Add site";
+  set("mName",s.name); g("mBrand").value=s.brand||"";
+  set("mLat",(s.latitude!=null&&isFinite(+s.latitude))?(+s.latitude).toFixed(4):"");
+  set("mLon",(s.longitude!=null&&isFinite(+s.longitude))?(+s.longitude).toFixed(4):"");
+  set("mVal",s.asset_value_usd); set("mRev",s.annual_revenue_usd);
+  g("mConstr").value=s.construction||""; set("mYear",s.year_built);
+  g("mDefended").checked=!!s.defended;
+  g("mRoofType").value=s.roof_type||""; set("mRoofYear",s.roof_year);
+  g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
+  g("mEquipElev").checked=!!s.equipment_elevated;
+  g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mGeo").value=""; g("mGeoResults").classList.remove("open");
+  _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  g("addModal").classList.add("open");
 }
-function closeAdd(){document.getElementById("addModal").classList.remove("open");}
+function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
+function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function submitForm(){
+  const g=id=>document.getElementById(id);
+  const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
+    asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
+    year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
+    roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
+    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value};
+  const rec=siteRecordFromFields(raw);
+  if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
+  if(_editId!=null){
+    const s=sites.find(x=>x.id===_editId);
+    if(s){FORM_OPTIONAL_FIELDS.forEach(k=>delete s[k]);Object.assign(s,rec);clearHazCache();persist();render();toast("Site updated");}
+  }else{ clearHazCache();addSites([rec]);toast("Site added"); }
+  closeAdd();
+}
+
+/* ---- first-run orientation (SVP review) ---- */
+function closeOnboard(seen){ document.getElementById("onboardModal").classList.remove("open"); if(seen){ui.onboarded=true;persist();} }
+function openOnboard(){
+  const b=document.getElementById("obStart"); if(!b)return;
+  if(sites.length){ b.textContent="Got it"; b.onclick=()=>closeOnboard(true); }
+  else { b.textContent="Load the sample and explore"; b.onclick=()=>{closeOnboard(true);loadSample();}; }
+  document.getElementById("onboardModal").classList.add("open");
+}
+function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
+
+/* ---- executive / simple view (SVP review): hides the specialist panels via a
+   body class, exactly like body.printbrief. Never touches a number, and never
+   hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
+function applySimpleView(){
+  document.body.classList.toggle("execview", !!ui.simpleView);
+  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
 
 /* ---- export ---- */
 function exportCsv(){
@@ -176,8 +225,15 @@ function wire(){
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
+  const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
+  if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
+  if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
+  const mcSel=document.getElementById("mapColorSel");
+  if(mcSel){mcSel.value=["peril","combined","dominant"].indexOf(ui.views.mapColor)>=0?ui.views.mapColor:"peril";
+    mcSel.onchange=e=>{ui.views.mapColor=e.target.value;persist();render();};}
   document.getElementById("tmplBtn").onclick=downloadTemplate;
-  document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
+  document.getElementById("addSiteBtn").onclick=()=>openForm("add",{});
   // sort
   document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>th.onclick=e=>{
     if(e.target.closest(".info"))return;
@@ -186,19 +242,29 @@ function wire(){
   // geocode
   const geo=document.getElementById("geo");
   geo.oninput=()=>{clearTimeout(geoTimer);const q=geo.value.trim();if(q.length<3){document.getElementById("geoResults").classList.remove("open");return;}geoTimer=setTimeout(()=>geocode(q),400);};
-  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap"))document.getElementById("geoResults").classList.remove("open");});
+  document.addEventListener("click",e=>{if(!e.target.closest(".searchwrap")){document.getElementById("geoResults").classList.remove("open");document.getElementById("mGeoResults").classList.remove("open");}});
+  // in-form place search (fills the coordinate fields; keeps its own results box)
+  const mGeo=document.getElementById("mGeo");
+  if(mGeo)mGeo.oninput=()=>{clearTimeout(mGeoTimer);const q=mGeo.value.trim();if(q.length<3){document.getElementById("mGeoResults").classList.remove("open");return;}
+    mGeoTimer=setTimeout(()=>geocodeInto(q,document.getElementById("mGeoResults"),(lat,lon,name)=>{
+      document.getElementById("mLat").value=lat.toFixed(4);document.getElementById("mLon").value=lon.toFixed(4);
+      if(!document.getElementById("mName").value)document.getElementById("mName").value=name||"";mGeo.value="";}),400);};
   // modal
   document.getElementById("mCancel").onclick=closeAdd;
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
+  document.getElementById("mAdd").onclick=submitForm;
   document.getElementById("focusClose").onclick=closeScorecard;
+  const fe=document.getElementById("focusEdit");
+  if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();}});
-  document.getElementById("mAdd").onclick=()=>{
-    const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
-    if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
-    addSites([{name:(document.getElementById("mName").value||"New site").slice(0,120),brand:(document.getElementById("mBrand").value||"").slice(0,80),latitude:lat,longitude:lon,asset_value_usd:val}]);
-    closeAdd();toast("Site added");
-  };
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // executive / simple view
+  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
+  applySimpleView();
+  // first-run orientation
+  document.getElementById("guideBtn").onclick=openOnboard;
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;
   document.getElementById("load").value=adapt.load;
@@ -233,6 +299,7 @@ function wire(){
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
   dropZone(bd,f=>readFile(f,loadBacktestCsv));
   render();
+  maybeOnboard();
 }
 function dropZone(el,cb){
   el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});
