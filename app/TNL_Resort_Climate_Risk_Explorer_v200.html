@@ -238,6 +238,8 @@
   table.mtx td.cell.zero{color:var(--muted);background:var(--surface-2)!important;font-weight:400}
   .mtxlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--ink-2);align-items:center}
   .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  /* ---- SVP review: executive / simple view hides the specialist panels ---- */
+  body.execview .pro-only{display:none!important}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -319,6 +321,7 @@
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
+    <button class="btn ghost" id="simpleBtn" title="Toggle a cleaner executive view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
@@ -570,7 +573,7 @@
         </div>
         <div id="layerChart"></div>
       </div>
-      <div id="sweepHost"></div>
+      <div id="sweepHost" class="pro-only"></div>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="lightbtn" id="brokerBtn">Export broker evidence pack (CSV)</button>
         <button type="button" class="info" data-info="brokerPack" aria-label="What the evidence pack is" aria-expanded="false">i</button>
@@ -641,7 +644,7 @@
         <div id="finAcuteChronic"></div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Uncertainty &amp; sensitivity<button type="button" class="info" data-info="unc" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">How confident to be in the central number, and which input moves it most. Each bar sweeps one input across its plausible range while the others hold.</div>
       <div class="grid2" style="grid-template-columns:1.3fr 0.7fr">
@@ -753,7 +756,7 @@
         </div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Model definition</h3>
       <div class="grid2">
         <div>
@@ -793,7 +796,7 @@
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
       <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
-    <div class="panel">
+    <div class="panel pro-only">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">CLIMADA's calibration loop: compare modeled expected damage against your own loss history. Site names must match the loaded portfolio.</div>
       <div class="grid2" style="grid-template-columns:0.9fr 1.1fr">
@@ -1821,7 +1824,7 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -3749,6 +3752,14 @@ function openOnboard(){
 }
 function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
 
+/* ---- executive / simple view (SVP review): hides the specialist panels via a
+   body class, exactly like body.printbrief. Never touches a number, and never
+   hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
+function applySimpleView(){
+  document.body.classList.toggle("execview", !!ui.simpleView);
+  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
+
 /* ---- export ---- */
 function exportCsv(){
   if(!sites.length){toast("Load a portfolio first.");return;}
@@ -3900,6 +3911,9 @@ function wire(){
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // executive / simple view
+  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
+  applySimpleView();
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;
   document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};

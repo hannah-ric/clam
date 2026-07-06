@@ -99,6 +99,14 @@ function openOnboard(){
 }
 function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
 
+/* ---- executive / simple view (SVP review): hides the specialist panels via a
+   body class, exactly like body.printbrief. Never touches a number, and never
+   hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
+function applySimpleView(){
+  document.body.classList.toggle("execview", !!ui.simpleView);
+  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
+
 /* ---- export ---- */
 function exportCsv(){
   if(!sites.length){toast("Load a portfolio first.");return;}
@@ -250,6 +258,9 @@ function wire(){
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // executive / simple view
+  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
+  applySimpleView();
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;
   document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};

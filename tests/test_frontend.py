@@ -487,14 +487,14 @@ assert(siteRecordFromFields({name:"Z",latitude:25,longitude:-80,asset_value_usd:
   "site form: an invalid construction value is dropped, not stored");
 assert(vulnOf(_fullRec).windMult!==vulnOf(_blankRec).windMult,
   "site form: the advanced fields actually change the wind vulnerability");
-ui.onboarded=true;ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
+ui.onboarded=true;ui.simpleView=true;ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
 restore();
-assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd"&&ui.onboarded===true,
-  "ui.views lenses and the onboarded flag persist and restore");
+assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd"&&ui.onboarded===true&&ui.simpleView===true,
+  "ui.views lenses, onboarded, and simpleView persist and restore");
 const stU=JSON.parse(localStorage.getItem("rtv_state_v1"));
 delete stU.ui;localStorage.setItem("rtv_state_v1",JSON.stringify(stU));
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
 restore();
 assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="peril",
   "legacy saved state without ui keeps the view defaults (backward safe)");
