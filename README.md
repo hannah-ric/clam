@@ -72,6 +72,15 @@ bash run_pipeline.sh --fire --rain  # or opt the extra layers in individually
 # other flags: --fast / --preflight / --no-heat / --dry-run
 ```
 
+The wildfire layer needs a one-time NASA FIRMS download: CLIMADA Petals builds
+its fire hazard from a FIRMS active-fire CSV, not a country code (passing a
+country string raised `'str' object has no attribute 'columns'`). Download
+MODIS and/or VIIRS fires for the US from
+https://firms.modaps.eosdis.nasa.gov/download/, then point the run at it:
+`FIRMS_CSV=firms_us.csv bash run_pipeline.sh --fire` (or drop the CSVs in
+`pipeline/firms/`). Without it the wildfire step is skipped with a clear note
+and the app keeps wildfire on its `wui_class` interim model, by design.
+
 Migration safety: without these layers (and without wui_class profile data),
 the v1.12 app scores both new perils zero and every number matches the
 five-peril app exactly; the trust chips show wildfire and rainfall gray until

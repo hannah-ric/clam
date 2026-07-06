@@ -121,7 +121,9 @@ def run():
     rh.fetch_wind = fake_fetch_wind
     rh.compute_surge = fake_compute_surge
     ri.fetch_river_flood_hazards = fake_fetch_river
-    rw.fetch_wildfire_hazard = lambda iso3: FakeFireHaz()
+    # Petals is mocked at build_wildfire_hazard; the real load_firms + region
+    # filter run, so the pack path receives a FIRMS DataFrame like production.
+    rw.build_wildfire_hazard = lambda df, **kw: FakeFireHaz()
     rpn.fetch_tracks = lambda iso3: object()
     rpn.rain_hazard = lambda tracks, iso3: FakeRainHaz2()
     dem = Path("fake_dem.tiff"); dem.write_bytes(b"\0" * 16)
@@ -146,9 +148,18 @@ def run():
         "defensible_space_m": [None, None, 10],
     })
     sites.to_csv("sim_sites.csv", index=False)
+    pd.DataFrame({
+        "latitude":   [29.5, 25.1, 25.2],
+        "longitude":  [-98.5, -80.0, -80.0],
+        "acq_date":   ["2020-08-01", "2021-07-10", "2019-09-01"],
+        "instrument": ["MODIS", "MODIS", "VIIRS"],
+        "confidence": [80, 70, "n"],
+        "brightness": [330.0, 320.0, np.nan],
+        "bright_ti4": [np.nan, np.nan, 340.0],
+    }).to_csv("sim_firms_impacts.csv", index=False)
 
     rc = ri.main(["--sites", "sim_sites.csv", "--out", "sim_results_pack.json",
-                  "--mc", "120", "--seed", "42"])
+                  "--mc", "120", "--seed", "42", "--firms", "sim_firms_impacts.csv"])
     assert rc == 0, "producer returned nonzero"
     pack = json.loads(Path("sim_results_pack.json").read_text())
     meta = json.loads(Path("sim_results_pack_meta.json").read_text())
@@ -270,7 +281,7 @@ def run():
 
     # 6. determinism: same seed reproduces the pack byte for byte
     rc2 = ri.main(["--sites", "sim_sites.csv", "--out", "sim_results_pack2.json",
-                   "--mc", "120", "--seed", "42"])
+                   "--mc", "120", "--seed", "42", "--firms", "sim_firms_impacts.csv"])
     assert rc2 == 0
     a = json.loads(Path("sim_results_pack.json").read_text())
     b = json.loads(Path("sim_results_pack2.json").read_text())

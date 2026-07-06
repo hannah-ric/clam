@@ -87,8 +87,23 @@ fi
 # --- 2b. optional fifth and sixth perils (opt-in: --fire, --rain) --------------
 if [ "$FIRE" -eq 1 ]; then
   echo; echo "== STEP 2b  Wildfire layer (Petals WildFire burn probability) ======="
-  run python refresh_wildfire.py
-  MERGE_IN="$MERGE_IN wfire_grid.csv"
+  # Petals builds the fire hazard from a NASA FIRMS archive CSV, not a country
+  # code. Resolve one from $FIRMS_CSV, a ./firms/ folder, or firms_us.csv.
+  FIRMS_SRC="${FIRMS_CSV:-}"
+  if [ -z "$FIRMS_SRC" ]; then
+    if [ -d firms ]; then FIRMS_SRC="firms"; elif [ -f firms_us.csv ]; then FIRMS_SRC="firms_us.csv"; fi
+  fi
+  if [ -z "$FIRMS_SRC" ]; then
+    echo "  wildfire skipped: no FIRMS data found."
+    echo "  Download MODIS/VIIRS active fires for the US from"
+    echo "  https://firms.modaps.eosdis.nasa.gov/download/ then re-run with"
+    echo "  FIRMS_CSV=firms_us.csv bash run_pipeline.sh --fire  (or put CSVs in ./firms/)."
+    echo "  The app keeps wildfire on its wui_class interim model until then."
+  elif run python refresh_wildfire.py --firms "$FIRMS_SRC"; then
+    MERGE_IN="$MERGE_IN wfire_grid.csv"
+  else
+    echo "  wildfire step did not produce a layer; continuing without it (see log above)."
+  fi
 fi
 if [ "$RAIN" -eq 1 ]; then
   echo; echo "== STEP 2c  TC rainfall layer (Petals TCRain, mm at RPs) ============"
