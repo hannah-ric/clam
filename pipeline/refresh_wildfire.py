@@ -30,10 +30,17 @@ expected, hence "'str' object has no attribute 'columns'"). The operator
 supplies the file, exactly like the one-time DEM. Without it the app keeps
 wildfire on its wui_class interim model, by design.
 
-Usage (the FIRMS source is auto-discovered, so a plain run works once the CSVs
-are in ./firms/):
-    python refresh_wildfire.py                          # uses ./firms/ or firms_us.csv
-    python refresh_wildfire.py --firms firms_us.csv     # or an explicit path
+FIRMS is trimmed before clustering: low-confidence detections are dropped
+(--min-confidence), then it is kept only within a buffer around the portfolio
+sites (auto-uses ./sites.csv, or --sites PATH; --buffer-km). Burn probability is
+only read at the sites, so this gives the same answer there while keeping Petals'
+fire-season clustering fast and dropping far-away fire regimes (for example
+Southeast agricultural burning). Without a sites file it falls back to broad
+region boxes.
+
+Usage (both the FIRMS CSVs and sites.csv are auto-discovered):
+    python refresh_wildfire.py                          # uses ./firms/ + ./sites.csv
+    python refresh_wildfire.py --firms firms_us.csv --sites sites.csv
     python refresh_wildfire.py --firms firms/           # a folder of FIRMS CSVs
     python merge_grids.py hazard_grid.csv wfire_grid.csv -o hazard_grid.csv
     python validate_grid.py hazard_grid.csv hazard_grid_meta.json
@@ -44,6 +51,7 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
+import warnings
 import json
 import logging
 from datetime import datetime, timezone
@@ -81,6 +89,9 @@ FIRMS_REQUIRED = ["latitude", "longitude", "acq_date", "instrument", "confidence
 # Auto-discovered when --firms is not passed: the FIRMS_CSV env var, then a
 # ./firms/ folder of CSVs, then a single firms_us.csv, in the working directory.
 DEFAULT_FIRMS = ["firms", "firms_us.csv"]
+DEFAULT_SITES = "sites.csv"     # auto-used to trim FIRMS near the portfolio
+BUFFER_KM = 75.0                # keep fire history within this radius of a site
+MIN_CONFIDENCE = 50             # MODIS numeric-confidence floor (drops ag-burn noise)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +200,59 @@ def filter_firms_to_regions(df, regions=FIRE_REGIONS):
     return df.loc[keep].reset_index(drop=True)
 
 
+def filter_firms_confidence(df, min_conf=MIN_CONFIDENCE):
+    """Drop low-confidence detections before clustering: MODIS numeric confidence
+    below min_conf, and VIIRS 'low' ('l'). Petals also cleans internally at
+    confidence 30; this earlier, stronger cut removes agricultural-burn noise and
+    speeds the fire-season clustering. Rows of unknown instrument are kept."""
+    if "confidence" not in df.columns or "instrument" not in df.columns:
+        return df
+    inst = df["instrument"].astype(str).str.strip().str.upper()
+    conf = df["confidence"]
+    is_modis = (inst == "MODIS").to_numpy()
+    c_num = pd.to_numeric(conf, errors="coerce").to_numpy()
+    is_viirs = (inst == "VIIRS").to_numpy()
+    c_low = conf.astype(str).str.strip().str.lower().eq("l").to_numpy()
+    keep = ~((is_modis & (c_num < min_conf)) | (is_viirs & c_low))
+    return df.loc[keep].reset_index(drop=True)
+
+
+def filter_firms_near_sites(df, site_lat, site_lon, buffer_km=BUFFER_KM):
+    """Keep detections within buffer_km of any portfolio site. Burn probability is
+    only read at site locations (the app snaps a site to the nearest cell), so
+    trimming to a buffer around the resorts gives the same answer at the sites,
+    keeps Petals' clustering tractable, and drops fire regimes far from any resort
+    (for example Southeast agricultural burning). A generous per-site lat/lon box
+    union, vectorized."""
+    lat = df["latitude"].to_numpy(float)
+    lon = df["longitude"].to_numpy(float)
+    keep = np.zeros(len(df), bool)
+    dlat = buffer_km / 111.0
+    for la, lo in zip(np.asarray(site_lat, float), np.asarray(site_lon, float)):
+        dlon = buffer_km / (111.0 * max(np.cos(np.radians(la)), 0.1))
+        keep |= (np.abs(lat - la) <= dlat) & (np.abs(lon - lo) <= dlon)
+    return df.loc[keep].reset_index(drop=True)
+
+
+def load_site_points(path):
+    """(lat, lon) arrays from a sites CSV (needs latitude, longitude columns)."""
+    s = pd.read_csv(path)
+    s.columns = [str(c).strip().lower() for c in s.columns]
+    if "latitude" not in s.columns or "longitude" not in s.columns:
+        raise ValueError(f"{path}: needs latitude, longitude columns")
+    la = pd.to_numeric(s["latitude"], errors="coerce")
+    lo = pd.to_numeric(s["longitude"], errors="coerce")
+    m = la.notna() & lo.notna()
+    return la[m].to_numpy(), lo[m].to_numpy()
+
+
+def resolve_sites(path):
+    """Explicit --sites if given, else ./sites.csv when present, else None."""
+    if path:
+        return path
+    return DEFAULT_SITES if Path(DEFAULT_SITES).exists() else None
+
+
 # ---------------------------------------------------------------------------
 # CLIMADA Petals seam (version-sensitive, mocked in tests)
 # ---------------------------------------------------------------------------
@@ -246,18 +310,23 @@ def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
     _ensure_cartopy_cache()
     from climada_petals.hazard import WildFire
     ctor = getattr(WildFire, "from_hist_fire_seasons_FIRMS", None)
-    if ctor is not None:
-        wf = ctor(df_firms, centr_res_factor=centr_res_factor,
-                  year_start=year_start, year_end=year_end)
-    else:                                   # pre-classmethod releases
-        wf = WildFire()
-        wf.set_hist_fire_seasons_FIRMS(df_firms, centr_res_factor=centr_res_factor,
-                                       year_start=year_start, year_end=year_end)
-    if n_proba_seasons and n_proba_seasons > 0:
-        try:
-            wf.set_proba_fire_seasons(n_fire_seasons=int(n_proba_seasons))
-        except Exception as exc:
-            LOG.info("  set_proba_fire_seasons skipped: %s", str(exc)[:160])
+    with warnings.catch_warnings():
+        # Petals sets values via chained assignment internally (wildfire.py), which
+        # pandas >= 2.2 flags once per fire event with a FutureWarning; silence the
+        # flood so real progress and errors stay visible. Still works on this pandas.
+        warnings.simplefilter("ignore", FutureWarning)
+        if ctor is not None:
+            wf = ctor(df_firms, centr_res_factor=centr_res_factor,
+                      year_start=year_start, year_end=year_end)
+        else:                               # pre-classmethod releases
+            wf = WildFire()
+            wf.set_hist_fire_seasons_FIRMS(df_firms, centr_res_factor=centr_res_factor,
+                                           year_start=year_start, year_end=year_end)
+        if n_proba_seasons and n_proba_seasons > 0:
+            try:
+                wf.set_proba_fire_seasons(n_fire_seasons=int(n_proba_seasons))
+            except Exception as exc:
+                LOG.info("  set_proba_fire_seasons skipped: %s", str(exc)[:160])
     return wf
 
 
@@ -275,6 +344,13 @@ def main(argv=None) -> int:
                     help="FIRMS archive CSV file(s) or a directory of them "
                          "(https://firms.modaps.eosdis.nasa.gov/download/)")
     ap.add_argument("--out", default="wfire_grid.csv")
+    ap.add_argument("--sites", default=None,
+                    help="sites CSV; FIRMS is trimmed to --buffer-km around these "
+                         "resorts (auto-uses ./sites.csv; falls back to region boxes)")
+    ap.add_argument("--buffer-km", type=float, default=BUFFER_KM,
+                    help="radius around each site to keep fire history (default %(default)s)")
+    ap.add_argument("--min-confidence", type=int, default=MIN_CONFIDENCE,
+                    help="MODIS confidence floor before clustering (default %(default)s)")
     ap.add_argument("--centr-res-factor", type=float, default=0.05,
                     help="Petals centroid resolution factor (~0.05 -> ~20 km)")
     ap.add_argument("--year-start", type=int, default=None)
@@ -318,15 +394,27 @@ def main(argv=None) -> int:
         _write_meta(args.out, meta)
         return 1
     n_all = len(df)
-    df = filter_firms_to_regions(df)
-    LOG.info("FIRMS: %d detections, %d within the portfolio regions",
-             n_all, len(df))
+    df = filter_firms_confidence(df, args.min_confidence)
+    sites_path = resolve_sites(args.sites)
+    if sites_path:
+        try:
+            slat, slon = load_site_points(sites_path)
+            df = filter_firms_near_sites(df, slat, slon, args.buffer_km)
+            scope = "within %g km of %d site(s) from %s" % (
+                args.buffer_km, len(slat), Path(sites_path).name)
+        except Exception as exc:
+            LOG.warning("Could not use sites (%s); falling back to region boxes.", exc)
+            df = filter_firms_to_regions(df)
+            sites_path, scope = None, "within the portfolio region boxes"
+    else:
+        df = filter_firms_to_regions(df)
+        scope = "within the portfolio region boxes"
+    LOG.info("FIRMS: %d detections total, %d kept (%s)", n_all, len(df), scope)
     if df.empty:
-        LOG.error("No FIRMS detections fall within the portfolio regions "
-                  "(SE/Gulf, SW, Hawaii, Caribbean). Check the download area.")
+        LOG.error("No FIRMS detections survive the filter (%s). Widen --buffer-km, "
+                  "lower --min-confidence, or check the download area.", scope)
         meta["skipped"].append({"country": args.country, "layer": "wfire",
-                                "reason": "no FIRMS detections in the portfolio "
-                                          "regions"})
+                                "reason": "no FIRMS detections after filtering"})
         _write_meta(args.out, meta)
         return 1
 
@@ -355,7 +443,11 @@ def main(argv=None) -> int:
                                "cells": int(len(rows) / len(WARMING))})
     meta["firms"] = {"files": [Path(x).name for x in firms],
                      "detections_total": int(n_all),
-                     "detections_in_regions": int(len(df)),
+                     "detections_kept": int(len(df)),
+                     "scope": scope,
+                     "min_confidence": args.min_confidence,
+                     "buffer_km": (args.buffer_km if sites_path else None),
+                     "sites_file": (Path(sites_path).name if sites_path else None),
                      "centr_res_factor": args.centr_res_factor,
                      "proba_seasons": int(args.proba_seasons)}
     LOG.info("  wfire %s -> %d cells x %d scenarios (max p %.2f%%)",
