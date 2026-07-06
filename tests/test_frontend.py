@@ -582,6 +582,87 @@ assert(INFO.tolerance.b.indexOf("materiality")>=0,
 assert(INFO.quote.b.indexOf("not a market price")>=0,
   "the quote INFO is honest about what a technical premium is not");
 
+/* ---------------- Named-insured aggregation (single-site rollup) ---------- */
+/* A physical site can carry several named insureds (HOA + operating company);
+   the map aggregates them into one marker, everything else breaks them out.
+   All additive: no per-record figure moves, so the parity suite is untouched. */
+gridByHazard={};clearHazCache();hazardGrid=null;resultsPack=null;scenario="present";
+assert(insuredOf({named_insured:"HOA"})==="HOA"&&insuredOf({})==="Unspecified"&&insuredOf({named_insured:"  "})==="Unspecified",
+  "insuredOf: the named party, else Unspecified");
+assert(siteGroupKey({site_id:"CAMPUS-1"})==="id:campus-1","siteGroupKey uses site_id when present (case-insensitive)");
+assert(siteGroupKey({latitude:25.0,longitude:-80.0})==="geo:25.00000,-80.00000","siteGroupKey falls back to coordinates");
+assert(siteGroupKey({site_id:"C1",latitude:1,longitude:2})===siteGroupKey({site_id:"c1",latitude:9,longitude:9}),
+  "site_id grouping ignores case and coordinates");
+
+/* two named insureds share one campus; a third site stands alone */
+sites=[
+ {id:1,name:"Angels Camp",brand:"WorldMark",latitude:25.5,longitude:-80.1,asset_value_usd:80e6,named_insured:"HOA",site_id:"FU2005",site_name:"Angels Camp - WorldMark",construction:"masonry",year_built:1999},
+ {id:2,name:"Angels Camp",brand:"WorldMark",latitude:25.5,longitude:-80.1,asset_value_usd:20e6,named_insured:"TNL",site_id:"FU2005",site_name:"Angels Camp - WorldMark",construction:"frame",year_built:1999},
+ {id:3,name:"Island Resort",brand:"Margaritaville",latitude:18.34,longitude:-64.93,asset_value_usd:50e6,named_insured:"HOA",site_id:"ISL01"},
+];
+assert(siteGroups(sites).length===2,"siteGroups collapses the shared-site_id records into one physical site");
+const camp=siteGroups(sites).map(g=>scoreGroup(g,"present")).find(g=>g.key==="id:fu2005");
+assert(camp.members.length===2&&Math.abs(camp.value-100e6)<1&&camp.multi===true,
+  "the campus group aggregates value across its two named insureds");
+assert(camp.name==="Angels Camp - WorldMark","the group display name prefers site_name");
+assert(camp.byInsured.length===2&&camp.byInsured[0].ead>=camp.byInsured[1].ead,
+  "the breakout lists each named insured, most exposed first");
+assert(Math.abs(camp.byInsured.reduce((a,r)=>a+r.ead,0)-camp.ead)<1e-6,
+  "named-insured EADs reconcile to the site total");
+assert(Math.abs(camp.byInsured.reduce((a,r)=>a+r.share,0)-100)<1e-6&&camp.ead>0,
+  "named-insured shares sum to 100% of a non-zero site total");
+assert(groupMarkerFill(camp,"combined","tc")===BAND_COLOR[camp.band],
+  "group marker: combined mode uses the site's combined band");
+let _gb=null,_gv=-1;for(const hz of ACUTE){if(camp.perHaz[hz]>_gv){_gv=camp.perHaz[hz];_gb=hz;}}
+assert(groupMarkerFill(camp,"dominant","tc")===HAZARD_BY[_gb].color,
+  "group marker: dominant mode uses the leading peril colour");
+
+/* portfolio rollup + matrix view by named insured, conserving totals */
+const _allEad=sites.reduce((a,s)=>a+ACUTE.reduce((b,hz)=>b+hzSite(s,hz,"present").ead,0),0);
+assert(Math.abs(insuredRollup(sites,"present").reduce((a,r)=>a+r.ead,0)-_allEad)<1e-6,
+  "insuredRollup conserves the portfolio's acute EAD");
+assert(hasNamedInsured(sites)===true&&hasNamedInsured([{asset_value_usd:1,latitude:0,longitude:0}])===false,
+  "hasNamedInsured detects whether the field is present");
+const mI=matrixRows("insured");
+assert(mI.length===2&&mI.map(r=>r.label).join("|").indexOf("HOA")>=0,
+  "risk matrix by named insured groups the portfolio by insured party");
+assert(Math.abs(matrixRows("site").reduce((a,r)=>a+r.combined.ead,0)-mI.reduce((a,r)=>a+r.combined.ead,0))<1e-6,
+  "matrix by named insured conserves the total combined cost");
+assert(JSON.stringify(matrixRows("brand"))===JSON.stringify(matrixGroupRows(s=>s.brand||"Unbranded")),
+  "the refactored brand rollup is byte-identical to the shared helper");
+
+/* the detail/scorecard breakout renders who is impacted and to what degree */
+const niHtml=namedInsuredDetail(sites[0]);
+assert(niHtml.indexOf("Named insured at this site")>=0&&niHtml.indexOf("HOA")>=0&&niHtml.indexOf("TNL")>=0&&niHtml.indexOf("Share")>=0,
+  "the named-insured breakout panel names both parties and their shares");
+assert(namedInsuredDetail(sites[2])==="","a single-record site shows no breakout panel");
+
+/* coordinate fallback groups records with no site_id but identical coordinates */
+sites=[{id:1,name:"A",latitude:25,longitude:-80,asset_value_usd:1e6,named_insured:"HOA"},
+       {id:2,name:"B",latitude:25,longitude:-80,asset_value_usd:1e6,named_insured:"TNL"},
+       {id:3,name:"C",latitude:26,longitude:-81,asset_value_usd:1e6}];
+assert(siteGroups(sites).length===2,"records at identical coordinates aggregate even without a site_id");
+
+/* backward compatibility: no named_insured/site_id, distinct coords -> one group per record */
+sites=[{id:1,name:"A",latitude:25,longitude:-80,asset_value_usd:1e6},
+       {id:2,name:"B",latitude:26,longitude:-81,asset_value_usd:1e6}];
+assert(siteGroups(sites).length===2&&siteGroups(sites).every(g=>g.members.length===1&&!g.multi),
+  "no named-insured data and distinct coordinates: one marker per record, as before");
+
+/* CSV + form ingest the new fields */
+loadSiteCsv("name,latitude,longitude,asset_value_usd,named_insured,site_id,site_name\\n"+
+            "Angels Camp,25.5,-80.1,80000000,HOA,FU2005,Angels Camp - WorldMark","sites.csv");
+assert(sites.length===1&&sites[0].named_insured==="HOA"&&sites[0].site_id==="FU2005"&&sites[0].site_name==="Angels Camp - WorldMark",
+  "site CSV ingests named_insured, site_id, and site_name");
+const _niRec=siteRecordFromFields({name:"X",latitude:25,longitude:-80,asset_value_usd:5e7,named_insured:"HOA",site_id:"C1",site_name:"Campus One"});
+assert(_niRec.named_insured==="HOA"&&_niRec.site_id==="C1"&&_niRec.site_name==="Campus One",
+  "the site form coerces and keeps the named-insured fields");
+assert(siteRecordFromFields({name:"X",latitude:25,longitude:-80,asset_value_usd:5e7}).named_insured===undefined,
+  "a blank named insured is omitted, not stored");
+assert(INFO.namedInsured&&INFO.namedInsured.b.indexOf("who is impacted")>=0,
+  "the named-insured surface carries an INFO popover");
+gridByHazard={};clearHazCache();
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

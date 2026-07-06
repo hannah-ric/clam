@@ -67,6 +67,7 @@ function openForm(mode,site){
   g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
   g("mEquipElev").checked=!!s.equipment_elevated;
   g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
   g("addModal").classList.add("open");
@@ -79,7 +80,8 @@ function submitForm(){
     asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
     year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
     roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
-    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value};
+    equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value,
+    named_insured:g("mNamedInsured").value,site_id:g("mSiteId").value,site_name:g("mSiteName").value};
   const rec=siteRecordFromFields(raw);
   if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
   if(_editId!=null){
@@ -170,11 +172,14 @@ function exportActionList(){
 }
 function downloadTemplate(){
   // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country.
+  // The first two rows share a site_id (CAMPUS-BEACH), so they aggregate into a
+  // single site on the map with an HOA / operating-company named-insured breakout.
   const csv=
-    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,\n";
+    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,named_insured,site_id,site_name\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,,,\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

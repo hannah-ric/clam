@@ -328,6 +328,45 @@ def test_annuity():
     ok("annuity matches the closed-form factor")
 
 
+def test_named_insured_rollup():
+    # two named insureds (HOA, TNL) share the first physical site; a third
+    # site has no named insured. The rollup must group by party, sum to the
+    # portfolio total, and label the missing party Unspecified.
+    ead = np.array([100.0, 40.0, 25.0])
+    parties = ["HOA", "TNL", None]
+    roll = ri.named_insured_rollup(ead, parties)
+    assert roll == {"HOA": 100.0, "TNL": 40.0, "Unspecified": 25.0}
+    assert abs(sum(roll.values()) - float(ead.sum())) < 1e-9
+    # empty/nan strings also fall to Unspecified and MERGE with the None site
+    roll2 = ri.named_insured_rollup([10.0, 5.0, 3.0], ["HOA", "", "nan"])
+    assert roll2 == {"HOA": 10.0, "Unspecified": 8.0}
+
+    # build_pack threads the party and grouping id into per_site and adds the
+    # portfolio by-named-insured decomposition, reconciling with direct AAL.
+    mk = lambda n, aal: {p: {"aal": aal if p in ("tc", "acute") else 0.0,
+                             "ep": {rp: aal if p in ("tc", "acute") else 0.0
+                                    for rp in ri.RPS},
+                             "ead": (np.array([70.0, 30.0]) if p in ("tc", "acute")
+                                     else np.zeros(n))}
+                         for p in ("tc", "cflood", "rflood", "acute")}
+    scen = {"present": mk(2, 100.0)}
+    pack = ri.build_pack(scen, ["A", "B"], np.ones(2), {}, {}, "x.csv",
+                         site_named_insured=["HOA", "TNL"],
+                         site_ids=["CAMPUS-1", "CAMPUS-1"])
+    port = pack["scenarios"]["present"]["portfolio"]
+    ps = pack["scenarios"]["present"]["per_site"]
+    assert port["by_named_insured_aal_usd"] == {"HOA": 70.0, "TNL": 30.0}
+    assert abs(sum(port["by_named_insured_aal_usd"].values())
+               - port["direct_aal_usd"]) < 1e-6
+    assert ps[0]["named_insured"] == "HOA" and ps[0]["site_id"] == "CAMPUS-1"
+    assert ps[1]["named_insured"] == "TNL"
+    # default (no arrays) stays backward compatible: Unspecified, no site_id
+    pack0 = ri.build_pack(scen, ["A", "B"], np.ones(2), {}, {}, "x.csv")
+    p0 = pack0["scenarios"]["present"]["per_site"][0]
+    assert p0["named_insured"] == "Unspecified" and p0["site_id"] is None
+    ok("named-insured rollup: grouping, reconciliation, pack threading")
+
+
 if __name__ == "__main__":
     test_emanuel()
     test_flood()
@@ -347,4 +386,5 @@ if __name__ == "__main__":
     test_capital_plan()
     test_vhalf_calibration_roundtrip()
     test_annuity()
+    test_named_insured_rollup()
     print("\nALL IMPACT-OP TESTS PASSED")

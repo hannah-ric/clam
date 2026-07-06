@@ -1004,22 +1004,53 @@ def combine_countries(results, site_counts, countries=None, meta=None):
     return out
 
 
+def _norm_insured(x):
+    """Display name for a site's named-insured group; missing -> Unspecified,
+    mirroring the app's insuredOf so pack and browser roll up the same way."""
+    s = _txt(x)
+    return str(x).strip() if (s is not None) else "Unspecified"
+
+
+def named_insured_rollup(acute_ead, named_insured):
+    """Direct-damage AAL grouped by named-insured party (pure; testable).
+
+    A single physical site can carry several named insureds (an HOA and the
+    operating company, say). This decomposes the per-site acute EAD by that
+    party so the pack answers 'who is impacted, and to what degree' alongside
+    the by-peril split. Sums to the same portfolio direct AAL, in first-seen
+    order for determinism."""
+    out = {}
+    for ead, party in zip(acute_ead, named_insured):
+        key = _norm_insured(party)
+        out[key] = out.get(key, 0.0) + float(ead)
+    return {k: round(v, 2) for k, v in out.items()}
+
+
 def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
-               sites_file):
+               sites_file, site_named_insured=None, site_ids=None):
+    n = len(site_names)
+    site_named_insured = (list(site_named_insured)
+                          if site_named_insured is not None else [None] * n)
+    site_ids = list(site_ids) if site_ids is not None else [None] * n
     scenarios = {}
     for app_key, r in scen_results.items():
-        per_site = [{"name": n,
+        per_site = [{"name": n_,
+                     "named_insured": _norm_insured(site_named_insured[i]),
+                     "site_id": (_txt(site_ids[i]) and str(site_ids[i]).strip())
+                                or None,
                      "direct_ead_usd": round(float(r["acute"]["ead"][i]), 2),
                      "by_peril": {p: round(float(r[p]["ead"][i]), 2)
                                   for p in ("tc", "cflood", "rflood",
                                             "prain", "wfire") if p in r}}
-                    for i, n in enumerate(site_names)]
+                    for i, n_ in enumerate(site_names)]
         scenarios[app_key] = {
             "portfolio": {
                 "direct_aal_usd": round(r["acute"]["aal"], 2),
                 "by_peril_aal_usd": {p: round(r[p]["aal"], 2)
                                      for p in ("tc", "cflood", "rflood",
                                                "prain", "wfire") if p in r},
+                "by_named_insured_aal_usd": named_insured_rollup(
+                    r["acute"]["ead"], site_named_insured),
                 "ep_usd": {str(rp): round(r["acute"]["ep"][rp], 2)
                            for rp in RPS},
             },
@@ -1092,11 +1123,15 @@ def load_sites(path):
         df["country"] = "USA"
     df["country"] = df["country"].fillna("USA").astype(str).str.upper()
     # profile schema v2: every column optional; absent columns reproduce the
-    # six-field behavior exactly (pinned by tests)
+    # six-field behavior exactly (pinned by tests). named_insured / site_id /
+    # site_name carry the named-insured aggregation: several named-insured
+    # groups (e.g. an HOA and the operating company) can share one physical
+    # site, grouped by site_id for the portfolio's single-site rollups.
     for c in ("construction", "year_built", "roof_type", "roof_year",
               "opening_protection", "first_floor_elev_m", "stories", "keys",
               "buildings", "fema_zone", "backup_power", "renovation_year",
-              "wui_class", "defensible_space_m"):
+              "wui_class", "defensible_space_m",
+              "named_insured", "site_id", "site_name"):
         if c not in df.columns:
             df[c] = None
     for c in ("defended", "equipment_elevated", "roof_class_a"):
@@ -1235,7 +1270,9 @@ def main(argv=None) -> int:
                             "cat_projects": cat_projects, "cat_sc": cat_sc,
                             "sites_df": sites_c,
                             "uncertainty": uncertainty, "iso3": iso3,
-                            "names": list(sites_c["name"]), "values": values})
+                            "names": list(sites_c["name"]), "values": values,
+                            "named_insured": list(sites_c["named_insured"]),
+                            "site_id": list(sites_c["site_id"])})
         order.extend(sites_c["name"])
 
     if not per_country or not any(c["scen"] for c in per_country):
@@ -1259,7 +1296,11 @@ def main(argv=None) -> int:
             "expansion is a step-2 item")
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
-                      lead["adaptation"], lead["uncertainty"], args.sites)
+                      lead["adaptation"], lead["uncertainty"], args.sites,
+                      site_named_insured=[ni for c in per_country
+                                          for ni in c["named_insured"]],
+                      site_ids=[sid for c in per_country
+                                for sid in c["site_id"]])
     if lead.get("catalog"):
         pack["measures_catalog"] = lead["catalog"]
     plan = build_capital_plan_v2(lead.get("cat_projects") or [],
