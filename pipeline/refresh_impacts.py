@@ -379,12 +379,17 @@ def wind_losses(wind_int, values, wind_mult, dmg_scale=1.0, haz_mult=1.0,
 def flood_losses(depth, values, freeboard, dmg_scale=1.0, haz_mult=1.0,
                  depth_red=0.0, cap=None):
     """[events x sites] direct flood losses (surge or river). `cap` is the
-    per-site flood MDD cap array (None means the published 0.75)."""
+    per-site flood MDD cap array (None means the published 0.75).
+
+    Vectorized over sites: this is exactly flood_mdd applied column by column,
+    written as one broadcast so the hot adaptation and Monte-Carlo paths avoid a
+    per-site Python loop. Bit-identical to stacking flood_mdd(d[:, j], fb[j],
+    cap[j]) across sites; freeboard and caps broadcast over the event axis."""
     d = np.maximum(np.asarray(depth, float) * haz_mult - depth_red, 0.0)
-    caps = np.full(d.shape[1], FLOOD_CAP_DEFAULT) if cap is None \
-        else np.asarray(cap, float)
-    frac = np.stack([flood_mdd(d[:, j], freeboard[j], caps[j])
-                     for j in range(d.shape[1])], axis=1)
+    caps = (np.full(d.shape[1], FLOOD_CAP_DEFAULT) if cap is None
+            else np.asarray(cap, float))
+    e = d - np.asarray(freeboard, float)
+    frac = np.where(e <= 0.0, 0.0, np.minimum(caps, 1.0 - np.exp(-0.6 * e)))
     frac = np.minimum(frac * dmg_scale, 1.0)
     return frac * values[None, :]
 
@@ -822,12 +827,21 @@ def build_calibration(calib_parts, observed_total, matched):
 # which already carries the candidate-fallback and API-shape tolerance.
 # ---------------------------------------------------------------------------
 
-def fetch_river_flood_hazards(iso3, app_key, meta):
-    """Ensemble of river_flood Hazard OBJECTS (not grids) for one scenario."""
+def fetch_river_flood_hazards(iso3, app_key, meta, cache=None):
+    """Ensemble of river_flood Hazard OBJECTS (not grids) for one scenario.
+
+    `cache` (one dict per country) shares the Data API dataset listing and the
+    Client across the ten app scenarios instead of re-querying once per scenario.
+    """
     from climada.util.api_client import Client
-    client = Client()
-    infos = client.list_dataset_infos("river_flood",
-                                      properties={"country_iso3alpha": iso3})
+    cache = {} if cache is None else cache
+    client = cache.get("client")
+    if client is None:
+        client = cache["client"] = Client()
+    infos = cache.get("infos")
+    if infos is None:
+        infos = cache["infos"] = client.list_dataset_infos(
+            "river_flood", properties={"country_iso3alpha": iso3})
     chosen, scen, _yr = rh.rf_pick(infos, app_key)
     members = []
     for info in chosen:
@@ -843,26 +857,75 @@ def fetch_river_flood_hazards(iso3, app_key, meta):
 
 
 def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
-                       fire_enabled=True, rain_enabled=True, firms_df=None):
+                       fire_enabled=True, rain_enabled=True, firms_df=None,
+                       workers=1, wfire_haz=None, wfire_err=None):
     """Fetch hazards once per country and reduce them to per-site intensity
-    matrices (the pure structure eval_scenario consumes)."""
+    matrices (the pure structure eval_scenario consumes).
+
+    Wind sources fetch concurrently when workers>1. Each source's surge snap
+    depends on `wind_dist` (the first successful source's per-site distance to
+    the wind grid), which is a cross-source value, so the tasks compute the
+    surge intensity at every site's nearest surge centroid UNGUARDED and the
+    fixed-order assembly below applies the wind_dist guard once it is known.
+    That keeps the result byte-for-byte identical to the serial run whatever
+    order the fetches complete in."""
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
     prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set()}
-    wind_dist = None                 # per-site km to the wind grid, the
-                                     # reference the water-layer snap guards on
 
-    for source in rh.unique_sources(rh.APP_SCENARIOS):
+    def _wind_task(source):
+        """Fetch one wind source, reduce it to per-site intensity, and (when
+        enabled) reduce each scenario's surge to per-site intensity plus the
+        per-site surge-centroid distance the deferred guard needs. A per-task
+        meta keeps concurrent fetches from racing on the shared dict."""
         skey = rh.source_key(source)
+        tmeta = {}
+        out = {"skey": skey, "tmeta": tmeta, "wind_error": None,
+               "idx": None, "dist": None, "wind": None,
+               "surge": {}, "surge_skipped": []}
         try:
-            haz = rh.fetch_wind(iso3, source, meta)
+            haz = rh.fetch_wind(iso3, source, tmeta)
         except Exception as exc:
-            LOG.warning("Skipping wind source %s / %s: %s", iso3, skey, exc)
-            meta["skipped"].append({"country": iso3, "source": skey,
-                                    "layer": "tc", "reason": str(exc)[:300]})
-            continue
+            out["wind_error"] = str(exc)[:300]
+            return out
         idx, dist = nearest_centroids(lat, lon, haz.centroids.lat,
                                       haz.centroids.lon)
+        out["idx"], out["dist"] = idx, dist
+        out["wind"] = {"freq": np.asarray(haz.frequency, float),
+                       "int": site_intensity(haz, idx)}
+        if surge_enabled:
+            for app_key, recipe in rh.APP_SCENARIOS.items():
+                if not any(rh.source_key(s) == skey for _w, s in recipe):
+                    continue
+                try:
+                    surge = rh.compute_surge(haz, rh.SLR_M[app_key])
+                    s_idx, s_dist = nearest_centroids(
+                        lat, lon, surge.centroids.lat, surge.centroids.lon)
+                    out["surge"][app_key] = {"int": site_intensity(surge, s_idx),
+                                             "dist": s_dist}
+                    del surge
+                except Exception as exc:
+                    out["surge_skipped"].append(
+                        {"country": iso3, "source": skey, "scenario": app_key,
+                         "layer": "cflood", "reason": str(exc)[:300]})
+        del haz
+        gc.collect()
+        return out
+
+    wind_dist = None                 # per-site km to the wind grid, the
+                                     # reference the water-layer snap guards on
+    for out in rh.parallel_map(_wind_task, rh.unique_sources(rh.APP_SCENARIOS),
+                               workers):
+        skey = out["skey"]
+        for k, v in out["tmeta"].get("wind_sources", {}).items():
+            meta.setdefault("wind_sources", {})[k] = v
+        if out["wind_error"] is not None:
+            LOG.warning("Skipping wind source %s / %s: %s", iso3, skey,
+                        out["wind_error"])
+            meta["skipped"].append({"country": iso3, "source": skey,
+                                    "layer": "tc", "reason": out["wind_error"]})
+            continue
+        idx, dist = out["idx"], out["dist"]
         if wind_dist is None:
             wind_dist = dist
         for j in np.where(idx < 0)[0]:
@@ -873,37 +936,29 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                                         "site": site,
                                         "reason": f"outside coverage "
                                                   f"({dist[j]:.0f} km to nearest cell)"})
-        prep["wind"][skey] = {"freq": np.asarray(haz.frequency, float),
-                              "int": site_intensity(haz, idx)}
+        prep["wind"][skey] = out["wind"]
         LOG.info("  wind %s / %s -> %d events x %d sites", iso3, skey,
-                 *prep["wind"][skey]["int"].shape)
-
-        if surge_enabled:
-            for app_key, recipe in rh.APP_SCENARIOS.items():
-                if not any(rh.source_key(s) == skey for _w, s in recipe):
-                    continue
-                try:
-                    surge = rh.compute_surge(haz, rh.SLR_M[app_key])
-                    sidx = water_snap(lat, lon, surge.centroids.lat,
-                                      surge.centroids.lon, wind_dist)
-                    prep["surge"][(skey, app_key)] = {
-                        "int": site_intensity(surge, sidx)}
-                    del surge
-                except Exception as exc:
-                    LOG.warning("Surge failed %s / %s @ %s: %s",
-                                iso3, skey, app_key, exc)
-                    meta["skipped"].append({"country": iso3, "source": skey,
-                                            "scenario": app_key,
-                                            "layer": "cflood",
-                                            "reason": str(exc)[:300]})
-        del haz
-        gc.collect()
+                 *out["wind"]["int"].shape)
+        # deferred water-snap guard: a surge centroid counts for a site only
+        # within cell scale of that site's wind cell (water_snap's rule), now
+        # that wind_dist is fixed. Equivalent to snapping with the guard inline.
+        limit = np.maximum(wind_dist + SNAP_TOL_KM, SNAP_TOL_KM)
+        for app_key, sg in out["surge"].items():
+            sint = np.asarray(sg["int"], float).copy()
+            sint[:, ~(sg["dist"] <= limit)] = 0.0
+            prep["surge"][(skey, app_key)] = {"int": sint}
+        for sk in out["surge_skipped"]:
+            LOG.warning("Surge failed %s / %s @ %s: %s",
+                        iso3, sk["source"], sk["scenario"], sk["reason"])
+            meta["skipped"].append(sk)
 
     if river_enabled:
+        river_cache = {}          # one Data API listing per country, shared here
         for app_key in rh.APP_SCENARIOS:
             fetch_failed = False
             try:
-                members = fetch_river_flood_hazards(iso3, app_key, meta)
+                members = fetch_river_flood_hazards(iso3, app_key, meta,
+                                                    cache=river_cache)
             except Exception as exc:
                 members, fetch_failed = [], True
                 meta["skipped"].append({"country": iso3, "scenario": app_key,
@@ -924,21 +979,30 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
 
     if fire_enabled:
         # Petals' WildFire needs a FIRMS DataFrame, not a country code (see
-        # refresh_wildfire.build_wildfire_hazard). Without a --firms download the
-        # event-set wildfire layer is skipped, exactly as the grid producer does.
+        # refresh_wildfire.build_wildfire_hazard). The fire-season clustering
+        # depends only on the (site-trimmed) FIRMS data, which is the same for
+        # every country, so the hazard is built ONCE by the caller and passed in
+        # as `wfire_haz`; here each country only snaps its own sites onto it.
+        # Without a --firms download the event-set wildfire layer is skipped,
+        # exactly as the grid producer does.
         if firms_df is None or len(firms_df) == 0:
             LOG.warning("Wildfire skipped %s: no FIRMS CSV supplied (--firms); "
                         "download from https://firms.modaps.eosdis.nasa.gov/download/",
                         iso3)
             meta["skipped"].append({"country": iso3, "layer": "wfire",
                                     "reason": "no FIRMS CSV supplied (--firms)"})
+        elif wfire_haz is None:
+            LOG.warning("Wildfire unavailable %s: %s", iso3,
+                        wfire_err or "wildfire hazard build failed")
+            meta["skipped"].append({"country": iso3, "layer": "wfire",
+                                    "reason": wfire_err
+                                    or "wildfire hazard build failed"})
         else:
             try:
-                fhaz = rw.build_wildfire_hazard(firms_df)
-                fidx, _fd = nearest_centroids(lat, lon, fhaz.centroids.lat,
-                                              fhaz.centroids.lon)
-                prep["wfire"] = {"freq": np.asarray(fhaz.frequency, float),
-                                 "hits": site_intensity(fhaz, fidx) > 0}
+                fidx, _fd = nearest_centroids(lat, lon, wfire_haz.centroids.lat,
+                                              wfire_haz.centroids.lon)
+                prep["wfire"] = {"freq": np.asarray(wfire_haz.frequency, float),
+                                 "hits": site_intensity(wfire_haz, fidx) > 0}
                 LOG.info("  wfire %s -> %d events x %d sites", iso3,
                          *prep["wfire"]["hits"].shape)
             except Exception as exc:
@@ -1154,6 +1218,9 @@ def main(argv=None) -> int:
     ap.add_argument("--mc", type=int, default=300,
                     help="Monte Carlo samples (default %(default)s)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--workers", type=int, default=None,
+                    help="concurrent Data API wind fetches per country (default: "
+                         "CLAM_WORKERS or 4; pass 1 for the exact serial run)")
     ap.add_argument("--firms", nargs="+", default=None,
                     help="NASA FIRMS archive CSV(s) or a directory, for the "
                          "wildfire layer (https://firms.modaps.eosdis.nasa.gov/download/)")
@@ -1183,9 +1250,11 @@ def main(argv=None) -> int:
                     "run.", rh.TOPO_PATH)
         surge_enabled = False
 
+    workers = rh.resolve_workers(args.workers)
     sites = load_sites(args.sites)
     LOG.info("Loaded %d sites from %s", len(sites), args.sites)
-    meta = {"skipped": [], "wind_sources": {}, "_countries": set()}
+    meta = {"skipped": [], "wind_sources": {}, "_countries": set(),
+            "fetch_workers": workers}
 
     # Wildfire needs an operator-supplied FIRMS DataFrame (Petals has no
     # download-by-country). Load it once, drop low-confidence noise, and trim to a
@@ -1207,6 +1276,18 @@ def main(argv=None) -> int:
                 LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
                 firms_df = None
 
+    # Build the wildfire hazard ONCE: Petals' fire-season clustering depends only
+    # on the site-trimmed FIRMS data, which is identical for every country, so
+    # rebuilding it per country repeated the same expensive clustering.
+    wfire_haz, wfire_err = None, None
+    if not args.no_fire and firms_df is not None and len(firms_df):
+        try:
+            wfire_haz = rw.build_wildfire_hazard(firms_df)
+        except Exception as exc:
+            wfire_err = str(exc)[:300]
+            LOG.warning("Wildfire hazard build failed (%s); wildfire skipped.",
+                        wfire_err)
+
     per_country, order = [], []
     calib_parts, matched_names = [], set()
     for iso3, sites_c in sites.groupby("country", sort=True):
@@ -1216,7 +1297,8 @@ def main(argv=None) -> int:
                                   not args.no_river, meta,
                                   fire_enabled=not args.no_fire,
                                   rain_enabled=not args.no_rain,
-                                  firms_df=firms_df)
+                                  firms_df=firms_df, workers=workers,
+                                  wfire_haz=wfire_haz, wfire_err=wfire_err)
         values = sites_c["asset_value_usd"].to_numpy(float)
         vulns = [vuln_v2(r.construction, r.year_built, r.defended,
                          roof_type=r.roof_type, roof_year=r.roof_year,

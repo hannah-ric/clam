@@ -74,7 +74,7 @@ def fake_local_rp(haz, rps):
 
 RF_MISSING = {("USA", "ssp126_2030")}      # simulate one absent API dataset
 
-def fake_fetch_river_flood_grid(iso3, app_key, meta):
+def fake_fetch_river_flood_grid(iso3, app_key, meta, cache=None):
     if (iso3, app_key) in RF_MISSING:
         return None, {"reason": "simulated: no river_flood dataset"}
     # depth grows mildly with warming; only the two inland-ish cells are wet,
