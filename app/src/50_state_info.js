@@ -29,6 +29,11 @@ let brandFilter="";        // map-only brand filter (session, not persisted)
 let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
 let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
 let scrubTimer=null;       // scenario scrubber playback
+/* View/UI preferences (persisted, defensively merged like finAssume). Holds the
+   chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
+   later, first-run and simple-view flags. Never affects a computed number: these
+   keys only change how existing figures are shown. */
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -240,6 +245,11 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  riskMatrix:{t:"Portfolio risk matrix",b:
+    "<p>One grid for the whole portfolio: each <b>row</b> is a site (or a brand), each <b>column</b> is a peril, and the last column is the combined physical risk. Every cell is coloured by its risk band, from Minimal to Severe, so hot spots jump out without reading a single number.</p>"+
+    "<p>Read <b>across a row</b> for one site's full risk profile, or <b>down a column</b> to see which sites drive the portfolio's exposure to a single peril. Rows are ordered by combined expected annual cost, so the most exposed sit at the top.</p>"+
+    "<p>The <b>View</b> control regroups the rows by site or by brand; the <b>Show</b> control switches each cell between percent of value, dollars per year, and the band name. Heat is a chronic indicator, so its cell is coloured but carries no dollar figure (its cost is on the Financial impact tab). Click any site row to open its scorecard.</p>",
+    s:"A display lens only: the matrix reads the same per-site figures as every other tab and changes none of them."},
   tolerance:{t:"Risk tolerance",b:
     "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
     "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+

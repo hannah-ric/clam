@@ -224,6 +224,20 @@
   details.trace[open] summary{margin-bottom:4px}
   /* ---- Wave 1: tolerance breach marker ---- */
   .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
+  /* ---- SVP review: view-lens controls + risk matrix heatmap ---- */
+  .viewlens{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .viewlens select{font-family:inherit;font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--ink);
+    padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+  table.mtx{border-collapse:separate;border-spacing:3px;font-size:12px;margin-top:10px}
+  table.mtx th{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);font-weight:600;padding:2px 6px;text-align:center;white-space:nowrap}
+  table.mtx th.rowh{text-align:left}
+  table.mtx td.rowh{text-align:left;font-size:12px;color:var(--ink);white-space:nowrap;padding-right:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  table.mtx tr.rowclick:hover td.rowh{color:var(--primary);text-decoration:underline}
+  table.mtx td.cell{min-width:50px;height:30px;text-align:center;color:#fff;border-radius:5px;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;cursor:default}
+  table.mtx td.cell.comb{outline:2px solid rgba(21,32,43,.20)}
+  table.mtx td.cell.zero{color:var(--muted);background:var(--surface-2)!important;font-weight:400}
+  .mtxlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--ink-2);align-items:center}
+  .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -342,6 +356,28 @@
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
         <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
         <div id="tolBody"></div>
+      </div>
+      <div class="panel" id="matrixPanel">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">Portfolio risk matrix<button type="button" class="info" data-info="riskMatrix" aria-label="How to read the risk matrix" aria-expanded="false">i</button></h3>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <label class="viewlens">View
+              <select id="mtxGroup" aria-label="Group the risk matrix rows">
+                <option value="site">by site</option>
+                <option value="brand">by brand</option>
+              </select>
+            </label>
+            <label class="viewlens">Show
+              <select id="mtxMetric" aria-label="Value shown in each matrix cell">
+                <option value="pct">% of value</option>
+                <option value="usd">$ per year</option>
+                <option value="band">risk band</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
+        <div id="riskMatrix" style="overflow-x:auto"></div>
       </div>
       <div class="grid2">
         <div class="panel">

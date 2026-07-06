@@ -9,6 +9,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderRiskMatrix();
   renderTolerance();
   renderScrub();
   renderSites();
@@ -72,6 +73,66 @@ function renderSummary(){
   document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
     (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
     "Financial assumptions are set on the Financial impact tab.";
+}
+/* SVP review: the portfolio risk matrix (a heatmap of every row against every
+   peril at the current scenario, coloured by risk band). matrixRows is pure over
+   hzSite / bandOf / heatBand; renderRiskMatrix only paints it. No computed figure
+   changes, so the parity surface is untouched. The View and Show selects are the
+   "change views" lens: regroup the rows, or switch what each cell reports. */
+function matrixRows(group){
+  if(group==="brand"){
+    const by={};
+    sites.forEach(s=>{const b=s.brand||"Unbranded";const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
+      g.value+=s.asset_value_usd; g.n++;
+      ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
+      const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
+    return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
+      ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
+      row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
+      const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
+      return row;
+    }).sort((a,b)=>b.combined.ead-a.combined.ead);
+  }
+  return sites.map(s=>{const row={label:s.name,id:s.id,value:s.asset_value_usd,cells:{},combined:null};let comb=0;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);row.cells[hz]={ead:r.ead,eadPct:r.eadPct,band:r.band};comb+=r.ead;});
+    const hr=hzSite(s,"heat",scenario); row.cells.heat={ead:0,eadPct:0,band:hr.band,days:hr.indicators?hr.indicators.daysOver32:0,isHeat:true};
+    const cpct=s.asset_value_usd?comb/s.asset_value_usd*100:0; row.combined={ead:comb,eadPct:cpct,band:bandOf(cpct)};
+    return row;
+  }).sort((a,b)=>b.combined.ead-a.combined.ead);
+}
+function renderRiskMatrix(){
+  const host=document.getElementById("riskMatrix"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const group=(ui.views.matrixGroup==="brand")?"brand":"site";
+  const metric=["pct","usd","band"].indexOf(ui.views.matrixMetric)>=0?ui.views.matrixMetric:"pct";
+  const gsel=document.getElementById("mtxGroup"); if(gsel)gsel.value=group;
+  const msel=document.getElementById("mtxMetric"); if(msel)msel.value=metric;
+  const cols=HAZARDS.slice();
+  const rows=matrixRows(group);
+  const cellText=c=>{ if(c.isHeat)return ""; if(c.ead<=0&&c.eadPct<=0)return "0";
+    if(metric==="usd")return fmt$(c.ead); if(metric==="band")return c.band; return c.eadPct.toFixed(2); };
+  const cellTitle=(label,hzLabel,c)=>c.isHeat
+    ? esc(label)+" · "+hzLabel+": "+c.band+" ("+c.days+" days over 32C)"
+    : esc(label)+" · "+hzLabel+": "+c.band+" · "+fmt$(c.ead)+"/yr · "+c.eadPct.toFixed(2)+"% of value";
+  let h='<table class="mtx"><thead><tr><th class="rowh">'+(group==="brand"?"Brand":"Site")+'</th>';
+  cols.forEach(H=>h+='<th title="'+esc(H.label)+'">'+H.short+'</th>');
+  h+='<th title="Combined physical risk across all perils">All</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const click=(group==="site")?' class="rowclick" data-focus="'+r.id+'"':'';
+    h+='<tr'+click+'><td class="rowh" title="'+esc(r.label)+'">'+esc(r.label)+'</td>';
+    cols.forEach(H=>{const c=r.cells[H.key];const zero=(!c.isHeat&&c.ead<=0&&c.eadPct<=0);
+      h+='<td class="cell'+(zero?' zero':'')+'" style="background:'+BAND_COLOR[c.band]+'" title="'+cellTitle(r.label,H.label,c)+'">'+cellText(c)+'</td>';});
+    const cc=r.combined;
+    h+='<td class="cell comb" style="background:'+BAND_COLOR[cc.band]+'" title="'+esc(r.label)+' · combined: '+cc.band+' · '+fmt$(cc.ead)+'/yr · '+cc.eadPct.toFixed(2)+'%">'+
+      (metric==="usd"?fmt$(cc.ead):(metric==="band"?cc.band:cc.eadPct.toFixed(2)))+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  const bands=["Minimal","Low","Moderate","High","Severe"];
+  h+='<div class="mtxlegend"><span>Cell colour is the risk band:</span>'+
+    bands.map(b=>'<span><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("")+
+    '<span style="color:var(--muted)">Columns: W wind, F coastal, R river, H heat, B wildfire, P rainfall, All combined</span></div>';
+  host.innerHTML=h;
+  if(group==="site")host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 }
 /* why a damage peril reads zero everywhere, phrased as the user's next step.
    Mirrors explainPeril's source logic at portfolio level: only the two perils

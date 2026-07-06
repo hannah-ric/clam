@@ -442,6 +442,38 @@ assert(document.getElementById("tolPanel").style.display==="none",
   "no sites: the tolerance panel hides");
 sites=savedSites;
 
+/* SVP review: portfolio risk matrix (pure display lens) + ui.views persistence.
+   Additive; changes no computed figure, so the parity suite is untouched. */
+scenario="present";
+const mxSite=matrixRows("site");
+assert(mxSite.length===sites.length,"risk matrix: one row per site");
+assert(mxSite[0].combined.ead>=mxSite[mxSite.length-1].combined.ead,
+  "risk matrix rows sort by combined cost, most exposed first");
+assert(ACUTE.every(hz=>mxSite[0].cells[hz])&&mxSite[0].cells.heat&&mxSite[0].cells.heat.isHeat,
+  "risk matrix carries a cell per peril plus a heat indicator cell");
+const _combSum=ACUTE.reduce((a,hz)=>a+mxSite[0].cells[hz].ead,0);
+assert(Math.abs(_combSum-mxSite[0].combined.ead)<1e-6,
+  "risk matrix combined equals the sum of its per-peril EAD");
+const mxBrand=matrixRows("brand");
+assert(mxBrand.length===2,"risk matrix by-brand groups the two brands");
+const _siteTot=mxSite.reduce((a,r)=>a+r.combined.ead,0),
+      _brandTot=mxBrand.reduce((a,r)=>a+r.combined.ead,0);
+assert(Math.abs(_siteTot-_brandTot)<1e-6,
+  "risk matrix by-brand conserves total combined cost");
+ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
+restore();
+assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd",
+  "ui.views lenses persist and restore");
+const stU=JSON.parse(localStorage.getItem("rtv_state_v1"));
+delete stU.ui;localStorage.setItem("rtv_state_v1",JSON.stringify(stU));
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
+restore();
+assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="band",
+  "legacy saved state without ui keeps the view defaults (backward safe)");
+hazardGrid=null;gridByHazard={};clearHazCache();
+sites=savedSites;scenario="present";
+
 /* retention sweep: slices reconcile and match the parity-pinned integral */
 adapt.attach=25;adapt.exhaust=250;adapt.load=1.5;
 const slW=layerSlices(fW.varByRp,fW.acuteAal,25,250,1.5);

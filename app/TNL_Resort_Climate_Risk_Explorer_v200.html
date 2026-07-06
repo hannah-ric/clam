@@ -224,6 +224,20 @@
   details.trace[open] summary{margin-bottom:4px}
   /* ---- Wave 1: tolerance breach marker ---- */
   .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
+  /* ---- SVP review: view-lens controls + risk matrix heatmap ---- */
+  .viewlens{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .viewlens select{font-family:inherit;font-size:12.5px;text-transform:none;letter-spacing:0;color:var(--ink);
+    padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+  table.mtx{border-collapse:separate;border-spacing:3px;font-size:12px;margin-top:10px}
+  table.mtx th{font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);font-weight:600;padding:2px 6px;text-align:center;white-space:nowrap}
+  table.mtx th.rowh{text-align:left}
+  table.mtx td.rowh{text-align:left;font-size:12px;color:var(--ink);white-space:nowrap;padding-right:8px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  table.mtx tr.rowclick:hover td.rowh{color:var(--primary);text-decoration:underline}
+  table.mtx td.cell{min-width:50px;height:30px;text-align:center;color:#fff;border-radius:5px;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;cursor:default}
+  table.mtx td.cell.comb{outline:2px solid rgba(21,32,43,.20)}
+  table.mtx td.cell.zero{color:var(--muted);background:var(--surface-2)!important;font-weight:400}
+  .mtxlegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px;color:var(--ink-2);align-items:center}
+  .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -342,6 +356,28 @@
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
         <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
         <div id="tolBody"></div>
+      </div>
+      <div class="panel" id="matrixPanel">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0">Portfolio risk matrix<button type="button" class="info" data-info="riskMatrix" aria-label="How to read the risk matrix" aria-expanded="false">i</button></h3>
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <label class="viewlens">View
+              <select id="mtxGroup" aria-label="Group the risk matrix rows">
+                <option value="site">by site</option>
+                <option value="brand">by brand</option>
+              </select>
+            </label>
+            <label class="viewlens">Show
+              <select id="mtxMetric" aria-label="Value shown in each matrix cell">
+                <option value="pct">% of value</option>
+                <option value="usd">$ per year</option>
+                <option value="band">risk band</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
+        <div id="riskMatrix" style="overflow-x:auto"></div>
       </div>
       <div class="grid2">
         <div class="panel">
@@ -1705,6 +1741,11 @@ let brandFilter="";        // map-only brand filter (session, not persisted)
 let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
 let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
 let scrubTimer=null;       // scenario scrubber playback
+/* View/UI preferences (persisted, defensively merged like finAssume). Holds the
+   chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
+   later, first-run and simple-view flags. Never affects a computed number: these
+   keys only change how existing figures are shown. */
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"band"}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -1916,6 +1957,11 @@ const INFO={
     "<p>The handful of sites carrying the most expected annual climate cost. Addressing the top of this list moves the portfolio number most.</p>"},
   aggBrand:{t:"By brand",b:
     "<p>Expected annual climate cost rolled up to each brand, so exposure can be owned and managed at the brand level.</p>"},
+  riskMatrix:{t:"Portfolio risk matrix",b:
+    "<p>One grid for the whole portfolio: each <b>row</b> is a site (or a brand), each <b>column</b> is a peril, and the last column is the combined physical risk. Every cell is coloured by its risk band, from Minimal to Severe, so hot spots jump out without reading a single number.</p>"+
+    "<p>Read <b>across a row</b> for one site's full risk profile, or <b>down a column</b> to see which sites drive the portfolio's exposure to a single peril. Rows are ordered by combined expected annual cost, so the most exposed sit at the top.</p>"+
+    "<p>The <b>View</b> control regroups the rows by site or by brand; the <b>Show</b> control switches each cell between percent of value, dollars per year, and the band name. Heat is a chronic indicator, so its cell is coloured but carries no dollar figure (its cost is on the Financial impact tab). Click any site row to open its scorecard.</p>",
+    s:"A display lens only: the matrix reads the same per-site figures as every other tab and changes none of them."},
   tolerance:{t:"Risk tolerance",b:
     "<p>A risk tolerance is the line between <b>monitor</b> and <b>act</b>: how much expected loss the business is willing to carry before something has to change. The app never sets it for you. These three thresholds are yours to edit, and whatever you set becomes the documented basis for every breach flag in the app.</p>"+
     "<p>The defaults, and why: a site flags at <b>75 bps</b> (0.75% of its value in expected annual cost, this app's own boundary between the Moderate and High bands); the portfolio flags at <b>1.0%</b> of insured value (the middle of the published screening range this model is calibrated against); the tail flags when a 1-in-100 year would cost more than <b>10%</b> of portfolio value, a common capital stress screen.</p>"+
@@ -2103,6 +2149,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderRiskMatrix();
   renderTolerance();
   renderScrub();
   renderSites();
@@ -2166,6 +2213,66 @@ function renderSummary(){
   document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
     (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
     "Financial assumptions are set on the Financial impact tab.";
+}
+/* SVP review: the portfolio risk matrix (a heatmap of every row against every
+   peril at the current scenario, coloured by risk band). matrixRows is pure over
+   hzSite / bandOf / heatBand; renderRiskMatrix only paints it. No computed figure
+   changes, so the parity surface is untouched. The View and Show selects are the
+   "change views" lens: regroup the rows, or switch what each cell reports. */
+function matrixRows(group){
+  if(group==="brand"){
+    const by={};
+    sites.forEach(s=>{const b=s.brand||"Unbranded";const g=by[b]||(by[b]={name:b,value:0,parts:{},comb:0,days:0,n:0});
+      g.value+=s.asset_value_usd; g.n++;
+      ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);g.parts[hz]=(g.parts[hz]||0)+r.ead;g.comb+=r.ead;});
+      const d=heatIndicators(s.latitude,s.longitude,scenario).daysOver32; if(d>g.days)g.days=d;});
+    return Object.keys(by).map(b=>{const g=by[b];const row={label:g.name+" ("+g.n+")",value:g.value,cells:{},combined:null};
+      ACUTE.forEach(hz=>{const ead=g.parts[hz]||0,pct=g.value?ead/g.value*100:0;row.cells[hz]={ead,eadPct:pct,band:bandOf(pct)};});
+      row.cells.heat={ead:0,eadPct:0,band:heatBand(g.days),days:g.days,isHeat:true};
+      const cpct=g.value?g.comb/g.value*100:0; row.combined={ead:g.comb,eadPct:cpct,band:bandOf(cpct)};
+      return row;
+    }).sort((a,b)=>b.combined.ead-a.combined.ead);
+  }
+  return sites.map(s=>{const row={label:s.name,id:s.id,value:s.asset_value_usd,cells:{},combined:null};let comb=0;
+    ACUTE.forEach(hz=>{const r=hzSite(s,hz,scenario);row.cells[hz]={ead:r.ead,eadPct:r.eadPct,band:r.band};comb+=r.ead;});
+    const hr=hzSite(s,"heat",scenario); row.cells.heat={ead:0,eadPct:0,band:hr.band,days:hr.indicators?hr.indicators.daysOver32:0,isHeat:true};
+    const cpct=s.asset_value_usd?comb/s.asset_value_usd*100:0; row.combined={ead:comb,eadPct:cpct,band:bandOf(cpct)};
+    return row;
+  }).sort((a,b)=>b.combined.ead-a.combined.ead);
+}
+function renderRiskMatrix(){
+  const host=document.getElementById("riskMatrix"); if(!host)return;
+  if(!sites.length){host.innerHTML="";return;}
+  const group=(ui.views.matrixGroup==="brand")?"brand":"site";
+  const metric=["pct","usd","band"].indexOf(ui.views.matrixMetric)>=0?ui.views.matrixMetric:"pct";
+  const gsel=document.getElementById("mtxGroup"); if(gsel)gsel.value=group;
+  const msel=document.getElementById("mtxMetric"); if(msel)msel.value=metric;
+  const cols=HAZARDS.slice();
+  const rows=matrixRows(group);
+  const cellText=c=>{ if(c.isHeat)return ""; if(c.ead<=0&&c.eadPct<=0)return "0";
+    if(metric==="usd")return fmt$(c.ead); if(metric==="band")return c.band; return c.eadPct.toFixed(2); };
+  const cellTitle=(label,hzLabel,c)=>c.isHeat
+    ? esc(label)+" · "+hzLabel+": "+c.band+" ("+c.days+" days over 32C)"
+    : esc(label)+" · "+hzLabel+": "+c.band+" · "+fmt$(c.ead)+"/yr · "+c.eadPct.toFixed(2)+"% of value";
+  let h='<table class="mtx"><thead><tr><th class="rowh">'+(group==="brand"?"Brand":"Site")+'</th>';
+  cols.forEach(H=>h+='<th title="'+esc(H.label)+'">'+H.short+'</th>');
+  h+='<th title="Combined physical risk across all perils">All</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const click=(group==="site")?' class="rowclick" data-focus="'+r.id+'"':'';
+    h+='<tr'+click+'><td class="rowh" title="'+esc(r.label)+'">'+esc(r.label)+'</td>';
+    cols.forEach(H=>{const c=r.cells[H.key];const zero=(!c.isHeat&&c.ead<=0&&c.eadPct<=0);
+      h+='<td class="cell'+(zero?' zero':'')+'" style="background:'+BAND_COLOR[c.band]+'" title="'+cellTitle(r.label,H.label,c)+'">'+cellText(c)+'</td>';});
+    const cc=r.combined;
+    h+='<td class="cell comb" style="background:'+BAND_COLOR[cc.band]+'" title="'+esc(r.label)+' · combined: '+cc.band+' · '+fmt$(cc.ead)+'/yr · '+cc.eadPct.toFixed(2)+'%">'+
+      (metric==="usd"?fmt$(cc.ead):(metric==="band"?cc.band:cc.eadPct.toFixed(2)))+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  const bands=["Minimal","Low","Moderate","High","Severe"];
+  h+='<div class="mtxlegend"><span>Cell colour is the risk band:</span>'+
+    bands.map(b=>'<span><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("")+
+    '<span style="color:var(--muted)">Columns: W wind, F coastal, R river, H heat, B wildfire, P rainfall, All combined</span></div>';
+  host.innerHTML=h;
+  if(group==="site")host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 }
 /* why a damage peril reads zero everywhere, phrased as the user's next step.
    Mirrors explainPeril's source logic at portfolio level: only the two perils
@@ -3374,7 +3481,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance,ui})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -3392,6 +3499,7 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
+      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -3546,6 +3654,10 @@ function wire(){
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
+  const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
+  if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
+  if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort

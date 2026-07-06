@@ -4,7 +4,7 @@ const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1",
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
 const EXPORT_ACUTE_LEGACY=["tc","cflood","rflood"];
 const EXPORT_ACUTE_APPENDED=["prain","wfire"];
-function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance})); }catch(e){} }
+function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,scenario,activeHazard,finAssume,adapt,backtest,nextId,tolerance,ui})); }catch(e){} }
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
@@ -22,6 +22,7 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
+      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -176,6 +177,10 @@ function wire(){
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
+  const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
+  if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
+  if(mtxM)mtxM.onchange=e=>{ui.views.matrixMetric=e.target.value;persist();renderRiskMatrix();};
   document.getElementById("tmplBtn").onclick=downloadTemplate;
   document.getElementById("addSiteBtn").onclick=()=>openAdd(27.95,-82.46,"");
   // sort
