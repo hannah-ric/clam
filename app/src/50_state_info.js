@@ -213,6 +213,10 @@ const INFO={
   assumptions:{t:"Assumptions",b:
     "<p>These five levers turn hazard into money. They are deliberately visible and adjustable so the logic is auditable and you can fit them to your own portfolio.</p>"+
     "<p>A per-site <code>annual_revenue_usd</code> column in the upload overrides the revenue lever for that site.</p>"},
+  brandAssume:{t:"Per-brand overrides",b:
+    "<p>The three revenue-and-operations assumptions above are portfolio-wide defaults. A resort brand often runs a different economic model, so you can override the revenue ratio, the operating margin, or the reopening time for any brand, and only that brand's sites recompute.</p>"+
+    "<p>Blank means "+"\"use the portfolio default,\" so an untouched table reproduces the global numbers exactly. Reset clears a brand back to the defaults. A per-site <code>annual_revenue_usd</code> value still wins over both, for that one site.</p>",
+    s:"A per-brand input to the same model; it changes which assumption a site uses, not the math."},
   revRatio:{t:"Revenue as % of asset value",b:
     "<p>Sets each site's annual revenue as a share of its value, used for business interruption and heat costs when no per-site revenue is supplied.</p>"+
     "<p>Hospitality real estate commonly runs 25 to 45%.</p>"},

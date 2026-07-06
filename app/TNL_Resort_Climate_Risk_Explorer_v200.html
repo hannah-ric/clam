@@ -685,6 +685,7 @@
           </div>
         </div>
       </div>
+      <div id="brandAssume" style="margin-top:16px"></div>
     </div>
     <div class="panel">
       <h3>Climate-related financial disclosure<button type="button" class="info" data-info="disclosure" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
@@ -1341,29 +1342,37 @@ function explainPeril(site,hz,sc){
    ============================================================ */
 const ACUTE=["tc","cflood","rflood","prain","wfire"];
 const HEAT_COMFORT_DAYS=15;                 // days over 35C treated as baseline-normal
-let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30};
+let finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+/* Per-brand assumption overrides (SVP review): assumeFor returns the effective
+   revenue/margin/reopen for a site, a brand override shallow-merged over the
+   global. When a brand has no override it returns the GLOBAL OBJECT ITSELF, so an
+   empty overrides map reproduces today's numbers byte-for-byte (the parity fixture
+   sets none). Correlation stays global (it is a portfolio property, not per site).
+   Every per-site reader of finAssume goes through this so base and adapted agree. */
+function assumeFor(s){ const o=finAssume.brandOverrides&&finAssume.brandOverrides[s&&s.brand]; return o?Object.assign({},finAssume,o):finAssume; }
 /* Risk tolerance (Wave 1 decision layer): the operator's documented
    materiality thresholds. A policy layer only: these values never change a
    computed figure, they only decide what counts as a breach. Defaults are
    anchored to stated practice (see the INFO entry) and are meant to be
    edited; edits persist and become the portfolio's documented tolerance. */
 let tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
-function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*finAssume.revRatio; }
+function siteRevenue(s){ return (s.annual_revenue_usd>0)?s.annual_revenue_usd:s.asset_value_usd*assumeFor(s).revRatio; }
 function finSite(s,sc){
-  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*finAssume.gopMargin;
-  const maxDownDays=finAssume.reopenMonths/12*365, dailyGop=gop/365;
+  const a=assumeFor(s);
+  const value=s.asset_value_usd, revenue=siteRevenue(s), gop=revenue*a.gopMargin;
+  const maxDownDays=a.reopenMonths/12*365, dailyGop=gop/365;
   const directByRp={},biByRp={}; RPS.forEach(rp=>{directByRp[rp]=0;biByRp[rp]=0;});
   let directEad=0,biEad=0;
   for(const hz of ACUTE){
     const r=hzSite(s,hz,sc);                              // direct damage for this peril
     directEad+=r.ead;
-    biEad+=gop*(finAssume.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
+    biEad+=gop*(a.reopenMonths/12)*(r.eadPct/100);// BI EAD = annual GOP x reopen-share x damage-EAD fraction
     r.curve.forEach(c=>{ directByRp[c.rp]+=c.loss; biByRp[c.rp]+=dailyGop*maxDownDays*(value?c.loss/value:0); });
   }
   // chronic heat: profit at risk from dangerous-heat days (over 35C) above a comfort baseline
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=dailyGop*excess*finAssume.heatDrop;
+  const heatCost=dailyGop*excess*a.heatDrop;
   const totalAal=directEad+biEad+heatCost;
   return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
@@ -1398,10 +1407,9 @@ function finDisclosure(sites,pathway){
    This is the single all-risk picture the Summary tab is built on. */
 function aggregatePortfolio(sites,sc){
   const f=finPortfolio(sites,sc);
-  const gopShare=finAssume.reopenMonths/12;
   const byPeril={};ACUTE.forEach(hz=>byPeril[hz]=0);byPeril.heat=f.heatCost;
   sites.forEach(s=>{
-    const gop=siteRevenue(s)*finAssume.gopMargin;
+    const a=assumeFor(s), gop=siteRevenue(s)*a.gopMargin, gopShare=a.reopenMonths/12;
     ACUTE.forEach(hz=>{const r=hzSite(s,hz,sc);byPeril[hz]+=r.ead+gop*gopShare*(r.eadPct/100);});
   });
   const byType={direct:f.directEad,bi:f.biEad,heat:f.heatCost};
@@ -1484,10 +1492,11 @@ function adaptedFinSite(s,sc,mods){
   const exp=mods.expMult==null?1:mods.expMult;             // exposure uncertainty: scales value and revenue
   const haz=mods.hazMult==null?1:mods.hazMult;             // hazard-intensity uncertainty: scales wind speed and flood depth
   const dmgK=mods.dmgScale==null?1:mods.dmgScale;          // damage-curve steepness uncertainty
+  const a=assumeFor(s);
   const value=s.asset_value_usd*exp;
   const revenue=siteRevenue(s)*exp*(mods.revMult==null?1:mods.revMult);
-  const gop=revenue*finAssume.gopMargin;
-  const reopenShare=(finAssume.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
+  const gop=revenue*a.gopMargin;
+  const reopenShare=(a.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
   const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
   let directEad=0,biEad=0;
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
@@ -1506,7 +1515,7 @@ function adaptedFinSite(s,sc,mods){
   directEad+=fFrac*value; biEad+=gop*reopenShare*fFrac;
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=(gop/365)*excess*finAssume.heatDrop*(mods.heatMult==null?1:mods.heatMult);
+  const heatCost=(gop/365)*excess*a.heatDrop*(mods.heatMult==null?1:mods.heatMult);
   return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
 }
 function adaptedTotal(sitesArr,sc,mods){
@@ -2004,6 +2013,10 @@ const INFO={
   assumptions:{t:"Assumptions",b:
     "<p>These five levers turn hazard into money. They are deliberately visible and adjustable so the logic is auditable and you can fit them to your own portfolio.</p>"+
     "<p>A per-site <code>annual_revenue_usd</code> column in the upload overrides the revenue lever for that site.</p>"},
+  brandAssume:{t:"Per-brand overrides",b:
+    "<p>The three revenue-and-operations assumptions above are portfolio-wide defaults. A resort brand often runs a different economic model, so you can override the revenue ratio, the operating margin, or the reopening time for any brand, and only that brand's sites recompute.</p>"+
+    "<p>Blank means "+"\"use the portfolio default,\" so an untouched table reproduces the global numbers exactly. Reset clears a brand back to the defaults. A per-site <code>annual_revenue_usd</code> value still wins over both, for that one site.</p>",
+    s:"A per-brand input to the same model; it changes which assumption a site uses, not the math."},
   revRatio:{t:"Revenue as % of asset value",b:
     "<p>Sets each site's annual revenue as a share of its value, used for business interruption and heat costs when no per-site revenue is supplied.</p>"+
     "<p>Hospitality real estate commonly runs 25 to 45%.</p>"},
@@ -2946,13 +2959,49 @@ function syncFinAssume(){
   g("corrVal").textContent=(+g("corr").value/100).toFixed(2);
   persist();renderFinance();
 }
+/* SVP review: optional per-brand overrides of the three site-level assumptions
+   (revenue ratio, operating margin, reopen months). Blank uses the global default;
+   a set value writes into finAssume.brandOverrides[brand], which assumeFor consumes.
+   State + display only, never a bespoke number. */
+function renderBrandAssume(){
+  const host=document.getElementById("brandAssume"); if(!host)return;
+  const brands=[];sites.forEach(s=>{const b=s.brand;if(b&&brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  if(!brands.length){host.innerHTML="";return;}
+  const ov=finAssume.brandOverrides||{};
+  const cell=(b,k,val,ph)=>'<td class="num"><input type="number" class="brandov" data-brand="'+esc(b)+'" data-key="'+k+'" min="0" step="1" value="'+val+'" placeholder="'+ph+'" style="width:72px;padding:5px 7px;text-align:right"></td>';
+  let h='<div style="font-weight:600;color:var(--primary);margin-bottom:4px">Per-brand overrides'+infoBtn("brandAssume")+'</div>'+
+    '<div class="hint" style="margin-bottom:8px">Optional. Blank uses the portfolio defaults above. Set a brand that runs a different revenue mix, margin, or reopening speed, and only its sites recompute.</div>'+
+    '<table class="tbl"><thead><tr><th>Brand</th><th class="num">Revenue % of value</th><th class="num">Operating margin %</th><th class="num">Months to reopen</th><th></th></tr></thead><tbody>';
+  brands.forEach(b=>{const o=ov[b]||{};
+    h+='<tr><td>'+esc(b)+'</td>'+
+      cell(b,"revRatio",o.revRatio!=null?Math.round(o.revRatio*100):"",Math.round(finAssume.revRatio*100))+
+      cell(b,"gopMargin",o.gopMargin!=null?Math.round(o.gopMargin*100):"",Math.round(finAssume.gopMargin*100))+
+      cell(b,"reopenMonths",o.reopenMonths!=null?o.reopenMonths:"",String(finAssume.reopenMonths))+
+      '<td class="num">'+(ov[b]?'<button class="lightbtn brandclear" data-brand="'+esc(b)+'" style="padding:3px 9px;font-size:11px">Reset</button>':'')+'</td></tr>';});
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input.brandov").forEach(inp=>inp.onchange=()=>{
+    const b=inp.dataset.brand,k=inp.dataset.key,raw=String(inp.value).trim();
+    const map=finAssume.brandOverrides||(finAssume.brandOverrides={});
+    const o=map[b]||(map[b]={});
+    if(raw===""){delete o[k];}
+    else{let v=+raw;if(!isFinite(v)||v<0){toast("Enter a non-negative number.");renderBrandAssume();return;}
+      if(k==="revRatio"||k==="gopMargin")v=v/100;o[k]=v;}
+    if(!Object.keys(o).length)delete map[b];
+    persist();render();
+  });
+  host.querySelectorAll("button.brandclear").forEach(btn=>btn.onclick=()=>{
+    const map=finAssume.brandOverrides||{};delete map[btn.dataset.brand];persist();render();});
+}
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
     kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
-    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }
+  renderBrandAssume();
   const f=finPortfolio(sites,scenario);
   const u=uncRange(sites,scenario);
   const indirect=f.biEad+f.heatCost;
@@ -3010,10 +3059,11 @@ function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
   const vuln=vulnOf(s);
-  const gop=fin.gop, dailyGop=gop/365, maxDown=finAssume.reopenMonths/12*365;
+  const _asm=assumeFor(s);
+  const gop=fin.gop, dailyGop=gop/365, maxDown=_asm.reopenMonths/12*365;
   const perils=ACUTE.map(hz=>{
     const r=hzSite(s,hz,scenario);
-    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(finAssume.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
+    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(_asm.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
   });
   const heatR=hzSite(s,"heat",scenario);
   const phys=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?c.loss:0);},0);

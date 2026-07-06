@@ -667,13 +667,49 @@ function syncFinAssume(){
   g("corrVal").textContent=(+g("corr").value/100).toFixed(2);
   persist();renderFinance();
 }
+/* SVP review: optional per-brand overrides of the three site-level assumptions
+   (revenue ratio, operating margin, reopen months). Blank uses the global default;
+   a set value writes into finAssume.brandOverrides[brand], which assumeFor consumes.
+   State + display only, never a bespoke number. */
+function renderBrandAssume(){
+  const host=document.getElementById("brandAssume"); if(!host)return;
+  const brands=[];sites.forEach(s=>{const b=s.brand;if(b&&brands.indexOf(b)<0)brands.push(b);});
+  brands.sort();
+  if(!brands.length){host.innerHTML="";return;}
+  const ov=finAssume.brandOverrides||{};
+  const cell=(b,k,val,ph)=>'<td class="num"><input type="number" class="brandov" data-brand="'+esc(b)+'" data-key="'+k+'" min="0" step="1" value="'+val+'" placeholder="'+ph+'" style="width:72px;padding:5px 7px;text-align:right"></td>';
+  let h='<div style="font-weight:600;color:var(--primary);margin-bottom:4px">Per-brand overrides'+infoBtn("brandAssume")+'</div>'+
+    '<div class="hint" style="margin-bottom:8px">Optional. Blank uses the portfolio defaults above. Set a brand that runs a different revenue mix, margin, or reopening speed, and only its sites recompute.</div>'+
+    '<table class="tbl"><thead><tr><th>Brand</th><th class="num">Revenue % of value</th><th class="num">Operating margin %</th><th class="num">Months to reopen</th><th></th></tr></thead><tbody>';
+  brands.forEach(b=>{const o=ov[b]||{};
+    h+='<tr><td>'+esc(b)+'</td>'+
+      cell(b,"revRatio",o.revRatio!=null?Math.round(o.revRatio*100):"",Math.round(finAssume.revRatio*100))+
+      cell(b,"gopMargin",o.gopMargin!=null?Math.round(o.gopMargin*100):"",Math.round(finAssume.gopMargin*100))+
+      cell(b,"reopenMonths",o.reopenMonths!=null?o.reopenMonths:"",String(finAssume.reopenMonths))+
+      '<td class="num">'+(ov[b]?'<button class="lightbtn brandclear" data-brand="'+esc(b)+'" style="padding:3px 9px;font-size:11px">Reset</button>':'')+'</td></tr>';});
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("input.brandov").forEach(inp=>inp.onchange=()=>{
+    const b=inp.dataset.brand,k=inp.dataset.key,raw=String(inp.value).trim();
+    const map=finAssume.brandOverrides||(finAssume.brandOverrides={});
+    const o=map[b]||(map[b]={});
+    if(raw===""){delete o[k];}
+    else{let v=+raw;if(!isFinite(v)||v<0){toast("Enter a non-negative number.");renderBrandAssume();return;}
+      if(k==="revRatio"||k==="gopMargin")v=v/100;o[k]=v;}
+    if(!Object.keys(o).length)delete map[b];
+    persist();render();
+  });
+  host.querySelectorAll("button.brandclear").forEach(btn=>btn.onclick=()=>{
+    const map=finAssume.brandOverrides||{};delete map[btn.dataset.brand];persist();render();});
+}
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
     kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
-    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }
+  renderBrandAssume();
   const f=finPortfolio(sites,scenario);
   const u=uncRange(sites,scenario);
   const indirect=f.biEad+f.heatCost;
@@ -731,10 +767,11 @@ function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
   const vuln=vulnOf(s);
-  const gop=fin.gop, dailyGop=gop/365, maxDown=finAssume.reopenMonths/12*365;
+  const _asm=assumeFor(s);
+  const gop=fin.gop, dailyGop=gop/365, maxDown=_asm.reopenMonths/12*365;
   const perils=ACUTE.map(hz=>{
     const r=hzSite(s,hz,scenario);
-    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(finAssume.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
+    return {hz,label:HAZARD_LABEL[hz],band:r.band,cost:r.ead+gop*(_asm.reopenMonths/12)*(r.eadPct/100),curve:r.curve};
   });
   const heatR=hzSite(s,"heat",scenario);
   const phys=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===100);return a+(c?c.loss:0);},0);

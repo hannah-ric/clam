@@ -70,10 +70,11 @@ function adaptedFinSite(s,sc,mods){
   const exp=mods.expMult==null?1:mods.expMult;             // exposure uncertainty: scales value and revenue
   const haz=mods.hazMult==null?1:mods.hazMult;             // hazard-intensity uncertainty: scales wind speed and flood depth
   const dmgK=mods.dmgScale==null?1:mods.dmgScale;          // damage-curve steepness uncertainty
+  const a=assumeFor(s);
   const value=s.asset_value_usd*exp;
   const revenue=siteRevenue(s)*exp*(mods.revMult==null?1:mods.revMult);
-  const gop=revenue*finAssume.gopMargin;
-  const reopenShare=(finAssume.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
+  const gop=revenue*a.gopMargin;
+  const reopenShare=(a.reopenMonths*(mods.reopenMult==null?1:mods.reopenMult))/12;
   const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
   let directEad=0,biEad=0;
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
@@ -92,7 +93,7 @@ function adaptedFinSite(s,sc,mods){
   directEad+=fFrac*value; biEad+=gop*reopenShare*fFrac;
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
-  const heatCost=(gop/365)*excess*finAssume.heatDrop*(mods.heatMult==null?1:mods.heatMult);
+  const heatCost=(gop/365)*excess*a.heatDrop*(mods.heatMult==null?1:mods.heatMult);
   return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
 }
 function adaptedTotal(sitesArr,sc,mods){

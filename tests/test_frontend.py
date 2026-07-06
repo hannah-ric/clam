@@ -501,6 +501,27 @@ assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="peril",
 hazardGrid=null;gridByHazard={};clearHazCache();
 sites=savedSites;scenario="present";
 
+/* SVP review: per-brand assumption overrides. Empty overrides are byte-identical
+   (assumeFor returns the global object); an override moves ONLY its brand, and it
+   flows through both the base (finSite) and the adapted (measure) path so they can
+   never desync. The parity fixture sets none, so this is the branch CI cannot see. */
+gridByHazard={};clearHazCache();hazardGrid=null;scenario="present";
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+const sAlpha={id:1,name:"A",brand:"Alpha",latitude:25.0,longitude:-80.0,asset_value_usd:80e6,construction:"masonry",year_built:2000};
+const sBeta={id:2,name:"B",brand:"Beta",latitude:25.0,longitude:-80.0,asset_value_usd:80e6,construction:"masonry",year_built:2000};
+sites=[sAlpha,sBeta];
+assert(assumeFor(sAlpha)===finAssume,"empty overrides: assumeFor returns the global object, so numbers stay byte-identical");
+const _baseA=finSite(sAlpha,"present").totalAal, _baseB=finSite(sBeta,"present").totalAal;
+const _adBaseA=adaptedFinSite(sAlpha,"present",{}).totalAal;
+finAssume.brandOverrides={Alpha:{revRatio:0.60}};clearHazCache();
+const _ovA=finSite(sAlpha,"present").totalAal, _ovB=finSite(sBeta,"present").totalAal;
+const _adOvA=adaptedFinSite(sAlpha,"present",{}).totalAal;
+assert(_ovA>_baseA,"a per-brand revenue override raises that brand's cost through finSite");
+assert(_ovB===_baseB,"a site of another brand is unchanged by the override");
+assert(_adOvA>_adBaseA,"the same override also flows through the adapted (measure) path");
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+sites=savedSites;clearHazCache();scenario="present";
+
 /* retention sweep: slices reconcile and match the parity-pinned integral */
 adapt.attach=25;adapt.exhaust=250;adapt.load=1.5;
 const slW=layerSlices(fW.varByRp,fW.acuteAal,25,250,1.5);
