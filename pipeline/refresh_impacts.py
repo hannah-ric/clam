@@ -1153,16 +1153,21 @@ def main(argv=None) -> int:
     meta = {"skipped": [], "wind_sources": {}, "_countries": set()}
 
     # Wildfire needs an operator-supplied FIRMS DataFrame (Petals has no
-    # download-by-country). Load and region-trim it once; None means the pack's
-    # wildfire layer is skipped per country, recorded in meta.
+    # download-by-country). Load it once, drop low-confidence noise, and trim to a
+    # buffer around the actual sites (the impact only reads fire near them, and
+    # this keeps Petals' clustering tractable). None -> the pack's wildfire layer
+    # is skipped per country, recorded in meta.
     firms_df = None
     if not args.no_fire:
         firms = rw.resolve_firms(args.firms)
         if firms:
             try:
-                firms_df = rw.filter_firms_to_regions(rw.load_firms(firms))
-                LOG.info("FIRMS: %d detections within the portfolio regions",
-                         len(firms_df))
+                fdf = rw.filter_firms_confidence(rw.load_firms(firms))
+                firms_df = rw.filter_firms_near_sites(
+                    fdf, sites["latitude"].to_numpy(float),
+                    sites["longitude"].to_numpy(float))
+                LOG.info("FIRMS: %d detections near the %d portfolio site(s)",
+                         len(firms_df), len(sites))
             except Exception as exc:
                 LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
                 firms_df = None

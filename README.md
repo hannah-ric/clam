@@ -79,9 +79,12 @@ MODIS and/or VIIRS archive CSV(s) for the US from
 https://firms.modaps.eosdis.nasa.gov/download/ and drop them in `pipeline/firms/`.
 `bash run_pipeline.sh --fire` picks them up automatically, as do the producers run
 directly (`python refresh_wildfire.py`, `python refresh_impacts.py --sites sites.csv`);
-override the location with `--firms PATH` or `FIRMS_CSV=...`. Without any FIRMS data
-the wildfire step is skipped with a clear note and the app keeps wildfire on its
-`wui_class` interim model, by design.
+override the location with `--firms PATH` or `FIRMS_CSV=...`. The detections are
+trimmed to a buffer around the portfolio sites (auto-uses `sites.csv`) after a
+confidence floor, so only fire history near the resorts is clustered: the same
+answer at each site, but fast, and free of far-away regimes such as Southeast
+agricultural burning. Without any FIRMS data the wildfire step is skipped with a
+clear note and the app keeps wildfire on its `wui_class` interim model, by design.
 
 Migration safety: without these layers (and without wui_class profile data),
 the v1.12 app scores both new perils zero and every number matches the
