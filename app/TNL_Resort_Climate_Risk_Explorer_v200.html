@@ -318,6 +318,7 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
@@ -823,6 +824,24 @@
 <div id="briefHost"></div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="onboardModal">
+  <div class="modal" style="width:min(560px,94vw)">
+    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
+    <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
+    <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
+    <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
+    <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
+      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+    </ul>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <div class="row">
+      <button class="lightbtn" id="obGlossary">Open the glossary</button>
+      <button class="lightbtn primary" id="obStart">Load the sample and explore</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-bg" id="addModal">
   <div class="modal">
@@ -1758,7 +1777,7 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -3617,6 +3636,16 @@ function openAdd(lat,lon,name){
 }
 function closeAdd(){document.getElementById("addModal").classList.remove("open");}
 
+/* ---- first-run orientation (SVP review) ---- */
+function closeOnboard(seen){ document.getElementById("onboardModal").classList.remove("open"); if(seen){ui.onboarded=true;persist();} }
+function openOnboard(){
+  const b=document.getElementById("obStart"); if(!b)return;
+  if(sites.length){ b.textContent="Got it"; b.onclick=()=>closeOnboard(true); }
+  else { b.textContent="Load the sample and explore"; b.onclick=()=>{closeOnboard(true);loadSample();}; }
+  document.getElementById("onboardModal").classList.add("open");
+}
+function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
+
 /* ---- export ---- */
 function exportCsv(){
   if(!sites.length){toast("Load a portfolio first.");return;}
@@ -3758,7 +3787,11 @@ function wire(){
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
   document.getElementById("focusClose").onclick=closeScorecard;
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // first-run orientation
+  document.getElementById("guideBtn").onclick=openOnboard;
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   document.getElementById("mAdd").onclick=()=>{
     const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
     if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
@@ -3799,6 +3832,7 @@ function wire(){
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
   dropZone(bd,f=>readFile(f,loadBacktestCsv));
   render();
+  maybeOnboard();
 }
 function dropZone(el,cb){
   el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});

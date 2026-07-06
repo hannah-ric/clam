@@ -33,7 +33,7 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */

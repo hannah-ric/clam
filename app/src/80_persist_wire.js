@@ -59,6 +59,16 @@ function openAdd(lat,lon,name){
 }
 function closeAdd(){document.getElementById("addModal").classList.remove("open");}
 
+/* ---- first-run orientation (SVP review) ---- */
+function closeOnboard(seen){ document.getElementById("onboardModal").classList.remove("open"); if(seen){ui.onboarded=true;persist();} }
+function openOnboard(){
+  const b=document.getElementById("obStart"); if(!b)return;
+  if(sites.length){ b.textContent="Got it"; b.onclick=()=>closeOnboard(true); }
+  else { b.textContent="Load the sample and explore"; b.onclick=()=>{closeOnboard(true);loadSample();}; }
+  document.getElementById("onboardModal").classList.add("open");
+}
+function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
+
 /* ---- export ---- */
 function exportCsv(){
   if(!sites.length){toast("Load a portfolio first.");return;}
@@ -200,7 +210,11 @@ function wire(){
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
   document.getElementById("focusClose").onclick=closeScorecard;
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  // first-run orientation
+  document.getElementById("guideBtn").onclick=openOnboard;
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   document.getElementById("mAdd").onclick=()=>{
     const lat=toNum(document.getElementById("mLat").value),lon=toNum(document.getElementById("mLon").value),val=toNum(document.getElementById("mVal").value);
     if(!isFinite(lat)||!isFinite(lon)||!isFinite(val)||lat< -90||lat>90||lon< -180||lon>180||val<0){toast("Enter valid latitude (-90..90), longitude (-180..180), and a non-negative value.");return;}
@@ -241,6 +255,7 @@ function wire(){
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
   dropZone(bd,f=>readFile(f,loadBacktestCsv));
   render();
+  maybeOnboard();
 }
 function dropZone(el,cb){
   el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("over");});

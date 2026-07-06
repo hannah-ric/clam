@@ -318,6 +318,7 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
     <button class="btn ghost" id="sampleBtn">Load sample</button>
     <button class="btn" id="exportBtn">Export CSV</button>
     <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
@@ -823,6 +824,24 @@
 <div id="briefHost"></div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="onboardModal">
+  <div class="modal" style="width:min(560px,94vw)">
+    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
+    <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
+    <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
+    <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
+    <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
+      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+    </ul>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <div class="row">
+      <button class="lightbtn" id="obGlossary">Open the glossary</button>
+      <button class="lightbtn primary" id="obStart">Load the sample and explore</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-bg" id="addModal">
   <div class="modal">

@@ -472,14 +472,14 @@ assert(markerFill(_rowA,"dominant","present")===HAZARD_BY[_bst].color,
   "map colour: dominant mode uses the leading peril's colour");
 assert(markerFill(_rowA,"peril","present",_rowA.band!=null?_rowA.band:hzSite(_rowA,activeHazard,"present").band)===BAND_COLOR[hzSite(_rowA,activeHazard,"present").band],
   "map colour: peril mode keeps the selected-peril band");
-ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
+ui.onboarded=true;ui.views.matrixGroup="brand";ui.views.matrixMetric="usd";persist();
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
 restore();
-assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd",
-  "ui.views lenses persist and restore");
+assert(ui.views.matrixGroup==="brand"&&ui.views.matrixMetric==="usd"&&ui.onboarded===true,
+  "ui.views lenses and the onboarded flag persist and restore");
 const stU=JSON.parse(localStorage.getItem("rtv_state_v1"));
 delete stU.ui;localStorage.setItem("rtv_state_v1",JSON.stringify(stU));
-ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"}};
+ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false};
 restore();
 assert(ui.views.matrixGroup==="site"&&ui.views.mapColor==="peril",
   "legacy saved state without ui keeps the view defaults (backward safe)");
