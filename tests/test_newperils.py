@@ -99,6 +99,7 @@ class FakeRainHaz:
 def test_firms_io():
     """load_firms + filter_firms_to_regions (the pure FIRMS input path) and the
     graceful no-FIRMS degradation, none of which needs CLIMADA."""
+    rw._ensure_cartopy_cache()   # import-safe no-op when cartopy is absent
     modis = pd.DataFrame({"LATITUDE": [34.0, 12.0], "LONGITUDE": [-116.5, 40.0],
                           "ACQ_DATE": ["2020-08-01", "2020-01-01"],
                           "INSTRUMENT": ["MODIS", "MODIS"],
@@ -123,6 +124,19 @@ def test_firms_io():
         rejected = True
     assert rejected, "a FIRMS CSV missing required columns must raise a clear error"
 
+    # confidence floor + near-site buffer (pure, cwd-independent)
+    fc = pd.DataFrame({"latitude": [34.0, 34.0, 30.0], "longitude": [-116.5, -116.5, -98.5],
+                       "acq_date": ["2020-01-01"] * 3, "instrument": ["MODIS", "MODIS", "VIIRS"],
+                       "confidence": [80, 20, "l"], "brightness": [330.0, 300.0, np.nan],
+                       "bright_ti4": [np.nan, np.nan, 340.0]})
+    kept_c = rw.filter_firms_confidence(fc, min_conf=50)
+    assert len(kept_c) == 1 and int(kept_c.iloc[0]["confidence"]) == 80, \
+        "drops low-confidence MODIS and VIIRS 'l'"
+    near = rw.filter_firms_near_sites(fc, [34.0], [-116.5], buffer_km=50)
+    assert len(near) == 2 and (abs(near["latitude"] - 34.0) < 0.01).all(), \
+        "keeps only detections within the buffer of a site"
+    ok("filter_firms: confidence floor and near-site buffer")
+
     # resolve_firms and the no-FIRMS path, run in an isolated temp dir with
     # FIRMS_CSV unset, so the test never touches (or is fooled by) a real ./firms/
     # or firms_us.csv an operator may have placed in pipeline/.
@@ -138,6 +152,11 @@ def test_firms_io():
         Path("firms_us.csv").unlink(); os.mkdir("firms")
         assert rw.resolve_firms(None) == ["firms"], "a ./firms/ folder is discovered"
         os.rmdir("firms")
+        assert rw.resolve_sites("explicit.csv") == "explicit.csv", "explicit --sites wins"
+        assert rw.resolve_sites(None) is None, "no sites.csv to discover"
+        Path("sites.csv").write_text("latitude,longitude\n1,2\n")
+        assert rw.resolve_sites(None) == "sites.csv", "sites.csv is discovered"
+        Path("sites.csv").unlink()
         rc = rw.main(["--out", "wfire_nofirms.csv"])
         assert rc == 1, "no FIRMS anywhere is a clean exit 1, not a crash"
         meta = json.loads(Path("wfire_nofirms_meta.json").read_text())
@@ -164,8 +183,14 @@ def run():
         "bright_ti4": [np.nan, np.nan, 340.0, np.nan],
     })
     firms.to_csv("sim_firms.csv", index=False)
+    # explicit --sites (co-located with the detections) so the run is deterministic
+    # regardless of any real sites.csv the operator may have in pipeline/.
+    pd.DataFrame({"name": ["SW", "Gulf"], "latitude": [34.0, 30.0],
+                  "longitude": [-116.5, -98.5], "asset_value_usd": [1e7, 1e7]}
+                 ).to_csv("sim_firms_sites.csv", index=False)
     rw.build_wildfire_hazard = lambda df, **kw: FakeFire()
-    rc = rw.main(["--firms", "sim_firms.csv", "--out", "sim_wfire_grid.csv"])
+    rc = rw.main(["--firms", "sim_firms.csv", "--sites", "sim_firms_sites.csv",
+                  "--out", "sim_wfire_grid.csv"])
     assert rc == 0
     wf = pd.read_csv("sim_wfire_grid.csv")
     assert set(wf["hazard"]) == {"wfire"} and set(wf["scenario"]) == set(rw.WARMING)
