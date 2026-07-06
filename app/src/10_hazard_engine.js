@@ -51,12 +51,23 @@ function interimVector(lat,lon,scenario){
 }
 function makeGridProvider(rows){
   const byScen={};for(const row of rows){(byScen[row.scenario]||(byScen[row.scenario]=[])).push(row);}
+  /* Nearest-cell lookup is a linear scan, and one render scores every site
+     against every peril and scenario many times over, so a realistic grid
+     (tens of thousands of cells) turns each render into millions of haversine
+     calls and the app appears to freeze. Sites are fixed points, so the set of
+     distinct (lat, lon, scenario) queries is tiny: memoise per grid, exactly as
+     the tc base provider is cached in provider(). The cache lives on this
+     closure, so a new grid (buildGridsFromRows) starts fresh automatically. */
+  const _cache=new Map();
   return function(lat,lon,scenario,maxKm){maxKm=maxKm||200;
+    const ck=lat.toFixed(5)+","+lon.toFixed(5)+","+scenario+","+maxKm;
+    const cached=_cache.get(ck);if(cached!==undefined)return cached;
     const list=byScen[scenario]||byScen.present||[];let best=null,bestD=Infinity;
     for(const row of list){const d=haversine(lat,lon,row.lat,row.lon);if(d<bestD){bestD=d;best=row;}}
-    if(!best||bestD>maxKm){const z={};for(const rp of RPS)z[rp]=0;return {vec:z,meta:{source:"grid",outside:true,dist:bestD}};}
-    const vec={};for(const rp of RPS)vec[rp]=Math.max(+best["v"+rp]||0,0);
-    return {vec,meta:{source:"grid",dist:bestD}};
+    let res;
+    if(!best||bestD>maxKm){const z={};for(const rp of RPS)z[rp]=0;res={vec:z,meta:{source:"grid",outside:true,dist:bestD}};}
+    else{const vec={};for(const rp of RPS)vec[rp]=Math.max(+best["v"+rp]||0,0);res={vec,meta:{source:"grid",dist:bestD}};}
+    _cache.set(ck,res);return res;
   };
 }
 function siteEad(vec,value,opts){

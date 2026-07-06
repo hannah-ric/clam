@@ -93,29 +93,59 @@ function loadBacktestCsv(text){
   persist();renderBacktest();
   toast("Observed losses loaded ("+rows.length+" rows)");
 }
-function loadHazardCsv(text,name){
+/* parse one hazard CSV to normalized rows; null means the required columns are
+   missing (the caller shows the schema hint). An empty array means the file
+   parsed but held no usable rows. */
+function parseHazardRows(text){
   const {head,out}=parseCsv(text);
-  if(["lat","lon","scenario"].some(k=>head.indexOf(k)<0)){
-    toast("Hazard grid needs columns: lat, lon, scenario, v10..v500 (optional: hazard).");return;
-  }
+  if(["lat","lon","scenario"].some(k=>head.indexOf(k)<0))return null;
   const hasHaz=head.indexOf("hazard")>=0;
-  const rows=[];const scens=new Set();const hazSet=new Set();const perHaz={};
+  const rows=[];
   out.forEach(row=>{
     const lat=toNum(row.get("lat")),lon=toNum(row.get("lon")),sc=row.get("scenario");
     if(!isFinite(lat)||!isFinite(lon)||!sc)return;
     const hazard=hasHaz?(String(row.get("hazard")||"tc").trim()||"tc"):"tc";
     const r={lat,lon,scenario:String(sc).trim(),hazard};
     RPS.forEach(rp=>{const v=toNum(row.get("v"+rp));r["v"+rp]=isFinite(v)?v:0;});
-    rows.push(r);scens.add(r.scenario);hazSet.add(hazard);
-    const ph=perHaz[hazard]||(perHaz[hazard]={cells:0,scen:{}});ph.cells++;ph.scen[r.scenario]=1;
+    rows.push(r);
   });
-  if(!rows.length){toast("Could not read hazard grid. Expect lat, lon, scenario, v10..v500.");return;}
+  return rows;
+}
+/* build the live grid and its provenance summary from already-parsed rows,
+   shared by the single-file and multi-file loaders */
+function installHazardRows(rows,name){
+  const scens=new Set(),hazSet=new Set(),perHaz={};
+  rows.forEach(r=>{scens.add(r.scenario);hazSet.add(r.hazard);
+    const ph=perHaz[r.hazard]||(perHaz[r.hazard]={cells:0,scen:{}});ph.cells++;ph.scen[r.scenario]=1;});
   buildGridsFromRows(rows);
   const perHazOut={};Object.keys(perHaz).forEach(k=>perHazOut[k]={cells:perHaz[k].cells,scenarios:Object.keys(perHaz[k].scen)});
   hazardGrid={rows,meta:{name:name||"hazard_grid.csv",cells:rows.length,scenarios:[...scens],hazards:[...hazSet],perHaz:perHazOut,loaded:new Date().toISOString().slice(0,16).replace("T"," ")}};
   clearHazCache();persistHazard();
   toast("CLIMADA hazard grid active ("+rows.length+" cells, "+hazSet.size+" peril"+(hazSet.size>1?"s":"")+")");
   render();
+}
+function loadHazardCsv(text,name){
+  const rows=parseHazardRows(text);
+  if(rows===null){toast("Hazard grid needs columns: lat, lon, scenario, v10..v500 (optional: hazard).");return;}
+  if(!rows.length){toast("Could not read hazard grid. Expect lat, lon, scenario, v10..v500.");return;}
+  installHazardRows(rows,name);
+}
+/* Several hazard CSVs dropped at once (e.g. hazard_grid.csv + heat_grid.csv):
+   MERGE them the way the pipeline's merge_grids.py does, later files winning on
+   (lat, lon, scenario, hazard). Without this the loader replaces the whole grid
+   per file, so the last file silently wipes every peril the others carried. */
+function loadHazardCsvMulti(files){
+  const merged=new Map();const used=[];let bad=0;
+  files.forEach(f=>{
+    const rows=parseHazardRows(f.text);
+    if(rows===null){bad++;return;}
+    used.push(f.name||"");
+    rows.forEach(r=>merged.set(r.lat+"|"+r.lon+"|"+r.scenario+"|"+r.hazard,r));
+  });
+  const rows=[...merged.values()];
+  if(!rows.length){toast(bad?"None of the dropped files look like a hazard grid (need lat, lon, scenario, v10..v500).":"Could not read the hazard grids.");return;}
+  const name=used.length>1?used[0]+" + "+(used.length-1)+" more (merged)":used[0];
+  installHazardRows(rows,name);
 }
 function loadHazardMeta(text,name){
   let data=null;
@@ -152,6 +182,28 @@ function readFile(file,cb){
   r.onload=()=>{ try{ cb(r.result); }catch(e){ toast("Could not read that file."); } };
   r.onerror=()=>toast("Could not read that file.");
   r.readAsText(file);
+}
+/* read a whole FileList to [{name,text},...] then hand off once, so a batch of
+   files (CSV grids + JSON sidecars) is loaded together instead of racing */
+function readFiles(files,done){
+  const arr=Array.from(files||[]);let left=arr.length;const out=[];
+  if(!left){done([]);return;}
+  arr.forEach((f,i)=>{const r=new FileReader();
+    r.onload=()=>{out[i]={name:f.name||"",text:r.result};if(--left===0)done(out.filter(Boolean));};
+    r.onerror=()=>{if(--left===0)done(out.filter(Boolean));};
+    r.readAsText(f);});
+}
+/* the hazard drop zone accepts the grid CSV(s) and the JSON sidecar(s) in one
+   go: JSON files route to the provenance/results-pack handlers; a single CSV
+   loads as before; multiple CSVs merge (later wins) instead of overwriting. */
+function routeHazFiles(files){
+  readFiles(files,list=>{
+    const jsons=[],csvs=[];
+    list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
+    if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
+    else if(csvs.length>1) loadHazardCsvMulti(csvs);
+    jsons.forEach(o=>routeHazJson(o.text,o.name));
+  });
 }
 
 /* ---- persistence (guarded; safe if storage is unavailable or full) ---- */
