@@ -49,6 +49,7 @@ Usage (both the FIRMS CSVs and sites.csv are auto-discovered):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import tempfile
 import warnings
@@ -297,6 +298,38 @@ def _ensure_cartopy_cache():
                 "Set CLAM_CARTOPY_DIR to a writable directory.")
 
 
+class _DropPetalsDeprecation(logging.Filter):
+    """Drop Petals' internal 'X is deprecated' log notices, nothing else.
+
+    from_hist_fire_seasons_FIRMS (the non-deprecated classmethod build_wildfire_
+    hazard calls) loops over fire seasons and, inside Petals, calls the
+    DEPRECATED WildFire.set_hist_fire_FIRMS once per year. Each call logs a
+    WARNING on the Petals wildfire logger, so a ~25-year FIRMS archive prints
+    ~25 identical 'is deprecated' lines. We already use the recommended
+    classmethod; the deprecated call is Petals' own, so there is nothing to fix
+    on our side but the noise. Crucially these are logging records
+    (LOGGER.warning), NOT Python warnings, so warnings.simplefilter cannot touch
+    them -- a logging filter can. Match only the deprecation text so genuine
+    progress (INFO) and real warnings/errors from the same logger still show."""
+
+    def filter(self, record):   # noqa: A003 (this IS the logging.Filter API)
+        return "is deprecated" not in record.getMessage()
+
+
+@contextlib.contextmanager
+def _quiet_petals_deprecation(logger_name):
+    """Attach _DropPetalsDeprecation to the named logger for the duration, then
+    remove it. Scoped to the Petals wildfire logger and to the build call, so it
+    silences the deprecation flood without hiding anything elsewhere or after."""
+    logger = logging.getLogger(logger_name)
+    filt = _DropPetalsDeprecation()
+    logger.addFilter(filt)
+    try:
+        yield
+    finally:
+        logger.removeFilter(filt)
+
+
 def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
                           year_start=None, year_end=None, n_proba_seasons=0):
     """Probabilistic wildfire Hazard from a FIRMS DataFrame via Petals' WildFire.
@@ -310,10 +343,15 @@ def build_wildfire_hazard(df_firms, centr_res_factor=0.05,
     _ensure_cartopy_cache()
     from climada_petals.hazard import WildFire
     ctor = getattr(WildFire, "from_hist_fire_seasons_FIRMS", None)
-    with warnings.catch_warnings():
-        # Petals sets values via chained assignment internally (wildfire.py), which
-        # pandas >= 2.2 flags once per fire event with a FutureWarning; silence the
-        # flood so real progress and errors stay visible. Still works on this pandas.
+    # Two independent noise sources are silenced around the build:
+    #  - warnings.catch_warnings(): Petals sets values via chained assignment
+    #    internally (wildfire.py), which pandas >= 2.2 flags once per fire event
+    #    with a FutureWarning -- a Python warning, silenced by the filter below.
+    #  - _quiet_petals_deprecation(): from_hist_fire_seasons_FIRMS itself calls
+    #    the deprecated set_hist_fire_FIRMS once per year, each a LOGGER.warning
+    #    (a logging record, which the warnings filter CANNOT reach). Scoped to
+    #    the exact Petals wildfire logger; real progress and errors stay visible.
+    with warnings.catch_warnings(), _quiet_petals_deprecation(WildFire.__module__):
         warnings.simplefilter("ignore", FutureWarning)
         if ctor is not None:
             wf = ctor(df_firms, centr_res_factor=centr_res_factor,
