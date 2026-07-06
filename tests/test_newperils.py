@@ -5,8 +5,11 @@ extended validate_grid gate. Run from pipeline/:
 """
 
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -93,9 +96,76 @@ class FakeRainHaz:
         self.frequency = np.full(30, 1 / 30.0)
 
 
+def test_firms_io():
+    """load_firms + filter_firms_to_regions (the pure FIRMS input path) and the
+    graceful no-FIRMS degradation, none of which needs CLIMADA."""
+    modis = pd.DataFrame({"LATITUDE": [34.0, 12.0], "LONGITUDE": [-116.5, 40.0],
+                          "ACQ_DATE": ["2020-08-01", "2020-01-01"],
+                          "INSTRUMENT": ["MODIS", "MODIS"],
+                          "CONFIDENCE": [80, 90], "BRIGHTNESS": [330.0, 300.0]})
+    viirs = pd.DataFrame({"latitude": [30.0], "longitude": [-98.5],
+                          "acq_date": ["2019-09-10"], "instrument": ["VIIRS"],
+                          "confidence": ["n"], "bright_ti4": [340.0]})
+    modis.to_csv("sim_firms_modis.csv", index=False)
+    viirs.to_csv("sim_firms_viirs.csv", index=False)
+    df = rw.load_firms(["sim_firms_modis.csv", "sim_firms_viirs.csv"])
+    assert set(rw.FIRMS_REQUIRED).issubset(df.columns)
+    assert "brightness" in df.columns and "bright_ti4" in df.columns
+    assert len(df) == 3 and df["latitude"].dtype.kind == "f"
+    kept = rw.filter_firms_to_regions(df)
+    assert len(kept) == 2 and (kept["latitude"] < 40).all(), \
+        "only detections inside the portfolio region boxes survive"
+    ok("load_firms/filter: MODIS+VIIRS concat, header normalise, region box")
+    pd.DataFrame({"latitude": [1.0], "longitude": [2.0]}).to_csv("sim_firms_bad.csv", index=False)
+    try:
+        rw.load_firms(["sim_firms_bad.csv"]); rejected = False
+    except ValueError:
+        rejected = True
+    assert rejected, "a FIRMS CSV missing required columns must raise a clear error"
+
+    # resolve_firms and the no-FIRMS path, run in an isolated temp dir with
+    # FIRMS_CSV unset, so the test never touches (or is fooled by) a real ./firms/
+    # or firms_us.csv an operator may have placed in pipeline/.
+    assert rw.resolve_firms(["a.csv", "b.csv"]) == ["a.csv", "b.csv"], "explicit --firms wins"
+    saved_env = os.environ.pop("FIRMS_CSV", None)
+    cwd = os.getcwd()
+    tmp = tempfile.mkdtemp()
+    try:
+        os.chdir(tmp)
+        assert rw.resolve_firms(None) is None, "nothing to auto-discover"
+        Path("firms_us.csv").write_text("x")
+        assert rw.resolve_firms(None) == ["firms_us.csv"], "firms_us.csv is discovered"
+        Path("firms_us.csv").unlink(); os.mkdir("firms")
+        assert rw.resolve_firms(None) == ["firms"], "a ./firms/ folder is discovered"
+        os.rmdir("firms")
+        rc = rw.main(["--out", "wfire_nofirms.csv"])
+        assert rc == 1, "no FIRMS anywhere is a clean exit 1, not a crash"
+        meta = json.loads(Path("wfire_nofirms_meta.json").read_text())
+        assert meta["skipped"] and "FIRMS" in meta["skipped"][0]["reason"]
+    finally:
+        os.chdir(cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+        if saved_env is not None:
+            os.environ["FIRMS_CSV"] = saved_env
+    ok("resolve_firms: explicit wins else FIRMS_CSV/./firms/; no FIRMS exits 1 cleanly")
+
+
 def run():
-    rw.fetch_wildfire_hazard = lambda iso3: FakeFire()
-    rc = rw.main(["--countries", "USA", "--out", "sim_wfire_grid.csv"])
+    # FIRMS input + the corrected seam: Petals is mocked (build_wildfire_hazard),
+    # but the real load_firms + filter_firms_to_regions + main plumbing run. The
+    # detections sit in the SW and SE/Gulf boxes (plus one outside, to be dropped).
+    firms = pd.DataFrame({
+        "latitude":   [34.00, 34.05, 30.00, 12.00],
+        "longitude":  [-116.50, -116.55, -98.50, 40.00],
+        "acq_date":   ["2020-08-01", "2021-07-15", "2019-09-10", "2020-01-01"],
+        "instrument": ["MODIS", "MODIS", "VIIRS", "MODIS"],
+        "confidence": [80, 65, "n", 90],
+        "brightness": [330.0, 320.0, np.nan, 300.0],
+        "bright_ti4": [np.nan, np.nan, 340.0, np.nan],
+    })
+    firms.to_csv("sim_firms.csv", index=False)
+    rw.build_wildfire_hazard = lambda df, **kw: FakeFire()
+    rc = rw.main(["--firms", "sim_firms.csv", "--out", "sim_wfire_grid.csv"])
     assert rc == 0
     wf = pd.read_csv("sim_wfire_grid.csv")
     assert set(wf["hazard"]) == {"wfire"} and set(wf["scenario"]) == set(rw.WARMING)
@@ -155,4 +225,5 @@ if __name__ == "__main__":
     test_scenario_uplift()
     test_wfire_rows_encoding()
     test_prain_scaling()
+    test_firms_io()
     run()

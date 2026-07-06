@@ -843,7 +843,7 @@ def fetch_river_flood_hazards(iso3, app_key, meta):
 
 
 def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
-                       fire_enabled=True, rain_enabled=True):
+                       fire_enabled=True, rain_enabled=True, firms_df=None):
     """Fetch hazards once per country and reduce them to per-site intensity
     matrices (the pure structure eval_scenario consumes)."""
     lat = sites_c["latitude"].to_numpy(float)
@@ -923,18 +923,28 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                                         "reason": "no river_flood dataset"})
 
     if fire_enabled:
-        try:
-            fhaz = rw.fetch_wildfire_hazard(iso3)
-            fidx, _fd = nearest_centroids(lat, lon, fhaz.centroids.lat,
-                                          fhaz.centroids.lon)
-            prep["wfire"] = {"freq": np.asarray(fhaz.frequency, float),
-                             "hits": site_intensity(fhaz, fidx) > 0}
-            LOG.info("  wfire %s -> %d events x %d sites", iso3,
-                     *prep["wfire"]["hits"].shape)
-        except Exception as exc:
-            LOG.warning("Wildfire unavailable %s: %s", iso3, str(exc)[:200])
+        # Petals' WildFire needs a FIRMS DataFrame, not a country code (see
+        # refresh_wildfire.build_wildfire_hazard). Without a --firms download the
+        # event-set wildfire layer is skipped, exactly as the grid producer does.
+        if firms_df is None or len(firms_df) == 0:
+            LOG.warning("Wildfire skipped %s: no FIRMS CSV supplied (--firms); "
+                        "download from https://firms.modaps.eosdis.nasa.gov/download/",
+                        iso3)
             meta["skipped"].append({"country": iso3, "layer": "wfire",
-                                    "reason": str(exc)[:300]})
+                                    "reason": "no FIRMS CSV supplied (--firms)"})
+        else:
+            try:
+                fhaz = rw.build_wildfire_hazard(firms_df)
+                fidx, _fd = nearest_centroids(lat, lon, fhaz.centroids.lat,
+                                              fhaz.centroids.lon)
+                prep["wfire"] = {"freq": np.asarray(fhaz.frequency, float),
+                                 "hits": site_intensity(fhaz, fidx) > 0}
+                LOG.info("  wfire %s -> %d events x %d sites", iso3,
+                         *prep["wfire"]["hits"].shape)
+            except Exception as exc:
+                LOG.warning("Wildfire unavailable %s: %s", iso3, str(exc)[:200])
+                meta["skipped"].append({"country": iso3, "layer": "wfire",
+                                        "reason": str(exc)[:300]})
     if rain_enabled:
         try:
             rhz = rpn.rain_hazard(rpn.fetch_tracks(iso3), iso3)
@@ -1109,6 +1119,9 @@ def main(argv=None) -> int:
     ap.add_argument("--mc", type=int, default=300,
                     help="Monte Carlo samples (default %(default)s)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--firms", nargs="+", default=None,
+                    help="NASA FIRMS archive CSV(s) or a directory, for the "
+                         "wildfire layer (https://firms.modaps.eosdis.nasa.gov/download/)")
     ap.add_argument("--no-fire", action="store_true",
                     help="skip the wildfire event layer in the pack")
     ap.add_argument("--no-rain", action="store_true",
@@ -1139,6 +1152,21 @@ def main(argv=None) -> int:
     LOG.info("Loaded %d sites from %s", len(sites), args.sites)
     meta = {"skipped": [], "wind_sources": {}, "_countries": set()}
 
+    # Wildfire needs an operator-supplied FIRMS DataFrame (Petals has no
+    # download-by-country). Load and region-trim it once; None means the pack's
+    # wildfire layer is skipped per country, recorded in meta.
+    firms_df = None
+    if not args.no_fire:
+        firms = rw.resolve_firms(args.firms)
+        if firms:
+            try:
+                firms_df = rw.filter_firms_to_regions(rw.load_firms(firms))
+                LOG.info("FIRMS: %d detections within the portfolio regions",
+                         len(firms_df))
+            except Exception as exc:
+                LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
+                firms_df = None
+
     per_country, order = [], []
     calib_parts, matched_names = [], set()
     for iso3, sites_c in sites.groupby("country", sort=True):
@@ -1147,7 +1175,8 @@ def main(argv=None) -> int:
         prep = build_country_prep(iso3, sites_c, surge_enabled,
                                   not args.no_river, meta,
                                   fire_enabled=not args.no_fire,
-                                  rain_enabled=not args.no_rain)
+                                  rain_enabled=not args.no_rain,
+                                  firms_df=firms_df)
         values = sites_c["asset_value_usd"].to_numpy(float)
         vulns = [vuln_v2(r.construction, r.year_built, r.defended,
                          roof_type=r.roof_type, roof_year=r.roof_year,

@@ -39,5 +39,13 @@ sim_prain_grid*
 sim_tc_base.csv
 sim_sixperil_grid.csv
 sim_badfire_grid.csv
+sim_firms*.csv
+sim_wfire_nofirms*
 wfire_grid*
 prain_grid*
+
+# NASA FIRMS downloads for the wildfire layer (operator-supplied, can be large)
+firms/
+firms_us.csv
+fire_archive*.csv
+fire_nrt*.csv
