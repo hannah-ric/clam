@@ -1156,14 +1156,16 @@ def main(argv=None) -> int:
     # download-by-country). Load and region-trim it once; None means the pack's
     # wildfire layer is skipped per country, recorded in meta.
     firms_df = None
-    if not args.no_fire and args.firms:
-        try:
-            firms_df = rw.filter_firms_to_regions(rw.load_firms(args.firms))
-            LOG.info("FIRMS: %d detections within the portfolio regions",
-                     len(firms_df))
-        except Exception as exc:
-            LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
-            firms_df = None
+    if not args.no_fire:
+        firms = rw.resolve_firms(args.firms)
+        if firms:
+            try:
+                firms_df = rw.filter_firms_to_regions(rw.load_firms(firms))
+                LOG.info("FIRMS: %d detections within the portfolio regions",
+                         len(firms_df))
+            except Exception as exc:
+                LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
+                firms_df = None
 
     per_country, order = [], []
     calib_parts, matched_names = [], set()

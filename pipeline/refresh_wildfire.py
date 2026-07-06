@@ -30,8 +30,10 @@ expected, hence "'str' object has no attribute 'columns'"). The operator
 supplies the file, exactly like the one-time DEM. Without it the app keeps
 wildfire on its wui_class interim model, by design.
 
-Usage:
-    python refresh_wildfire.py --firms firms_us.csv     # writes wfire_grid.csv (+ meta)
+Usage (the FIRMS source is auto-discovered, so a plain run works once the CSVs
+are in ./firms/):
+    python refresh_wildfire.py                          # uses ./firms/ or firms_us.csv
+    python refresh_wildfire.py --firms firms_us.csv     # or an explicit path
     python refresh_wildfire.py --firms firms/           # a folder of FIRMS CSVs
     python merge_grids.py hazard_grid.csv wfire_grid.csv -o hazard_grid.csv
     python validate_grid.py hazard_grid.csv hazard_grid_meta.json
@@ -40,6 +42,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import logging
 from datetime import datetime, timezone
@@ -74,6 +77,9 @@ FIRE_REGIONS = [
 # Columns climada_petals' WildFire._clean_firms_df reads. MODIS carries
 # 'brightness' with a numeric 'confidence'; VIIRS carries 'bright_ti4' with l/n/h.
 FIRMS_REQUIRED = ["latitude", "longitude", "acq_date", "instrument", "confidence"]
+# Auto-discovered when --firms is not passed: the FIRMS_CSV env var, then a
+# ./firms/ folder of CSVs, then a single firms_us.csv, in the working directory.
+DEFAULT_FIRMS = ["firms", "firms_us.csv"]
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +122,20 @@ def wfire_rows(lat, lon, p_present, grid_deg=rh.GRID_DEG):
 # ---------------------------------------------------------------------------
 # FIRMS input (operator-supplied CSV; Petals has no download-by-country)
 # ---------------------------------------------------------------------------
+
+def resolve_firms(paths):
+    """The FIRMS source to use: the explicit --firms list if given, else the
+    FIRMS_CSV env var, else a ./firms/ folder or firms_us.csv found in the working
+    directory, else None. Lets a plain `refresh_wildfire.py` run pick up dropped
+    files without a flag."""
+    if paths:
+        return list(paths)
+    env = os.environ.get("FIRMS_CSV")
+    if env:
+        return [env]
+    found = [c for c in DEFAULT_FIRMS if Path(c).exists()]
+    return found or None
+
 
 def load_firms(paths):
     """Read one or more NASA FIRMS archive CSVs (or a directory of them) into the
@@ -233,21 +253,22 @@ def main(argv=None) -> int:
             "units": {"wfire": "indicator encoding, see 'encoding'"},
             "layers": [], "skipped": []}
 
-    if not args.firms:
-        LOG.error("No FIRMS data supplied. Petals' WildFire builds its hazard "
-                  "from a FIRMS DataFrame, not a country code, and cannot "
-                  "download it. Get the MODIS and/or VIIRS archive CSV for the US "
-                  "from https://firms.modaps.eosdis.nasa.gov/download/ and pass "
-                  "it: python refresh_wildfire.py --firms firms_us.csv "
-                  "(or --firms firms/ for a folder). The app keeps wildfire on "
+    firms = resolve_firms(args.firms)
+    if not firms:
+        LOG.error("No FIRMS data found. Petals' WildFire builds its hazard from a "
+                  "FIRMS DataFrame, not a country code, and cannot download it. "
+                  "Put the MODIS and/or VIIRS archive CSV(s) from "
+                  "https://firms.modaps.eosdis.nasa.gov/download/ in ./firms/ (or "
+                  "pass --firms PATH, or set FIRMS_CSV). The app keeps wildfire on "
                   "its wui_class interim model until then.")
         meta["skipped"].append({"country": args.country, "layer": "wfire",
-                                "reason": "no FIRMS CSV supplied (--firms)"})
+                                "reason": "no FIRMS CSV found (--firms / FIRMS_CSV "
+                                          "/ ./firms/)"})
         _write_meta(args.out, meta)
         return 1
 
     try:
-        df = load_firms(args.firms)
+        df = load_firms(firms)
     except Exception as exc:
         LOG.error("Could not read FIRMS data: %s", exc)
         meta["skipped"].append({"country": args.country, "layer": "wfire",
@@ -290,7 +311,7 @@ def main(argv=None) -> int:
         meta["layers"].append({"hazard": "wfire", "scenario": sc,
                                "country": args.country,
                                "cells": int(len(rows) / len(WARMING))})
-    meta["firms"] = {"files": [Path(x).name for x in args.firms],
+    meta["firms"] = {"files": [Path(x).name for x in firms],
                      "detections_total": int(n_all),
                      "detections_in_regions": int(len(df)),
                      "centr_res_factor": args.centr_res_factor,

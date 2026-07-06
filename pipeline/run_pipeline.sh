@@ -88,21 +88,16 @@ fi
 if [ "$FIRE" -eq 1 ]; then
   echo; echo "== STEP 2b  Wildfire layer (Petals WildFire burn probability) ======="
   # Petals builds the fire hazard from a NASA FIRMS archive CSV, not a country
-  # code. Resolve one from $FIRMS_CSV, a ./firms/ folder, or firms_us.csv.
-  FIRMS_SRC="${FIRMS_CSV:-}"
-  if [ -z "$FIRMS_SRC" ]; then
-    if [ -d firms ]; then FIRMS_SRC="firms"; elif [ -f firms_us.csv ]; then FIRMS_SRC="firms_us.csv"; fi
-  fi
-  if [ -z "$FIRMS_SRC" ]; then
-    echo "  wildfire skipped: no FIRMS data found."
-    echo "  Download MODIS/VIIRS active fires for the US from"
-    echo "  https://firms.modaps.eosdis.nasa.gov/download/ then re-run with"
-    echo "  FIRMS_CSV=firms_us.csv bash run_pipeline.sh --fire  (or put CSVs in ./firms/)."
-    echo "  The app keeps wildfire on its wui_class interim model until then."
-  elif run python refresh_wildfire.py --firms "$FIRMS_SRC"; then
+  # code. refresh_wildfire auto-discovers the source (FIRMS_CSV env, ./firms/, or
+  # firms_us.csv) and exits cleanly with guidance when none is present, so guard
+  # the exit status: a graceful skip must not abort the whole run under set -e.
+  if run python refresh_wildfire.py; then
     MERGE_IN="$MERGE_IN wfire_grid.csv"
   else
-    echo "  wildfire step did not produce a layer; continuing without it (see log above)."
+    echo "  wildfire skipped: no FIRMS data found. Put MODIS/VIIRS CSVs from"
+    echo "  https://firms.modaps.eosdis.nasa.gov/download/ in pipeline/firms/ (or"
+    echo "  set FIRMS_CSV=...), then re-run. The app keeps wildfire on its"
+    echo "  wui_class interim model until then."
   fi
 fi
 if [ "$RAIN" -eq 1 ]; then

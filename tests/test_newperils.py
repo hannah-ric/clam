@@ -5,8 +5,11 @@ extended validate_grid gate. Run from pipeline/:
 """
 
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -119,11 +122,32 @@ def test_firms_io():
     except ValueError:
         rejected = True
     assert rejected, "a FIRMS CSV missing required columns must raise a clear error"
-    rc = rw.main(["--out", "sim_wfire_nofirms.csv"])
-    assert rc == 1, "no --firms is a clean exit 1, not a crash"
-    meta = json.loads(Path("sim_wfire_nofirms_meta.json").read_text())
-    assert meta["skipped"] and "FIRMS" in meta["skipped"][0]["reason"]
-    ok("no FIRMS input: clear error, exit 1, meta records the skip (graceful)")
+
+    # resolve_firms and the no-FIRMS path, run in an isolated temp dir with
+    # FIRMS_CSV unset, so the test never touches (or is fooled by) a real ./firms/
+    # or firms_us.csv an operator may have placed in pipeline/.
+    assert rw.resolve_firms(["a.csv", "b.csv"]) == ["a.csv", "b.csv"], "explicit --firms wins"
+    saved_env = os.environ.pop("FIRMS_CSV", None)
+    cwd = os.getcwd()
+    tmp = tempfile.mkdtemp()
+    try:
+        os.chdir(tmp)
+        assert rw.resolve_firms(None) is None, "nothing to auto-discover"
+        Path("firms_us.csv").write_text("x")
+        assert rw.resolve_firms(None) == ["firms_us.csv"], "firms_us.csv is discovered"
+        Path("firms_us.csv").unlink(); os.mkdir("firms")
+        assert rw.resolve_firms(None) == ["firms"], "a ./firms/ folder is discovered"
+        os.rmdir("firms")
+        rc = rw.main(["--out", "wfire_nofirms.csv"])
+        assert rc == 1, "no FIRMS anywhere is a clean exit 1, not a crash"
+        meta = json.loads(Path("wfire_nofirms_meta.json").read_text())
+        assert meta["skipped"] and "FIRMS" in meta["skipped"][0]["reason"]
+    finally:
+        os.chdir(cwd)
+        shutil.rmtree(tmp, ignore_errors=True)
+        if saved_env is not None:
+            os.environ["FIRMS_CSV"] = saved_env
+    ok("resolve_firms: explicit wins else FIRMS_CSV/./firms/; no FIRMS exits 1 cleanly")
 
 
 def run():
