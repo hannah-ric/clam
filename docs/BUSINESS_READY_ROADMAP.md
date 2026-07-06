@@ -136,6 +136,12 @@ Effort tags: S (about a day), M (days), L (a week or two).
 -----------------------------------------------------------------------------
 R1. RISK TOLERANCE AND DECISION ROUTING (the keystone)          [Effort: S-M]
 -----------------------------------------------------------------------------
+STATUS: SHIPPED (v2.2.0, Wave 1). tolerance state with defensive-merge
+persistence; toleranceFlags() routes breaches to lanes; Position-vs-tolerance
+panel on Summary with editable thresholds; breach markers in the Sites table;
+position sentence in the executive read-out; INFO entry states the default
+thresholds' basis. Pinned by new test_frontend assertions; parity untouched.
+
 What: a user-set risk tolerance (defaults suggested, always editable and
 documented): portfolio AAL as percent of insured value, site AAL in basis
 points of site value, and 1-in-100 loss as percent of value. Every breach
@@ -179,6 +185,13 @@ no change to any computed number, no export change. Parity suite untouched.
 -----------------------------------------------------------------------------
 R2. RENEWAL-GRADE INSURANCE WORKBENCH                             [Effort: M]
 -----------------------------------------------------------------------------
+STATUS: SHIPPED (v2.2.0, Wave 1). adapt.quote input with a verdict against
+the modeled technical premium and the event-set benchmark (honest caveats
+inline); layerSlices()/retentionSweep() render the attachment trade with the
+working-layer column; brokerPackCsv()/exportBrokerPack() emit the evidence
+artifact (new file; the Power BI export is untouched). Tests pin slice
+reconciliation against layerStatsCalc and the artifact schema.
+
 What: turn the layering panel from "here are the layer economics" into "here
 is your renewal position." Three parts:
 (a) Quote verdict: an input for the broker's quoted premium; the app states
@@ -231,6 +244,13 @@ not modify it).
 -----------------------------------------------------------------------------
 R3. PORTFOLIO ACTION QUEUE WITH A FUNDING CUTLINE                 [Effort: M]
 -----------------------------------------------------------------------------
+STATUS: SHIPPED (v2.2.0, Wave 1). actionQueue() ranks every in-scope pair,
+draws the budget cutline with defer-not-drop semantics, and rolls the funded
+program up JOINTLY per site so overlapping measures never double-count; the
+pack's capital plan renders beside it as canonical; actionListCsv() emits the
+committee artifact with live and pack rows labeled. Tests pin the ranking,
+the cutline, the joint roll-up bound, and the export schema.
+
 What: one ranked work queue for the whole portfolio: every (site, measure)
 pair in scope, ranked by BCR, with an annual-budget input drawing a visible
 funded/deferred cutline, a program roll-up (total cost, total averted AAL,
@@ -575,6 +595,16 @@ Acceptance: an operator can state the portfolio's position against a
 documented tolerance, hand a broker an evidence pack and a quote verdict,
 and hand a capital committee a funded, phased action list; all with the
 test suite green and the Power BI export byte-identical.
+
+STATUS: SHIPPED as app v2.2.0. All three items live, plus a transparency
+pass: a plain-language "How to read this app" guide on the Method tab
+(AAL, return periods, VaR, BCR, technical premium, tolerance, uncertainty,
+data provenance, and what the app never does), five new INFO popovers for
+the new surfaces, and Method-tab documentation of both new artifacts.
+Acceptance met: parity suite byte-identical, all gates green, and a
+real-browser smoke pass drove every new surface (tolerance edit, breach
+markers, quote verdict, retention table, budget cutline, all three
+exports) with zero console errors.
 
 WAVE 2: THE ARTIFACT LAYER (R4 disclosure pack, R5 board brief v2, R6
 capital case, R7 validation surface; roughly 1-2 weeks)

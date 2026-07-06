@@ -222,6 +222,8 @@
   details.trace{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:8px;background:var(--surface-2)}
   details.trace summary{cursor:pointer;font-size:13px}
   details.trace[open] summary{margin-bottom:4px}
+  /* ---- Wave 1: tolerance breach marker ---- */
+  .tolbreach{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--r-sev,#B23A32);margin-right:6px;vertical-align:middle}
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -335,6 +337,11 @@
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
         <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
+      </div>
+      <div class="panel" id="tolPanel" style="display:none">
+        <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
+        <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
+        <div id="tolBody"></div>
       </div>
       <div class="grid2">
         <div class="panel">
@@ -505,9 +512,19 @@
             <label>Premium loading factor <span class="mono" id="loadVal">1.5x</span><button type="button" class="info" data-info="loading" aria-label="How this is used" aria-expanded="false">i</button></label>
             <input type="range" id="load" min="1" max="3" step="0.1" value="1.5">
           </div>
+          <div class="field">
+            <label>Broker quote, annual premium (USD)<button type="button" class="info" data-info="quote" aria-label="How the quote is judged" aria-expanded="false">i</button></label>
+            <input type="number" id="quoteIn" min="0" step="10000" placeholder="blank = no quote yet">
+          </div>
           <div class="kv" id="layerStats" style="margin-top:8px"></div>
         </div>
         <div id="layerChart"></div>
+      </div>
+      <div id="sweepHost"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="lightbtn" id="brokerBtn">Export broker evidence pack (CSV)</button>
+        <button type="button" class="info" data-info="brokerPack" aria-label="What the evidence pack is" aria-expanded="false">i</button>
+        <span class="hint">Secondary modifiers plus the modeled view, for the renewal submission.</span>
       </div>
     </div>
     <div class="panel">
@@ -518,6 +535,23 @@
         <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">BCR</th></tr></thead>
         <tbody id="recBody"></tbody>
       </table>
+    </div>
+    <div class="panel">
+      <h3>Action queue &amp; funding cutline<button type="button" class="info" data-info="queue" aria-label="How the queue is built" aria-expanded="false">i</button></h3>
+      <div class="hint">Every in-scope site-and-measure pair, ranked by benefit-cost ratio. Set a program budget to draw the funding cutline: greedy fill from the top, nothing below breakeven, nothing dropped. The export is the capital-committee artifact.</div>
+      <div class="field" style="max-width:340px">
+        <label>Program budget (USD; blank funds everything above breakeven)</label>
+        <input type="number" id="budgetIn" min="0" step="500000" placeholder="no budget cap">
+      </div>
+      <div class="note" id="queueRoll" style="margin-bottom:10px"></div>
+      <table class="tbl" id="queueTbl">
+        <thead><tr><th>#</th><th>Site</th><th>Measure</th><th class="num">Averted $/yr</th>
+        <th class="num">Cost</th><th class="num">BCR</th><th>Status</th></tr></thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+      <div class="hint" id="queueMore" style="margin-top:6px"></div>
+      <div id="queuePack"></div>
+      <div style="margin-top:10px"><button class="lightbtn" id="actionBtn">Export action list (CSV)</button></div>
     </div>
   </section>
 
@@ -621,6 +655,27 @@
   <section class="tabpane" id="tab-method" role="tabpanel" aria-label="Method and data">
     <h2 class="sec">Method &amp; data</h2>
     <p class="sub">What the numbers mean and how to make them authoritative. Built to be audit-ready.</p>
+    <div class="panel">
+      <h3>How to read this app, in plain language</h3>
+      <div class="hint">The short version of every concept the numbers rely on. Each figure in the app also carries its own <b>i</b> button with the specifics, and every site scorecard can trace a number back to its data source.</div>
+      <div class="grid2">
+        <div class="kv">
+          <span class="k">Expected annual cost (AAL)</span><span class="v">The average yearly bill if this year could be rerun thousands of times: most runs cost little, rare disaster runs cost a lot, and this is the long-run average. It is the number insurers price from.</span>
+          <span class="k">Return period</span><span class="v">"1-in-100" means a 1% chance each year, not an event that arrives on schedule. Two can land in one decade; that is chance behaving normally, not a broken model.</span>
+          <span class="k">Value at Risk</span><span class="v">The size of a bad year at a stated rarity: what a 1-in-100 year would cost the whole portfolio, damage plus lost operating profit.</span>
+          <span class="k">Risk bands</span><span class="v">Plain-language grades (Minimal to Severe) cut from expected loss as a share of value, so sites can be sorted and discussed without decimals.</span>
+          <span class="k">Pathways and horizons</span><span class="v">SSP pathways are IPCC emissions futures (SSP1-2.6 low, SSP2-4.5 middle, SSP5-8.5 high) at 2030, 2050, and 2080. They are what-ifs to compare, not forecasts to believe.</span>
+          <span class="k">Benefit-cost ratio (BCR)</span><span class="v">Averted losses over the appraisal horizon, brought to today's dollars, divided by the upfront cost. Above 1.0, the measure returns more than it costs in avoided loss alone.</span>
+        </div>
+        <div class="kv">
+          <span class="k">Technical premium</span><span class="v">The expected loss an insurance layer takes on, times a loading for the insurer's capital and expenses. A benchmark for judging quotes, not a market price.</span>
+          <span class="k">Risk tolerance</span><span class="v">Your stated line between monitor and act, set on the Summary tab. The app flags whatever crosses it; where the line sits is a business decision the app never makes for you.</span>
+          <span class="k">Uncertainty band</span><span class="v">No single number here is exact. The low-to-high range says how far the truth could plausibly sit from the central estimate, and the tornado chart names the largest single reason.</span>
+          <span class="k">Where the data comes from</span><span class="v">Public climate science, run through the CLIMADA pipeline into a hazard grid this app reads. The per-peril chips on this tab show green when that is live; until then a clearly labeled interim approximation fills in, for exploration only.</span>
+          <span class="k">What this app never does</span><span class="v">Fill a data gap silently. Perils without data score zero and say why, interim figures are labeled everywhere they appear, and nothing you load ever leaves your browser.</span>
+        </div>
+      </div>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h3>Hazard source</h3>
@@ -680,11 +735,13 @@
             <span class="k">Vulnerability attributes</span><span class="v">Optional per-site modifiers: construction frame x1.3 / masonry x1.0 / engineered x0.75 on wind damage; pre-1995 x1.15, post-2010 x0.9; defended adds 0.5 m flood freeboard</span>
             <span class="k">Uncertainty</span><span class="v">One-at-a-time sweeps over hazard intensity, damage steepness, exposure, revenue, and reopen time, combined by root-sum-square (screening unsequa)</span>
             <span class="k">Backtest</span><span class="v">Observed annual losses vs modeled present-day damage AAL; portfolio bias flags systematic mis-calibration</span>
+            <span class="k">Decision layer</span><span class="v">Operator-set tolerance thresholds route breaches to lanes (capex, or transfer and accept); the action queue, retention sweep, and quote benchmark are all derived from the figures above and never alter them</span>
           </div>
         </div>
       </div>
       <div class="note" style="margin-bottom:8px"><b>Known interim limits.</b> Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level basins (for example New Orleans behind levees) are understated, and the latitude-based heat proxy underrepresents arid inland microclimates. These resolve when a CLIMADA hazard grid is loaded. Measure costs and strengths are planning-grade defaults drawn from published mitigation studies; replace them with engineering estimates before committing capital. Treat figures as screening estimates, not disclosure, until then.</div>
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
+      <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
     <div class="panel">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
@@ -711,7 +768,7 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.1.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.2.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>

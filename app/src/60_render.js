@@ -9,6 +9,7 @@ function render(){
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
   renderSummary();
+  renderTolerance();
   renderScrub();
   renderSites();
   renderAdaptation();
@@ -65,6 +66,63 @@ function renderSummary(){
   document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
   document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
     "Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated, and the heat overlay is indicative; a CLIMADA grid sharpens both. Financial assumptions are set on the Financial impact tab.";
+}
+/* Wave 1 R1: the tolerance panel. Reads the appraisal sliders for the
+   breakeven screen (defaults when unset) so the lane routing matches the
+   Adaptation tab's own appraisal. Render-only: every figure comes from
+   toleranceFlags over the parity-pinned finPortfolio. */
+function tolAf(){
+  const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
+  return annuity(hv===""?20:+hv,(dv===""?2:+dv)/100);
+}
+function renderTolerance(){
+  const host=document.getElementById("tolBody"); if(!host)return;
+  const panel=document.getElementById("tolPanel");
+  if(!sites.length){ if(panel)panel.style.display="none"; return; }
+  if(panel)panel.style.display="block";
+  const t=toleranceFlags(sites,scenario,tolAf());
+  const fld=(key,label,val,step,unit)=>'<div class="field" style="margin-bottom:4px"><label>'+label+'</label>'+
+    '<input type="number" data-tol="'+key+'" min="0" step="'+step+'" value="'+val+'" style="width:100%"> <span class="hint">'+unit+'</span></div>';
+  const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
+    ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
+  let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
+    fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps of site value, expected annual cost")+
+    fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
+    fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
+    '</div><div class="kv" style="margin-top:8px">'+
+    line("Portfolio expected cost",t.portPct.toFixed(2)+"%",tolerance.portAalPct+"%",t.portBreach)+
+    line("1-in-100 Value at Risk",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
+    '<span class="k">Sites above threshold</span><span class="v mono">'+t.siteBreaches.length+' of '+sites.length+'</span>'+
+    '</div>';
+  if(t.siteBreaches.length){
+    h+='<table class="tbl" style="margin-top:8px"><thead><tr><th>Site</th><th class="num">Cost $/yr</th><th class="num">bps of value</th><th>Best in-scope measure</th><th class="num">BCR</th><th>Lane</th></tr></thead><tbody>'+
+      t.siteBreaches.map(b=>'<tr class="rowclick" data-focus="'+b.id+'"><td>'+esc(b.name)+'</td><td class="num mono">'+fmt$(b.aal)+'</td>'+
+        '<td class="num mono">'+b.bps.toFixed(0)+'</td><td>'+(b.bestMeasure?esc(b.bestMeasure):'<span class="hint">none in scope</span>')+'</td>'+
+        '<td class="num mono" style="color:'+(b.bestBcr>=1?"#2E8B6F":"#B23A32")+'">'+b.bestBcr.toFixed(2)+'x</td>'+
+        '<td>'+(b.lane==="capex"?"Harden (capex)":"Transfer or accept")+'</td></tr>').join("")+'</tbody></table>';
+  }
+  const acts=[];
+  const capex=t.siteBreaches.filter(b=>b.lane==="capex"),xfer=t.siteBreaches.filter(b=>b.lane==="transfer");
+  if(capex.length)acts.push("<b>Harden first:</b> "+capex.map(b=>esc(b.name)).join(", ")+" (a measure clears breakeven at each; the action queue on the Adaptation tab ranks the projects).");
+  if(xfer.length)acts.push("<b>Review transfer or accept:</b> "+xfer.map(b=>esc(b.name)).join(", ")+" (no measure clears breakeven at current settings; the risk-layering panel prices the transfer).");
+  if(t.varBreach)acts.push("<b>Tail above tolerance:</b> review the insurance attachment and limit against the retention table on the Adaptation tab.");
+  if(t.portBreach)acts.push("<b>Portfolio expected cost above tolerance:</b> fund the action queue and carry the plan into the disclosure table and the board brief.");
+  h+='<div class="note" style="margin-top:10px">'+(t.anyBreach
+    ?acts.join("<br>")
+    :"Within tolerance at "+esc(SCEN_LABEL[scenario]||scenario)+". These thresholds, and this statement, are the documented screening basis; they are editable above and travel with your saved session.")+'</div>';
+  host.innerHTML=h;
+  host.querySelectorAll("input[data-tol]").forEach(inp=>inp.onchange=()=>{
+    const v=+inp.value;
+    if(isFinite(v)&&v>=0){tolerance[inp.dataset.tol]=v;persist();render();}
+  });
+  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  // one-line position statement on the executive read-out
+  const ro=document.getElementById("sumReadout");
+  if(ro&&ro.innerHTML)ro.innerHTML+=" "+(t.anyBreach
+    ?'Against the stated risk tolerance, <b>'+(t.siteBreaches.length?t.siteBreaches.length+" site"+(t.siteBreaches.length>1?"s":""):"")+
+      (t.siteBreaches.length&&(t.portBreach||t.varBreach)?" and ":"")+
+      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; see Position vs tolerance below.'
+    :"The portfolio sits within its stated risk tolerance at this scenario.");
 }
 function renderOverview(scored){
   const hz=activeHazard, heat=hz==="heat", hazName=HAZARD_LABEL[hz];
@@ -159,9 +217,10 @@ function renderSites(){
   });
   const ratingCell=r=>'<div class="ratecell">'+HAZARDS.map(h=>
     '<span class="pill mini '+r.ratings[h.key]+'" title="'+h.label+': '+r.ratings[h.key]+'">'+h.short+'</span>').join("")+'</div>';
+  const tolIds=new Set(sites.length?toleranceFlags(sites,scenario,tolAf()).siteBreaches.map(b=>b.id):[]);
   document.getElementById("siteBody").innerHTML=rows.map(r=>
     '<tr class="rowclick '+(r.id===selectedId?"sel":"")+'" data-id="'+r.id+'">'+
-    '<td>'+esc(r.name)+'</td><td>'+esc(r.brand||"")+'</td>'+
+    '<td>'+(tolIds.has(r.id)?'<span class="tolbreach" title="Expected annual cost above the site tolerance ('+tolerance.siteAalBps+' bps of value); see Position vs tolerance on the Summary tab"></span>':'')+esc(r.name)+'</td><td>'+esc(r.brand||"")+'</td>'+
     '<td class="num mono">'+fmt$(r.asset_value_usd)+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.ead))+'</td>'+
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
@@ -219,7 +278,8 @@ function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
   if(!sites.length){
     host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
-    ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary"].forEach(id=>document.getElementById(id).innerHTML="");
+    ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary",
+     "sweepHost","queueRoll","queueBody","queuePack","queueMore"].forEach(id=>document.getElementById(id).innerHTML="");
     return;
   }
   // read shared settings
@@ -229,6 +289,8 @@ function renderAdaptation(){
   adapt.load=+document.getElementById("load").value;
   adapt.attach=+document.getElementById("attachSel").value;
   adapt.exhaust=+document.getElementById("exhaustSel").value;
+  adapt.quote=+document.getElementById("quoteIn").value||0;
+  adapt.budget=+document.getElementById("budgetIn").value||0;
   if(adapt.exhaust<=adapt.attach){adapt.exhaust=RPS.find(rp=>rp>adapt.attach)||500;document.getElementById("exhaustSel").value=adapt.exhaust;}
   document.getElementById("horizonVal").textContent=horizon;
   document.getElementById("discVal").textContent=(disc*100).toFixed(1)+"%";
@@ -295,8 +357,24 @@ function renderAdaptation(){
     '<span class="k">Indicative premium</span><span class="v mono">'+fmt$(ls.premium)+'/yr</span>'+
     '<span class="k">Cost of certainty</span><span class="v mono">'+fmt$(ls.premium-ls.transferred)+'/yr</span>'+
     (function(){const ps=packLayerStats(scenario);return (ps&&ps.limit>0)?
-      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})();
+      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})()+
+    (function(){ // Wave 1 R2: quoted premium vs the modeled benchmark
+      if(!(adapt.quote>0))return '';
+      const gapM=quoteGapPct(adapt.quote,ls.premium);
+      const psq=packLayerStats(scenario);
+      const gapP=(psq&&psq.limit>0)?quoteGapPct(adapt.quote,psq.premium):null;
+      const wd=g=>Math.abs(g)<=15?"broadly in line with":(g>0?g.toFixed(0)+"% above":Math.abs(g).toFixed(0)+"% below");
+      const hint=gapM==null?"No modeled premium to compare at this layer.":
+        gapM>15?"Grounds to negotiate, or to raise the attachment (see the retention table below).":
+        gapM<-15?"Below the technical benchmark: attractive if terms and exclusions are equivalent.":
+        "Within the range a benchmark can resolve.";
+      return '<span class="k">Broker quote'+infoBtn("quote")+'</span><span class="v mono">'+fmt$(adapt.quote)+'/yr'+
+        (gapM!=null?': '+wd(gapM)+' the modeled technical premium':'')+
+        (gapP!=null?'; '+wd(gapP)+' the event-set benchmark':'')+
+        '. <small>'+hint+' The '+adapt.load.toFixed(1)+'x loading assumption is yours to set.</small></span>';
+    })();
   document.getElementById("layerChart").innerHTML=layerSvg(f.varByRp,ls);
+  document.getElementById("sweepHost").innerHTML=sweepTable(f.varByRp,f.acuteAal);
   // per-site recommendations: best measure by site BCR
   const rec=sites.map(s=>{
     const sBase=adaptedFinSite(s,scenario,{}).totalAal;
@@ -315,6 +393,50 @@ function renderAdaptation(){
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
     (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
   document.querySelectorAll("#recBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+
+  // Wave 1 R3: the action queue with its funding cutline
+  const q=actionQueue(sites,scenario,af,adapt.budget);
+  const unf=q.items.filter(i=>!i.funded&&i.bcr>=1);
+  document.getElementById("queueRoll").innerHTML=q.items.length?
+    "<b>Program:</b> "+q.roll.n+" funded project"+(q.roll.n===1?"":"s")+", cost "+fmt$(q.roll.cost)+
+    (adapt.budget>0?" of the "+fmt$(adapt.budget)+" budget":"")+
+    ", jointly averting <b>"+fmt$(q.roll.averted)+"/yr</b> (program BCR "+q.roll.bcr.toFixed(2)+
+    "x; the roll-up is computed jointly per site, so overlapping measures never double-count)."+
+    (unf.length?" <b>"+unf.length+"</b> project"+(unf.length===1?"":"s")+" above breakeven sit"+(unf.length===1?"s":"")+
+      " unfunded ("+fmt$(unf.reduce((a,i)=>a+i.cost,0))+"): deferred by the budget, not dropped.":"")+
+    " Nothing below breakeven is ever funded.":
+    "No in-scope measures for this portfolio at current settings.";
+  const QSHOW=12;
+  document.getElementById("queueBody").innerHTML=q.items.slice(0,QSHOW).map((it,i)=>
+    '<tr class="rowclick" data-focus="'+it.id+'"><td class="mono">'+(i+1)+'</td><td>'+esc(it.site)+'</td><td>'+esc(it.measure)+'</td>'+
+    '<td class="num mono">'+fmt$(it.averted)+'</td><td class="num mono">'+fmt$(it.cost)+'</td>'+
+    '<td class="num mono" style="color:'+(it.bcr>=1?"#2E8B6F":"#B23A32")+'">'+it.bcr.toFixed(2)+'x</td>'+
+    '<td style="color:'+(it.funded?"#2E8B6F":"#7A8893")+';font-weight:600">'+(it.funded?"funded":"unfunded")+'</td></tr>').join("");
+  document.getElementById("queueMore").textContent=q.items.length>QSHOW?
+    ("Top "+QSHOW+" of "+q.items.length+" pairs shown; the export carries the full list."):"";
+  const pkq=resultsPack&&resultsPack.data;
+  document.getElementById("queuePack").innerHTML=(pkq&&pkq.capital_plan&&pkq.capital_plan.projects&&pkq.capital_plan.projects.length)?
+    '<div class="note" style="margin-top:10px"><b>Canonical plan (CLIMADA results pack):</b><br>'+
+    pkq.capital_plan.projects.slice(0,5).map(cp=>(cp.year!=null?"Y"+esc(cp.year):"deferred")+" · "+esc(cp.site)+" · "+esc(cp.measure)+" · BCR "+esc(cp.bcr)).join("<br>")+
+    '<br><small>Event-set appraisal at '+esc(pkq.capital_plan.scenario||"")+
+    (pkq.capital_plan.budget_annual_usd?', '+fmt$(pkq.capital_plan.budget_annual_usd)+'/yr budget':'')+
+    '. This is the authoritative ranking; the interactive queue above is the live estimate. Both go into the export.</small></div>':"";
+  document.querySelectorAll("#queueBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+}
+/* Wave 1 R2: the retention table. Every candidate attachment priced on the
+   same curve, exhaustion and loading held fixed. */
+function sweepTable(varByRp,acuteAal){
+  const rows=retentionSweep(varByRp,acuteAal,adapt.exhaust,adapt.load);
+  if(!rows.length)return "";
+  return '<h3 style="margin-top:14px">Retention: the attachment trade'+infoBtn("retention")+'</h3>'+
+    '<table class="tbl"><thead><tr><th>Attachment</th><th class="num">Retained below</th><th class="num">Transferred</th><th class="num">Premium</th><th class="num">Cost of certainty</th><th class="num">Tail beyond limit</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr'+(r.attach===adapt.attach?' style="background:#F2F5F3;font-weight:600"':'')+'>'+
+      '<td class="mono">1-in-'+r.attach+(r.attach===adapt.attach?" (current)":"")+'</td>'+
+      '<td class="num mono">'+fmt$(r.below)+'/yr</td><td class="num mono">'+fmt$(r.layer)+'/yr</td>'+
+      '<td class="num mono">'+fmt$(r.premium)+'/yr</td><td class="num mono">'+fmt$(r.certainty)+'/yr</td>'+
+      '<td class="num mono">'+fmt$(r.above)+'/yr</td></tr>').join("")+'</tbody></table>'+
+    '<div class="hint" style="margin-top:6px">Same exhaustion (1-in-'+adapt.exhaust+') and loading ('+adapt.load.toFixed(1)+
+    'x) on every row; only the attachment moves. Retained below is the working layer a higher retention or a captive would fund. The three slices always add up to the acute expected annual loss.</div>';
 }
 /* ECA-style adaptation cost curve: width = averted AAL, height = BCR */
 function costCurveSvg(appraised){

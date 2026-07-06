@@ -5,7 +5,7 @@
    modifier on one part of the risk chain. Modifiers compose, so the
    combined portfolio of measures never double-counts averted loss.
    ============================================================ */
-let adapt={growth:2.0,attach:25,exhaust:250,load:1.5,
+let adapt={growth:2.0,attach:25,exhaust:250,load:1.5,quote:0,budget:0,
   m:{wind:{on:true,strength:65,cost:1.0},
      flood:{on:true,fb:0.5,cost:0.6},
      buffer:{on:false,red:0.3,cost:0.4},
@@ -138,6 +138,185 @@ function layerStatsCalc(varByRp,acuteAal){
   const frac=Math.min(lay/tot,1);
   const transferred=acuteAal*frac;
   return {A,E,limit:Math.max(E-A,0),transferred,retained:acuteAal-transferred,premium:transferred*adapt.load,frac};
+}
+
+/* ============================================================
+   Wave 1 decision layer (business-ready roadmap R1-R3).
+   Everything here is ADDITIVE: pure functions over the same math the
+   parity suite pins. finPortfolio, adaptedFinSite, and layerStatsCalc
+   are called, never modified, so no existing number can change.
+   ============================================================ */
+
+/* R1: screen the portfolio against the operator's tolerance thresholds and
+   route every breach to a decision lane: capex when a measure at that site
+   clears breakeven, risk transfer or acceptance when none does. af is the
+   annuity factor used for the breakeven screen. */
+function toleranceFlags(sitesArr,sc,af){
+  const f=finPortfolio(sitesArr,sc);
+  const portPct=f.value?f.totalAal/f.value*100:0;
+  const varPct=f.value?f.var100/f.value*100:0;
+  const siteBreaches=[];
+  f.rows.forEach(r=>{
+    const bps=r.value?r.totalAal/r.value*1e4:0;
+    if(bps<=tolerance.siteAalBps)return;
+    const s=sitesArr.find(x=>x.id===r.id);
+    let best=null;
+    if(s){
+      const sBase=adaptedFinSite(s,sc,{}).totalAal;
+      MEASURES.forEach(m=>{
+        if(!m.inScope(s,sc))return;
+        const st=adapt.m[m.key];
+        const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+        const cost=m.siteCost(s,st);
+        const bcr=cost>0?averted*af/cost:0;
+        if(!best||bcr>best.bcr)best={name:m.name,bcr};
+      });
+    }
+    siteBreaches.push({id:r.id,name:r.name,aal:r.totalAal,bps,
+      bestBcr:best?best.bcr:0,bestMeasure:best?best.name:null,
+      lane:(best&&best.bcr>=1)?"capex":"transfer"});
+  });
+  siteBreaches.sort((a,b)=>b.bps-a.bps);
+  const portBreach=portPct>tolerance.portAalPct, varBreach=varPct>tolerance.varPctValue;
+  return {portPct,varPct,portBreach,varBreach,siteBreaches,
+    anyBreach:portBreach||varBreach||siteBreaches.length>0};
+}
+
+/* R2: the acute loss curve split into retained-below, transferred layer,
+   and tail beyond the limit, at an EXPLICIT attachment and exhaustion.
+   Same trapezoid integral as layerStatsCalc (untouched: parity-pinned);
+   the three slices always reconcile to the acute AAL. */
+function layerSlices(varByRp,acuteAal,attach,exhaust,load){
+  const A=varByRp[attach]||0,E=varByRp[exhaust]||0;
+  const integ=tr=>{
+    const pts=RPS.map(rp=>({f:1/rp,L:tr(varByRp[rp]||0)})).sort((a,b)=>b.f-a.f);
+    let s2=0;for(let i=0;i<pts.length-1;i++)s2+=0.5*(pts[i].L+pts[i+1].L)*(pts[i].f-pts[i+1].f);
+    return s2+pts[pts.length-1].L*pts[pts.length-1].f;
+  };
+  const tot=integ(L=>L)||1;
+  const below=acuteAal*Math.min(integ(L=>Math.min(L,A))/tot,1);
+  const layer=acuteAal*Math.min(integ(L=>Math.min(Math.max(L-A,0),Math.max(E-A,0)))/tot,1);
+  const above=Math.max(acuteAal-below-layer,0);
+  return {attach,exhaust,A,E,below,layer,above,premium:layer*load,certainty:layer*load-layer};
+}
+/* R2: the same layer economics at every candidate attachment below the
+   exhaustion point, so "raise the attachment" is a readable trade instead
+   of a guess. below is the working layer a higher retention or a captive
+   would fund. */
+function retentionSweep(varByRp,acuteAal,exhaust,load){
+  return RPS.filter(rp=>rp<exhaust).map(rp=>layerSlices(varByRp,acuteAal,rp,exhaust,load));
+}
+/* R2: a broker quote against the modeled technical premium, as a signed
+   percent gap. null when either side is missing: no verdict without data. */
+function quoteGapPct(quote,premium){
+  if(!(quote>0)||!(premium>0))return null;
+  return (quote/premium-1)*100;
+}
+
+/* R3: the portfolio action queue. Every in-scope (site, measure) pair is
+   appraised individually and ranked by BCR, then a funding cutline is
+   drawn: with a budget, fill greedily from the top (never fund below
+   breakeven, never drop what does not fit: it stays listed as unfunded,
+   the pipeline's defer-not-delete discipline); with no budget the cutline
+   is breakeven. The roll-up recomputes the funded set JOINTLY per site
+   (merged measure modifiers), so overlapping measures at one site are
+   never double-counted in the program figure. */
+function actionQueue(sitesArr,sc,af,budget){
+  const items=[];
+  sitesArr.forEach(s=>{
+    const sBase=adaptedFinSite(s,sc,{}).totalAal;
+    MEASURES.forEach(m=>{
+      if(!m.inScope(s,sc))return;
+      const st=adapt.m[m.key];
+      const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+      const cost=m.siteCost(s,st);
+      items.push({id:s.id,site:s.name,measure:m.name,key:m.key,target:m.target,
+        averted,cost,bcr:cost>0?averted*af/cost:0});
+    });
+  });
+  items.sort((a,b)=>b.bcr-a.bcr);
+  let spent=0;
+  items.forEach(it=>{
+    if(it.bcr<1){it.funded=false;return;}
+    if(budget>0&&spent+it.cost>budget){it.funded=false;return;}
+    it.funded=true;spent+=it.cost;
+  });
+  const funded=items.filter(i=>i.funded);
+  const bySite={};
+  funded.forEach(i=>{(bySite[i.id]||(bySite[i.id]=[])).push(i.key);});
+  let jointAverted=0;
+  Object.keys(bySite).forEach(id=>{
+    const s=sitesArr.find(x=>x.id===+id); if(!s)return;
+    const mods={};
+    bySite[id].forEach(k=>{const m=MEASURES.find(x=>x.key===k);Object.assign(mods,m.mods(adapt.m[k]));});
+    jointAverted+=adaptedFinSite(s,sc,{}).totalAal-adaptedFinSite(s,sc,mods).totalAal;
+  });
+  const cost=funded.reduce((a,i)=>a+i.cost,0);
+  return {items,spent,budget,
+    roll:{n:funded.length,cost,averted:jointAverted,bcr:cost>0?jointAverted*af/cost:0}};
+}
+
+/* R2: the broker evidence pack. Renewal pricing keys off submission data
+   quality: documented secondary modifiers (roof, openings, floor height,
+   defenses) change the insurer's modeled loss, not just the negotiation.
+   One row per site: the verified attributes plus this model's present-day
+   direct-damage view, with its source stated honestly. */
+function brokerPackCsv(){
+  const src=hazardGrid?"climada_grid":"interim_model";
+  const cols=["name","brand","latitude","longitude","asset_value_usd","annual_revenue_usd",
+    "construction","year_built","roof_type","roof_year","opening_protection",
+    "first_floor_elev_m","equipment_elevated","defended","wui_class",
+    "defensible_space_m","roof_class_a",
+    "modeled_direct_ead_usd_present","modeled_top_peril_present",
+    "modeled_loss_rp100_usd_present","hazard_source"];
+  let csv=cols.join(",")+"\n";
+  sites.forEach(s=>{
+    let ead=0,top=null,rp100=0;
+    ACUTE.forEach(hz=>{
+      const r=hzSite(s,hz,"present");ead+=r.ead;
+      const c=r.curve.find(x=>x.rp===100);rp100+=c?c.loss:0;
+      if(!top||r.ead>top.ead)top={hz,ead:r.ead};
+    });
+    csv+=[csvCell(s.name),csvCell(s.brand||""),s.latitude,s.longitude,s.asset_value_usd,
+      s.annual_revenue_usd!=null?s.annual_revenue_usd:"",
+      s.construction||"",s.year_built||"",s.roof_type||"",s.roof_year||"",
+      s.opening_protection||"",
+      s.first_floor_elev_m!=null?s.first_floor_elev_m:"",
+      s.equipment_elevated?"true":"",s.defended?"true":"",
+      s.wui_class||"",s.defensible_space_m!=null?s.defensible_space_m:"",
+      s.roof_class_a?"true":"",
+      ead.toFixed(0),top?top.hz:"",rp100.toFixed(0),src].join(",")+"\n";
+  });
+  return csv;
+}
+
+/* R3: the action-list artifact for a capital committee. Live-model rows are
+   the interactive appraisal at current settings; when a results pack is
+   loaded, its capital-plan rows are included and labeled canonical (full
+   event sets, refurbishment phasing). The owner column is deliberately
+   blank: assigning it is the committee's decision, not the model's. */
+function actionListCsv(sc,horizon,discPct){
+  const af=annuity(horizon,discPct/100);
+  const q=actionQueue(sites,sc,af,adapt.budget||0);
+  const cols=["source","rank","site","measure","targets","averted_usd_per_yr","cost_usd","bcr",
+    "status","renovation_synergy","scenario","appraisal_horizon_years","discount_rate_pct","owner"];
+  let csv=cols.join(",")+"\n";
+  q.items.forEach((it,i)=>{
+    csv+=["live_model",i+1,csvCell(it.site),csvCell(it.measure),csvCell(it.target),
+      it.averted.toFixed(0),it.cost.toFixed(0),it.bcr.toFixed(2),
+      it.funded?"funded":"unfunded","",sc,horizon,discPct.toFixed(1),""].join(",")+"\n";
+  });
+  const pk=resultsPack&&resultsPack.data;
+  if(pk&&pk.capital_plan&&pk.capital_plan.projects){
+    pk.capital_plan.projects.forEach((cp,i)=>{
+      csv+=["climada_pack",i+1,csvCell(cp.site),csvCell(cp.measure),csvCell(cp.peril||""),
+        (+cp.averted_direct_aal_usd||0).toFixed(0),(+cp.cost_usd||0).toFixed(0),(+cp.bcr||0).toFixed(2),
+        cp.year!=null?("year_"+cp.year):"deferred",cp.renovation_synergy?"true":"",
+        csvCell(pk.capital_plan.scenario||""),pk.capital_plan.horizon_years!=null?pk.capital_plan.horizon_years:"",
+        pk.capital_plan.discount_rate!=null?(pk.capital_plan.discount_rate*100).toFixed(1):"",""].join(",")+"\n";
+    });
+  }
+  return csv;
 }
 
 /* ============================================================
