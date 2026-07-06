@@ -66,8 +66,10 @@ the scripts reference each other by bare name, so run them from that directory):
 
 ```bash
 cd pipeline
-bash run_pipeline.sh                # --fast / --preflight / --no-heat / --dry-run
-bash run_pipeline.sh --fire --rain  # opt in the wildfire and TC-rainfall layers
+bash run_pipeline.sh                # standard run: wind + both floods + heat
+bash run_pipeline.sh --all          # FULL SIX-PERIL run: adds wildfire + TC rainfall
+bash run_pipeline.sh --fire --rain  # or opt the extra layers in individually
+# other flags: --fast / --preflight / --no-heat / --dry-run
 ```
 
 Migration safety: without these layers (and without wui_class profile data),

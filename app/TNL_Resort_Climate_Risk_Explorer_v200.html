@@ -1444,7 +1444,9 @@ const SAMPLE=[
   ["WorldMark San Antonio","WorldMark",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
   ["Club Wyndham Myrtle Beach","Club Wyndham",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
   ["Margaritaville St Thomas","Margaritaville",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
-  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999}],
+  /* wui_class makes the sample demonstrate the wildfire peril out of the box:
+     Palm Springs sits against the San Jacinto wildland edge (illustrative) */
+  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999,wui_class:"interface",defensible_space_m:20}],
 ];
 let sites=[];
 let hazardGrid=null;       // {rows, meta}: the loaded grid and its summary
@@ -1532,7 +1534,7 @@ const INFO={
     "<p>Each shows the site's risk band for that peril at the selected scenario, so you see the whole risk profile at a glance. Colours follow the same band scale.</p>"},
   drivers:{t:"Risk drivers",b:
     "<p>Portfolio expected annual damage split by peril, so you can see what actually drives the loss rather than assuming it is wind.</p>"+
-    "<p>Heat is tracked as indicators, not dollars, so it sits outside this split until a later phase dollarises it.</p>"},
+    "<p>Heat is tracked as indicators, not damage dollars, so it sits outside this split; its cost appears as heat revenue at risk on the Financial impact tab.</p>"},
   epcurve:{t:"Loss exceedance curve",b:
     "<p>Each point is the portfolio loss at a return period. The curve rising to the right means rarer events cause larger losses.</p>"+
     "<p>Expected annual damage is the area under this curve.</p>"},
@@ -1556,7 +1558,7 @@ const INFO={
     "<p>It is among the least precise perils here and improves the most when a CLIMADA river-flood grid is loaded.</p>"},
   heat:{t:"Extreme heat",b:
     "<p>Reported as <b>indicators</b>, not a dollar loss: days per year over 32&deg;C and 35&deg;C, and cooling degree-days.</p>"+
-    "<p>Heat's cost to a resort is mostly business interruption and energy, which a later phase turns into dollars.</p>"},
+    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days.</p>"},
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
@@ -1804,10 +1806,11 @@ function epCurveSvg(rpLoss){
 }
 function barsSvg(items,valKey,labKey,color){
   const W=460,rowH=30,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
-  const lab=120;let s=svgEl(W,H);
+  const lab=140;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+10;const w=(it[valKey]/max)*(W-lab-70);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(String(it[labKey]).slice(0,20))+'</text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"/>';
+    const full=String(it[labKey]);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"><title>'+esc(full)+': '+fmt$(it[valKey])+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+13)+'" font-size="11" fill="#15202B" class="mono">'+fmt$(it[valKey])+'</text>';});
   s+="</svg>";return s;
 }
@@ -1816,8 +1819,9 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
   const W=460,rowH=26,H=items.length*rowH+14;const max=Math.max(1,Math.max.apply(null,items.map(i=>i[valKey])));
   const lab=150;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+8;const w=(it[valKey]/max)*(W-lab-56);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(String(it[labKey]).slice(0,24))+'</text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"/>';
+    const full=String(it[labKey]);
+    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
     s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
   s+="</svg>";return s;
 }
@@ -1890,8 +1894,30 @@ function renderSummary(){
   document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","#B23A32");
   const brands=Object.keys(agg.byBrand).map(b=>({label:b,ead:agg.byBrand[b]})).sort((a,b)=>b.ead-a.ead);
   document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
+  /* caveats only for the perils actually still on the interim model, so the
+     note stops warning about proxies a loaded grid has already replaced */
+  const caveats=[];
+  if(!gridByHazard.cflood)caveats.push("coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated");
+  if(!gridByHazard.heat)caveats.push("the heat overlay is indicative");
   document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
-    "Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated, and the heat overlay is indicative; a CLIMADA grid sharpens both. Financial assumptions are set on the Financial impact tab.";
+    (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
+    "Financial assumptions are set on the Financial impact tab.";
+}
+/* why a damage peril reads zero everywhere, phrased as the user's next step.
+   Mirrors explainPeril's source logic at portfolio level: only the two perils
+   that can be honestly data-less (wildfire without a grid or wui_class,
+   rainfall without a grid) ever produce a note; a computed zero returns null. */
+function perilZeroNote(hz){
+  if(gridByHazard[hz])return null;
+  if(hz==="wfire"){
+    const profiled=sites.some(s=>FIRE_WUI_PBURN[String(s.wui_class||"").toLowerCase()]!=null);
+    return profiled?null:
+      "No wildfire grid is loaded and no site profile carries a <span class=\"mono\">wui_class</span>, so wildfire honestly scores zero rather than guessing. "+
+      "Run the pipeline with <span class=\"mono\">--fire</span> (or <span class=\"mono\">--all</span>) and load the merged grid on the Method tab, or add <span class=\"mono\">wui_class</span> (interface / intermix) to exposed sites in the site CSV.";
+  }
+  if(hz==="prain")return "TC rainfall has no interim model by design, so it stays zero until a rainfall grid is loaded. "+
+    "Run the pipeline with <span class=\"mono\">--rain</span> (or <span class=\"mono\">--all</span>) and load the merged grid on the Method tab.";
+  return null;
 }
 function renderOverview(scored){
   const hz=activeHazard, heat=hz==="heat", hazName=HAZARD_LABEL[hz];
@@ -1928,7 +1954,13 @@ function renderOverview(scored){
   }else{
     document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
     document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+".";
-    document.getElementById("epCurve").innerHTML=epCurveSvg(scored.rpLoss);
+    /* an all-zero curve is a data-availability story, not a chart: say why and
+       what to do, instead of drawing an empty axis */
+    const zero=scored.ead===0&&RPS.every(rp=>!(scored.rpLoss[rp]>0));
+    const why=zero?perilZeroNote(hz):null;
+    document.getElementById("epCurve").innerHTML=why
+      ?'<div class="note" style="margin-top:8px"><b>No modeled '+hazName.toLowerCase()+' loss.</b> '+why+'</div>'
+      :epCurveSvg(scored.rpLoss);
   }
 
   // right panel: EAD by brand, or avg hot-days by brand for heat
@@ -1952,7 +1984,7 @@ function renderOverview(scored){
   const heatDays=Math.round(sites.reduce((a,s)=>a+heatIndicators(s.latitude,s.longitude,scenario).daysOver32,0)/(sites.length||1));
   document.getElementById("riskDrivers").innerHTML=
     barsSvg(items,"ead","label","#12586F")+
-    '<div class="hint" style="margin-top:6px">Extreme heat is tracked as indicators (portfolio average '+heatDays+' days over 32\u00b0C), and is dollarised through business interruption in a later phase.</div>';
+    '<div class="hint" style="margin-top:6px">Extreme heat is tracked as indicators (portfolio average '+heatDays+' days over 32\u00b0C) and is dollarised as heat revenue at risk on the Financial impact tab.</div>';
 
   // narrative
   const top=scored.rows.slice().sort((a,b)=>(b.ead||0)-(a.ead||0));
@@ -1967,11 +1999,13 @@ function renderOverview(scored){
       (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s rate":" rates")+" High or Severe for heat. ":"")+
       "Across all modeled perils, <b>"+domName+"</b> is the largest driver of physical expected annual damage; the combined figure rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
   }else{
-    document.getElementById("narrative").innerHTML=
-      "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
+    const whyZero=(scored.ead===0)?perilZeroNote(hz):null;
+    document.getElementById("narrative").innerHTML=whyZero
+      ?("Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, "+hazName.toLowerCase()+" shows <b>no modeled loss</b> at "+SCEN_LABEL[scenario].toLowerCase()+". "+whyZero)
+      :("Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
       "Across all modeled perils, <b>"+domName+"</b> is the single largest driver of physical expected annual damage ("+domShare.toFixed(0)+"% of it). "+
       (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s sit":" sits")+" in the High or Severe band for this peril. ":"All sites fall below the High band for this peril. ")+
-      "Combined physical expected annual damage rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
+      "Combined physical expected annual damage rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.");
   }
 }
 function renderSites(){
@@ -2931,14 +2965,20 @@ function readFiles(files,done){
 }
 /* the hazard drop zone accepts the grid CSV(s) and the JSON sidecar(s) in one
    go: JSON files route to the provenance/results-pack handlers; a single CSV
-   loads as before; multiple CSVs merge (later wins) instead of overwriting. */
+   loads as before; multiple CSVs merge (later wins) instead of overwriting.
+   A production grid takes a second or two of synchronous parsing, so say so
+   first and yield a frame to let the toast paint before the parse blocks. */
 function routeHazFiles(files){
+  const n=(files&&files.length)||0; if(!n)return;
+  toast("Reading "+n+" file"+(n>1?"s":"")+"...");
   readFiles(files,list=>{
-    const jsons=[],csvs=[];
-    list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-    if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
-    else if(csvs.length>1) loadHazardCsvMulti(csvs);
-    jsons.forEach(o=>routeHazJson(o.text,o.name));
+    setTimeout(()=>{
+      const jsons=[],csvs=[];
+      list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
+      if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
+      else if(csvs.length>1) loadHazardCsvMulti(csvs);
+      jsons.forEach(o=>routeHazJson(o.text,o.name));
+    },40);
   });
 }
 

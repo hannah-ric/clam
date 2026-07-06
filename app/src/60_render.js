@@ -63,8 +63,30 @@ function renderSummary(){
   document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","#B23A32");
   const brands=Object.keys(agg.byBrand).map(b=>({label:b,ead:agg.byBrand[b]})).sort((a,b)=>b.ead-a.ead);
   document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
+  /* caveats only for the perils actually still on the interim model, so the
+     note stops warning about proxies a loaded grid has already replaced */
+  const caveats=[];
+  if(!gridByHazard.cflood)caveats.push("coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated");
+  if(!gridByHazard.heat)caveats.push("the heat overlay is indicative");
   document.getElementById("sumNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim screening model and are for exploration, not disclosure. ")+
-    "Coastal-flood depth is keyed to open-coast proximity, so sheltered below-sea-level locations can be understated, and the heat overlay is indicative; a CLIMADA grid sharpens both. Financial assumptions are set on the Financial impact tab.";
+    (caveats.length?caveats.join(", and ").replace(/^./,c=>c.toUpperCase())+"; a CLIMADA grid sharpens "+(caveats.length>1?"both":"this")+". ":"")+
+    "Financial assumptions are set on the Financial impact tab.";
+}
+/* why a damage peril reads zero everywhere, phrased as the user's next step.
+   Mirrors explainPeril's source logic at portfolio level: only the two perils
+   that can be honestly data-less (wildfire without a grid or wui_class,
+   rainfall without a grid) ever produce a note; a computed zero returns null. */
+function perilZeroNote(hz){
+  if(gridByHazard[hz])return null;
+  if(hz==="wfire"){
+    const profiled=sites.some(s=>FIRE_WUI_PBURN[String(s.wui_class||"").toLowerCase()]!=null);
+    return profiled?null:
+      "No wildfire grid is loaded and no site profile carries a <span class=\"mono\">wui_class</span>, so wildfire honestly scores zero rather than guessing. "+
+      "Run the pipeline with <span class=\"mono\">--fire</span> (or <span class=\"mono\">--all</span>) and load the merged grid on the Method tab, or add <span class=\"mono\">wui_class</span> (interface / intermix) to exposed sites in the site CSV.";
+  }
+  if(hz==="prain")return "TC rainfall has no interim model by design, so it stays zero until a rainfall grid is loaded. "+
+    "Run the pipeline with <span class=\"mono\">--rain</span> (or <span class=\"mono\">--all</span>) and load the merged grid on the Method tab.";
+  return null;
 }
 function renderOverview(scored){
   const hz=activeHazard, heat=hz==="heat", hazName=HAZARD_LABEL[hz];
@@ -101,7 +123,13 @@ function renderOverview(scored){
   }else{
     document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
     document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+".";
-    document.getElementById("epCurve").innerHTML=epCurveSvg(scored.rpLoss);
+    /* an all-zero curve is a data-availability story, not a chart: say why and
+       what to do, instead of drawing an empty axis */
+    const zero=scored.ead===0&&RPS.every(rp=>!(scored.rpLoss[rp]>0));
+    const why=zero?perilZeroNote(hz):null;
+    document.getElementById("epCurve").innerHTML=why
+      ?'<div class="note" style="margin-top:8px"><b>No modeled '+hazName.toLowerCase()+' loss.</b> '+why+'</div>'
+      :epCurveSvg(scored.rpLoss);
   }
 
   // right panel: EAD by brand, or avg hot-days by brand for heat
@@ -125,7 +153,7 @@ function renderOverview(scored){
   const heatDays=Math.round(sites.reduce((a,s)=>a+heatIndicators(s.latitude,s.longitude,scenario).daysOver32,0)/(sites.length||1));
   document.getElementById("riskDrivers").innerHTML=
     barsSvg(items,"ead","label","#12586F")+
-    '<div class="hint" style="margin-top:6px">Extreme heat is tracked as indicators (portfolio average '+heatDays+' days over 32\u00b0C), and is dollarised through business interruption in a later phase.</div>';
+    '<div class="hint" style="margin-top:6px">Extreme heat is tracked as indicators (portfolio average '+heatDays+' days over 32\u00b0C) and is dollarised as heat revenue at risk on the Financial impact tab.</div>';
 
   // narrative
   const top=scored.rows.slice().sort((a,b)=>(b.ead||0)-(a.ead||0));
@@ -140,11 +168,13 @@ function renderOverview(scored){
       (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s rate":" rates")+" High or Severe for heat. ":"")+
       "Across all modeled perils, <b>"+domName+"</b> is the largest driver of physical expected annual damage; the combined figure rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
   }else{
-    document.getElementById("narrative").innerHTML=
-      "Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
+    const whyZero=(scored.ead===0)?perilZeroNote(hz):null;
+    document.getElementById("narrative").innerHTML=whyZero
+      ?("Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, "+hazName.toLowerCase()+" shows <b>no modeled loss</b> at "+SCEN_LABEL[scenario].toLowerCase()+". "+whyZero)
+      :("Across "+sites.length+" sites worth <b>"+fmt$(scored.tiv)+"</b>, modeled "+hazName.toLowerCase()+" risk runs to <b>"+fmt$(scored.ead)+" per year</b> ("+scored.eadPct.toFixed(2)+"% of value) at "+SCEN_LABEL[scenario].toLowerCase()+(top[0]?", led by <b>"+esc(top[0].name)+"</b>":"")+". "+
       "Across all modeled perils, <b>"+domName+"</b> is the single largest driver of physical expected annual damage ("+domShare.toFixed(0)+"% of it). "+
       (highSev>0?"<b>"+highSev+"</b> site"+(highSev>1?"s sit":" sits")+" in the High or Severe band for this peril. ":"All sites fall below the High band for this peril. ")+
-      "Combined physical expected annual damage rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.";
+      "Combined physical expected annual damage rises about <b>"+growth.toFixed(0)+"%</b> from present to SSP5-8.5 late-century.");
   }
 }
 function renderSites(){
