@@ -470,15 +470,23 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
     rain = None
     pw = prep.get("prain")
     if pw is not None:
-        # scenario scaling by Clausius-Clapeyron on the rain field itself,
-        # then the documented drainage conversion (mirrors the app exactly)
-        mm = pw["int"] * (1.0 + rpn.PRAIN_CC_PER_C * warm) * haz_mult
-        depth = np.maximum(mm - PRAIN_DRAIN_MM, 0.0) / 1000.0 * PRAIN_POND_COEFF
-        fbp = (np.full_like(vals, PRAIN_FB) if fb_prain is None else fb_prain)             + fb_bonus
-        pl = flood_losses(depth, vals, fbp, dmg_scale, 1.0, cap=flood_cap)
-        rain = {"aal": float(site_ead(pl, pw["freq"]).sum()),
-                "ep": ep_curve(pl.sum(axis=1), pw["freq"]),
-                "ead": site_ead(pl, pw["freq"])}
+        # one member per basin domain (a lone dict is the legacy one-domain
+        # shape). Each site belongs to exactly one domain, so per-site EADs
+        # simply add; portfolio exceedance adds comonotonically across the
+        # independent domain catalogs, the same rule countries follow.
+        rain_members = [pw] if isinstance(pw, dict) else pw
+        rain = {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
+                "ead": np.zeros_like(vals)}
+        for pm in rain_members:
+            # scenario scaling by Clausius-Clapeyron on the rain field itself,
+            # then the documented drainage conversion (mirrors the app exactly)
+            mm = pm["int"] * (1.0 + rpn.PRAIN_CC_PER_C * warm) * haz_mult
+            depth = np.maximum(mm - PRAIN_DRAIN_MM, 0.0) / 1000.0 * PRAIN_POND_COEFF
+            fbp = (np.full_like(vals, PRAIN_FB) if fb_prain is None else fb_prain)                 + fb_bonus
+            pl = flood_losses(depth, vals, fbp, dmg_scale, 1.0, cap=flood_cap)
+            rain["aal"] += float(site_ead(pl, pm["freq"]).sum())
+            rain["ep"] = add_ep(rain["ep"], ep_curve(pl.sum(axis=1), pm["freq"]))
+            rain["ead"] = rain["ead"] + site_ead(pl, pm["freq"])
 
     fire = None
     fw = prep.get("wfire")
@@ -871,7 +879,12 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
     order the fetches complete in."""
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
-    prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set()}
+    prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set(),
+            # per-site structural coverage per peril (bool arrays): did this
+            # peril's model speak for the site's location at all? False means
+            # the site is FLAGGED as outside coverage, never silently zeroed.
+            "_cov": {p: np.zeros(len(sites_c), dtype=bool)
+                     for p in ("tc", "cflood", "rflood", "prain", "wfire")}}
 
     def _wind_task(source):
         """Fetch one wind source, reduce it to per-site intensity, and (when
@@ -937,6 +950,7 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                                         "reason": f"outside coverage "
                                                   f"({dist[j]:.0f} km to nearest cell)"})
         prep["wind"][skey] = out["wind"]
+        prep["_cov"]["tc"] |= idx >= 0
         LOG.info("  wind %s / %s -> %d events x %d sites", iso3, skey,
                  *out["wind"]["int"].shape)
         # deferred water-snap guard: a surge centroid counts for a site only
@@ -977,6 +991,14 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                                         "layer": "rflood",
                                         "reason": "no river_flood dataset"})
 
+    # Water layers re-index onto the wind grid (explicit zeros inland), so a
+    # site is COVERED by them exactly when the wind grid covers it and the
+    # layer was produced at all; a modeled zero there is an honest zero.
+    if prep["surge"]:
+        prep["_cov"]["cflood"] = prep["_cov"]["tc"].copy()
+    if prep["rflood"]:
+        prep["_cov"]["rflood"] = prep["_cov"]["tc"].copy()
+
     if fire_enabled:
         # Petals' WildFire needs a FIRMS DataFrame, not a country code (see
         # refresh_wildfire.build_wildfire_hazard). The fire-season clustering
@@ -999,10 +1021,17 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                                     or "wildfire hazard build failed"})
         else:
             try:
-                fidx, _fd = nearest_centroids(lat, lon, wfire_haz.centroids.lat,
-                                              wfire_haz.centroids.lon)
+                fidx, fd = nearest_centroids(lat, lon, wfire_haz.centroids.lat,
+                                             wfire_haz.centroids.lon)
                 prep["wfire"] = {"freq": np.asarray(wfire_haz.frequency, float),
                                  "hits": site_intensity(wfire_haz, fidx) > 0}
+                prep["_cov"]["wfire"] = fidx >= 0
+                for j in np.where(fidx < 0)[0]:
+                    meta["skipped"].append(
+                        {"country": iso3, "layer": "wfire",
+                         "site": str(sites_c.iloc[j]["name"]),
+                         "reason": f"outside coverage ({fd[j]:.0f} km to the "
+                                   f"nearest fire cell)"})
                 LOG.info("  wfire %s -> %d events x %d sites", iso3,
                          *prep["wfire"]["hits"].shape)
             except Exception as exc:
@@ -1010,18 +1039,46 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                 meta["skipped"].append({"country": iso3, "layer": "wfire",
                                         "reason": str(exc)[:300]})
     if rain_enabled:
-        try:
-            rhz = rpn.rain_hazard(rpn.fetch_tracks(iso3), iso3)
+        # Rain is built per basin DOMAIN (a country can span several: USA is
+        # CONUS + Hawaii). Each domain speaks only for the sites inside its
+        # box; a site no domain covers is flagged, never silently zeroed.
+        members, any_built = [], False
+        doms = rpn.domains_for(iso3, lat, lon)
+        if not doms:
+            meta["skipped"].append({"country": iso3, "layer": "prain",
+                                    "reason": "no rain domain covers any site "
+                                              "in this country"})
+        for dom in doms:
+            try:
+                rhz = rpn.rain_hazard(rpn.fetch_tracks(dom), dom)
+            except Exception as exc:
+                LOG.warning("Rainfall unavailable %s/%s: %s", iso3,
+                            dom["key"], str(exc)[:200])
+                meta["skipped"].append({"country": iso3, "layer": "prain",
+                                        "domain": dom["key"],
+                                        "reason": str(exc)[:300]})
+                continue
+            in_dom = rpn.domain_covers(dom, lat, lon)
             ridx, _rd = nearest_centroids(lat, lon, rhz.centroids.lat,
                                           rhz.centroids.lon)
-            prep["prain"] = {"freq": np.asarray(rhz.frequency, float),
-                             "int": site_intensity(rhz, ridx)}
-            LOG.info("  prain %s -> %d events x %d sites", iso3,
-                     *prep["prain"]["int"].shape)
-        except Exception as exc:
-            LOG.warning("Rainfall unavailable %s: %s", iso3, str(exc)[:200])
-            meta["skipped"].append({"country": iso3, "layer": "prain",
-                                    "reason": str(exc)[:300]})
+            ridx = np.where(in_dom, ridx, -1)
+            members.append({"freq": np.asarray(rhz.frequency, float),
+                            "int": site_intensity(rhz, ridx),
+                            "domain": dom["key"]})
+            prep["_cov"]["prain"] |= in_dom & (np.asarray(ridx) >= 0)
+            any_built = True
+            LOG.info("  prain %s/%s -> %d events x %d sites (%d covered)",
+                     iso3, dom["key"], *members[-1]["int"].shape,
+                     int((in_dom & (np.asarray(ridx) >= 0)).sum()))
+        if members:
+            prep["prain"] = members
+        if any_built:       # only flag sites when the layer itself exists
+            for j in np.where(~prep["_cov"]["prain"])[0]:
+                meta["skipped"].append(
+                    {"country": iso3, "layer": "prain",
+                     "site": str(sites_c.iloc[j]["name"]),
+                     "reason": "outside every rain domain (no basin models "
+                               "TC rainfall at this location yet)"})
     return prep
 
 
@@ -1091,7 +1148,8 @@ def named_insured_rollup(acute_ead, named_insured):
 
 
 def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
-               sites_file, site_named_insured=None, site_ids=None):
+               sites_file, site_named_insured=None, site_ids=None,
+               site_coverage=None):
     n = len(site_names)
     site_named_insured = (list(site_named_insured)
                           if site_named_insured is not None else [None] * n)
@@ -1105,7 +1163,12 @@ def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
                      "direct_ead_usd": round(float(r["acute"]["ead"][i]), 2),
                      "by_peril": {p: round(float(r[p]["ead"][i]), 2)
                                   for p in ("tc", "cflood", "rflood",
-                                            "prain", "wfire") if p in r}}
+                                            "prain", "wfire") if p in r},
+                     # per-site-per-peril coverage: false = this peril's model
+                     # did not speak for this site (flagged, not zeroed)
+                     **({"coverage": {p: bool(site_coverage[p][i])
+                                      for p in site_coverage}}
+                        if site_coverage is not None else {})}
                     for i, n_ in enumerate(site_names)]
         scenarios[app_key] = {
             "portfolio": {
@@ -1154,8 +1217,9 @@ def pack_meta(pack, args, meta):
         "combination_rules": {
             "wind_surge": "per event (shared catalog, truly joint)",
             "river_flood": "comonotonic (exceedance losses add at equal RP)",
-            "tc_rainfall": "comonotonic (own track catalog; Clausius-"
-                           "Clapeyron scenario scaling)",
+            "tc_rainfall": "comonotonic (own track catalog per basin domain; "
+                           "domains add comonotonically; Clausius-Clapeyron "
+                           "scenario scaling)",
             "wildfire": "comonotonic (own fire seasons; warming scales the "
                         "fire frequency, not the loss)",
             "countries": "comonotonic (exceedance losses add at equal RP)",
@@ -1354,7 +1418,8 @@ def main(argv=None) -> int:
                             "uncertainty": uncertainty, "iso3": iso3,
                             "names": list(sites_c["name"]), "values": values,
                             "named_insured": list(sites_c["named_insured"]),
-                            "site_id": list(sites_c["site_id"])})
+                            "site_id": list(sites_c["site_id"]),
+                            "coverage": prep["_cov"]})
         order.extend(sites_c["name"])
 
     if not per_country or not any(c["scen"] for c in per_country):
@@ -1376,13 +1441,16 @@ def main(argv=None) -> int:
             "adaptation, uncertainty, capital plan, and measure catalog "
             "sections reflect the largest country by value; per-country "
             "expansion is a step-2 item")
+    coverage = {p: np.concatenate([c["coverage"][p] for c in per_country])
+                for p in ("tc", "cflood", "rflood", "prain", "wfire")}
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites,
                       site_named_insured=[ni for c in per_country
                                           for ni in c["named_insured"]],
                       site_ids=[sid for c in per_country
-                                for sid in c["site_id"]])
+                                for sid in c["site_id"]],
+                      site_coverage=coverage)
     if lead.get("catalog"):
         pack["measures_catalog"] = lead["catalog"]
     plan = build_capital_plan_v2(lead.get("cat_projects") or [],

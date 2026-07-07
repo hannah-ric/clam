@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import portfolio_regions
 import refresh_hazard as rh
 import refresh_wildfire as rw
 import refresh_prain as rp
@@ -22,6 +23,46 @@ import refresh_prain as rp
 
 def ok(msg):
     print("ok ", msg)
+
+
+def test_shared_regions():
+    """The region boxes live once in portfolio_regions and every consumer
+    reads that copy; the union must cover the whole documented portfolio
+    footprint (SE US/Gulf, desert SW, Hawaii, PR/USVI)."""
+    import refresh_heat as hh
+    assert hh.REGIONS is portfolio_regions.REGIONS
+    assert rw.FIRE_REGIONS is portfolio_regions.REGIONS
+    # the app's own sample portfolio, one representative site per region
+    inside = portfolio_regions.in_regions(
+        [26.27, 33.83, 19.64, 22.07, 18.38, 18.34],
+        [-80.09, -116.55, -155.99, -159.32, -65.81, -64.90])
+    assert inside.all(), "sample-portfolio locations must all be covered"
+    out = portfolio_regions.sites_outside_regions(
+        ["NYC"], [40.7], [-74.0])
+    assert out == [("NYC", 40.7, -74.0)], \
+        "a site outside every box is reported by name, never dropped silently"
+    ok("portfolio_regions: one source of truth, portfolio covered, outsiders named")
+
+
+def test_rain_domains():
+    """The coverage audit behind the prain rework: Hawaii gets its own
+    EP-basin domain (the old BBOXES had no Hawaii box and hardcoded the
+    North Atlantic basin, silently zeroing Hawaii TC rainfall), and
+    domains_for only fetches domains that cover actual sites."""
+    hi = [d for d in rp.DOMAINS if d["key"] == "hawaii"]
+    assert hi and hi[0]["basin"] == "EP" and hi[0]["iso3"] == "USA", \
+        "Hawaii must be an EP-basin domain of the USA"
+    assert {d["key"] for d in rp.domains_for("USA")} == {"conus", "hawaii"}
+    # a CONUS-only portfolio never fetches Pacific tracks
+    doms = rp.domains_for("USA", [25.0, 29.5], [-80.0, -98.5])
+    assert [d["key"] for d in doms] == ["conus"]
+    # a mixed portfolio fetches both
+    doms = rp.domains_for("USA", [25.0, 19.64], [-80.0, -155.99])
+    assert {d["key"] for d in doms} == {"conus", "hawaii"}
+    # domain_covers: Kona is Hawaii's to speak for, Miami is not
+    cov = rp.domain_covers(hi[0], [19.64, 25.0], [-155.99, -80.0])
+    assert cov.tolist() == [True, False]
+    ok("rain domains: Hawaii EP domain present, site-driven domain selection")
 
 
 # --- pure ops -----------------------------------------------------------------
@@ -242,8 +283,12 @@ def run():
     assert wf["v10"].between(0, 100).all()
     print("ok  wildfire producer: mocked FIRMS seam through the real main()")
 
-    rp.fetch_tracks = lambda iso3: object()
-    rp.rain_hazard = lambda tracks, iso3: FakeRainHaz()
+    fetched_domains = []
+    def _fake_tracks(domain):
+        fetched_domains.append(domain["key"])
+        return object()
+    rp.fetch_tracks = _fake_tracks
+    rp.rain_hazard = lambda tracks, domain: FakeRainHaz()
     base = np.array([90.0, 140.0, 200.0, 280.0, 380.0, 460.0])
     rh.local_rp_intensity = lambda haz, rps: np.stack(
         [base[i] * np.array([1.0, 1.1, 0.7]) for i in range(len(rps))])
@@ -252,7 +297,15 @@ def run():
     pr = pd.read_csv("sim_prain_grid.csv")
     assert set(pr["hazard"]) == {"prain"} and set(pr["scenario"]) == set(rp.WARMING)
     assert pr["v100"].max() > 0
-    print("ok  rainfall producer: mocked track/rain seams through main()")
+    # both USA domains were attempted (conus AND the new EP-basin hawaii)...
+    assert set(fetched_domains) == {"conus", "hawaii"}
+    # ...and the fake CONUS-coordinate cells were trimmed out of the hawaii
+    # domain and RECORDED as skipped, not silently written into its box
+    prm = json.loads(Path("sim_prain_grid_meta.json").read_text())
+    assert any(s.get("domain") == "hawaii" for s in prm["skipped"])
+    assert all(l.get("domain") == "conus" for l in prm["layers"])
+    print("ok  rainfall producer: basin domains through main(), stray cells "
+          "trimmed and recorded")
 
     # a minimal tc base so coverage checks engage, then the real merge + gate
     cells = wf[wf.scenario == "present"][["lat", "lon"]].drop_duplicates()
@@ -287,6 +340,24 @@ def run():
     assert r2.returncode == 1 and "outside 0..100" in r2.stdout
     print("ok  burn probability outside 0..100 percent is rejected")
 
+    # the per-site coverage audit: a Hawaii site far from every cell must be
+    # NAMED as outside coverage per hazard (warning surface, not a gate fail)
+    pd.DataFrame({"name": ["Gulf OK", "Kona Shore"],
+                  "latitude": [30.0, 19.64], "longitude": [-98.5, -155.99],
+                  "asset_value_usd": [1e7, 1e7]}
+                 ).to_csv("sim_cov_sites.csv", index=False)
+    r3 = subprocess.run([sys.executable, "validate_grid.py",
+                         "sim_sixperil_grid.csv", "--sites",
+                         "sim_cov_sites.csv"], capture_output=True, text=True)
+    assert r3.returncode == 0, "coverage gaps warn, they do not block shipping"
+    assert "Per-site coverage audit" in r3.stdout
+    assert "Kona Shore" in r3.stdout and "OUTSIDE coverage" in r3.stdout, \
+        "the uncovered site must be flagged by name, never silently zeroed"
+    audit = r3.stdout.split("Per-site coverage audit")[1]
+    assert "Kona Shore:" in audit and "Gulf OK:" not in audit, \
+        "only the uncovered site is listed; covered sites stay quiet"
+    print("ok  validate_grid --sites names every site outside a peril's coverage")
+
     print("\nALL NEW-PERIL TESTS PASSED")
 
 
@@ -295,6 +366,8 @@ if __name__ == "__main__":
     test_scenario_uplift()
     test_wfire_rows_encoding()
     test_prain_scaling()
+    test_shared_regions()
+    test_rain_domains()
     test_firms_io()
     test_petals_deprecation_filter()
     run()

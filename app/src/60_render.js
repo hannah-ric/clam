@@ -379,6 +379,17 @@ function namedInsuredDetail(record){
     '<div class="hint" style="margin-bottom:6px">'+esc(gr.name)+' aggregates '+gr.members.length+' named-insured records into one site worth '+fmt$(gr.value)+', with '+fmt$(gr.ead)+'/yr combined expected damage ('+gr.band+'). Who is impacted, and to what degree:</div>'+
     '<table class="tbl"><thead><tr><th>Named insured</th><th class="num">Value</th><th class="num">EAD $/yr</th><th class="num">% value</th><th class="num">Share</th><th>Band</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
+/* the per-site trust strip: which perils THIS site's numbers are actually
+   modeled on (green = the grid reached it within snap and coverage), and
+   which are degraded (interim screening or honest zero). A site can never
+   read green here on a peril whose grid did not serve it a value. */
+function siteTrustStrip(site){
+  const t=siteTrustSummary(site,scenario);
+  const bits=HAZARDS.map(h=>{const x=t.byHz[h.key];const on=x.state==="modeled";
+    return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")":"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
+  return '<div class="ratecell" style="margin:2px 0 10px">'+bits+
+    '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'</span></div>';
+}
 function renderDetail(r){
   if(!r){document.getElementById("detailBody").style.display="none";document.getElementById("detailHint").style.display="block";return;}
   document.getElementById("detailHint").style.display="none";
@@ -413,7 +424,7 @@ function renderDetail(r){
   body.innerHTML=
     '<div style="font-family:Fraunces,serif;font-size:17px;color:var(--primary);margin-bottom:2px">'+esc(r.name)+'</div>'+
     '<div class="hint" style="margin-bottom:6px">'+esc(r.brand||"")+(insuredOf(r)!=="Unspecified"?' · '+esc(insuredOf(r)):'')+' · '+r.latitude.toFixed(3)+', '+r.longitude.toFixed(3)+' · '+H.label+infoBtn(hz)+(r.hazardMeta&&r.hazardMeta.outside?' · <span style="color:var(--r-high)">outside hazard grid</span>':'')+'</div>'+
-    ratingStrip+mid+table+namedInsuredDetail(r)+
+    ratingStrip+siteTrustStrip(r)+mid+table+namedInsuredDetail(r)+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="lightbtn primary" id="openCard">Full scorecard</button>'+
       '<button class="lightbtn" id="editVal">Edit site</button>'+
@@ -838,7 +849,8 @@ function renderScorecard(s){
   attrs.push("wind vulnerability x"+vuln.windMult.toFixed(2));
   document.getElementById("focusHead").innerHTML=
     '<div style="font-family:Fraunces,serif;font-size:21px;color:var(--primary)">'+esc(s.name)+'</div>'+
-    '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+(insuredOf(s)!=="Unspecified"?' \u00b7 '+esc(insuredOf(s)):'')+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>';
+    '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+(insuredOf(s)!=="Unspecified"?' \u00b7 '+esc(insuredOf(s)):'')+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>'+
+    siteTrustStrip(s);
   const card=(l,v,foot)=>'<div class="card"><div class="l">'+l+'</div><div class="v" style="font-size:19px">'+v+'</div><div class="foot">'+foot+'</div></div>';
   const pills=perils.map(p=>'<span class="pill '+p.band+'" title="'+esc(p.label)+'">'+HAZARD_BY[p.hz].short+'</span>').join(" ")+' <span class="pill '+heatR.band+'" title="Extreme heat">H</span>';
   document.getElementById("focusBody").innerHTML=
@@ -940,12 +952,16 @@ function scatterSvg(pairs){
   s+='<text x="12" y="'+((H-34+14)/2)+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 12 '+((H-34+14)/2)+')">Observed $/yr</text>';
   s+="</svg>";return s;
 }
-/* Phase 4: per-peril authority. Which perils are grid-fed, with how many
-   cells, and whether every app scenario is covered (partial coverage means
-   the app silently serves that peril's PRESENT grid for missing horizons,
-   which is exactly the failure the v1 deployment shipped with: so it is
-   surfaced, not hidden). Tolerates grids persisted before perHaz existed by
-   recomputing from the rows. */
+/* Phase 4: per-peril authority, resolved PER SITE. Which perils are
+   grid-fed, with how many cells, whether every app scenario is covered
+   (partial coverage means the app silently serves that peril's PRESENT grid
+   for missing horizons, which is exactly the failure the v1 deployment
+   shipped with: so it is surfaced, not hidden), and - the per-site trust
+   increment - how many of the LOADED SITES the grid actually reached. A
+   peril chip may only read green when the grid is live, covers every
+   scenario, AND reached every site; a Hawaii site outside a CONUS-only
+   layer degrades the chip and is counted. Tolerates grids persisted before
+   perHaz existed by recomputing from the rows. */
 function perilAuthority(){
   let ph=(hazardGrid&&hazardGrid.meta&&hazardGrid.meta.perHaz)||null;
   if(!ph&&hazardGrid&&hazardGrid.rows){
@@ -955,9 +971,13 @@ function perilAuthority(){
   }
   return HAZARDS.map(h=>{
     const live=!!gridByHazard[h.key], info=ph&&ph[h.key];
+    let sitesModeled=0;
+    if(live)sites.forEach(s=>{if(siteTrust(s,h.key,scenario).state==="modeled")sitesModeled++;});
+    const allSites=!sites.length||sitesModeled===sites.length;
     return {key:h.key,label:h.label,short:h.short,live,
       cells:info?info.cells:0,nScen:info?info.scenarios.length:0,
-      full:info?info.scenarios.length>=SCEN_KEYS.length:false};
+      sitesModeled,nSites:sites.length,allSites,
+      full:(info?info.scenarios.length>=SCEN_KEYS.length:false)&&allSites};
   });
 }
 function metaSources(m){ return m?((m.sources&&m.sources.length)?m.sources:[m]):[]; }
@@ -975,7 +995,7 @@ function metaSourceLine(s){
 function renderHazProv(){
   const badge=document.getElementById("hazBadge"),text=document.getElementById("hazText");
   const auth=perilAuthority();
-  const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';
+  const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"+(a.nSites?", "+a.sitesModeled+"/"+a.nSites+" sites within coverage":"")):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';
   const chips=auth.map(chip).join("");
   const md=hazardMeta&&hazardMeta.data;
   if(hazardGrid){
@@ -983,11 +1003,13 @@ function renderHazProv(){
     const liveL=auth.filter(a=>a.live).map(a=>a.label.toLowerCase());
     const interimL=auth.filter(a=>!a.live).map(a=>a.label.toLowerCase());
     const partial=auth.filter(a=>a.live&&!a.full);
+    const uncovered=auth.filter(a=>a.live&&!a.allSites);
     badge.classList.add("authoritative");
     text.textContent="CLIMADA \u00b7 "+nLive+"/"+HAZARDS.length+" perils";
     badge.title=md&&md.generated_utc?("Pipeline run "+String(md.generated_utc).slice(0,10)):"Per-peril detail on the Method tab";
     let kv=
-      '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario coverage, missing horizons fall back to that peril\u2019s present grid</small>':'')+'</span>'+
+      '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario or site coverage; green needs every scenario AND every site inside coverage</small>':'')+'</span>'+
+      (uncovered.length?'<span class="k">Site coverage</span><span class="v">'+uncovered.map(a=>a.label.toLowerCase()+": "+a.sitesModeled+" of "+a.nSites+" sites within coverage").join(" \u00b7 ")+' <small>sites outside a peril\u2019s coverage show degraded on that peril, never a silent zero</small></span>':'')+
       '<span class="k">File</span><span class="v mono">'+esc(hazardGrid.meta.name)+'</span>'+
       '<span class="k">Grid cells</span><span class="v mono">'+hazardGrid.meta.cells+'</span>'+
       '<span class="k">Scenarios</span><span class="v mono">'+hazardGrid.meta.scenarios.length+' keys</span>'+
@@ -1006,8 +1028,9 @@ function renderHazProv(){
       "CLIMADA hazard is live for "+liveL.join(", ")+"."+
       (interimL.length?" Still on the interim model: "+interimL.join(", ")+".":"")+
       (partial.length?" Partial scenario coverage on "+partial.map(a=>a.label.toLowerCase()).join(", ")+": missing horizons use that peril's present grid.":"")+
+      (uncovered.length?" Sites outside coverage on "+uncovered.map(a=>a.label.toLowerCase()+" ("+(a.nSites-a.sitesModeled)+")").join(", ")+": those sites show degraded on that peril.":"")+
       (md&&md.generated_utc?" Pipeline run "+String(md.generated_utc).slice(0,10)+".":"")+
-      " Each site snaps to the nearest cell within 200 km; beyond that, the interim model takes over.";
+      " Each site snaps to the nearest cell within 200 km; beyond that, the site is degraded to the interim model and marked so.";
   }else{
     badge.classList.remove("authoritative");text.textContent="Interim model";badge.title="";
     document.getElementById("hazProv").innerHTML=

@@ -38,7 +38,7 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
       pipeline/sim_pack_*.json pipeline/sim_backtest.csv \
       pipeline/sim_wfire_grid* pipeline/sim_prain_grid* \
       pipeline/sim_tc_base.csv pipeline/sim_sixperil_grid.csv \
-      pipeline/sim_badfire_grid.csv \
+      pipeline/sim_badfire_grid.csv pipeline/sim_cov_sites.csv \
       pipeline/sim_firms*.csv pipeline/sim_wfire_nofirms*
 
 echo

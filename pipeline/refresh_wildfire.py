@@ -60,6 +60,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import portfolio_regions
 import refresh_hazard as rh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
@@ -75,14 +76,10 @@ WARMING = {
 FIRE_WARMING_UPLIFT = 0.14      # fractional burn-probability increase per deg C
 
 # The resort footprint. A nationwide FIRMS download is trimmed to these boxes so
-# Petals builds centroids over cells that can actually host a site (mirrors the
-# REGIONS in refresh_heat.py). Wildfire is portfolio-wide, not only the desert SW.
-FIRE_REGIONS = [
-    ("conus_se_gulf", 24.0, 37.5, -100.5, -74.0),
-    ("southwest",     32.0, 38.0, -120.0, -110.0),   # Palm Springs, desert SW
-    ("hawaii",        18.0, 23.0, -161.0, -154.0),
-    ("caribbean",     17.0, 19.5, -68.0, -64.0),     # PR, USVI
-]
+# Petals builds centroids over cells that can actually host a site. The boxes
+# live in portfolio_regions.py (one source of truth, shared with refresh_heat
+# and the coverage audit). Wildfire is portfolio-wide, not only the desert SW.
+FIRE_REGIONS = portfolio_regions.REGIONS
 # Columns climada_petals' WildFire._clean_firms_df reads. MODIS carries
 # 'brightness' with a numeric 'confidence'; VIIRS carries 'bright_ti4' with l/n/h.
 FIRMS_REQUIRED = ["latitude", "longitude", "acq_date", "instrument", "confidence"]

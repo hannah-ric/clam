@@ -58,6 +58,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import portfolio_regions
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_heat")
 
@@ -72,14 +74,9 @@ OUT_META = "heat_grid_meta.json"
 
 CPC_URL = "https://downloads.psl.noaa.gov/Datasets/cpc_global_temp/{var}.{year}.nc"
 
-# Regions to process: (name, lat_min, lat_max, lon_min, lon_max), lon in -180..180.
-# Cover the portfolio with margin; add boxes as it grows.
-REGIONS = [
-    ("conus_se_gulf", 24.0, 37.5, -100.5, -74.0),   # FL, Gulf, Carolinas, TX triangle
-    ("southwest",     32.0, 38.0, -120.0, -110.0),  # Palm Springs, desert SW
-    ("hawaii",        18.0, 23.0, -161.0, -154.0),
-    ("caribbean",     17.0, 19.5, -68.0, -64.0),    # PR, USVI
-]
+# Regions to process: the shared portfolio footprint (one source of truth in
+# portfolio_regions.py, also used by refresh_wildfire and the coverage audit).
+REGIONS = portfolio_regions.REGIONS
 
 THRESH_HOT = 32.0        # C, drives the app's heat band (daysOver32)
 THRESH_DANGER = 35.0     # C, drives heat revenue at risk (daysOver35)

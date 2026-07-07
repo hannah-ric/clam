@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import measures_catalog as mc
 import refresh_hazard as rh
 import refresh_impacts as ri
 import refresh_prain as rpn
@@ -129,23 +130,30 @@ def run():
     dem = Path("fake_dem.tiff"); dem.write_bytes(b"\0" * 16)
     rh.TOPO_PATH = dem
 
+    # Kona Shore sits in Hawaii, far outside every fake hazard's centroids:
+    # the per-site coverage path must FLAG it on every peril, never let it
+    # silently score zero while looking modeled.
     sites = pd.DataFrame({
-        "name": ["Reef Bay", "Dune Point", "River Bend"],
-        "latitude": [25.02, 25.24, 29.49],
-        "longitude": [-80.01, -80.02, -98.52],
-        "asset_value_usd": [120e6, 80e6, 60e6],
-        "construction": ["engineered", "frame", "masonry"],
-        "year_built": [2015, 1988, 2001],
-        "defended": [True, False, False],
-        "country": ["USA", "USA", "USA"],
+        "name": ["Reef Bay", "Dune Point", "River Bend", "Kona Shore"],
+        "latitude": [25.02, 25.24, 29.49, 19.64],
+        "longitude": [-80.01, -80.02, -98.52, -155.99],
+        "asset_value_usd": [120e6, 80e6, 60e6, 50e6],
+        "construction": ["engineered", "frame", "masonry", "frame"],
+        "year_built": [2015, 1988, 2001, 1992],
+        "defended": [True, False, False, False],
+        "country": ["USA", "USA", "USA", "USA"],
         # profile v2 fields, exercised through the real producer path
-        "roof_type": ["metal", "shingle", None],
-        "roof_year": [2019, 1999, None],
-        "opening_protection": ["impact", "none", None],
-        "first_floor_elev_m": [1.4, None, None],
-        "equipment_elevated": [True, False, False],
-        "wui_class": [None, None, "intermix"],
-        "defensible_space_m": [None, None, 10],
+        "roof_type": ["metal", "shingle", None, None],
+        "roof_year": [2019, 1999, None, None],
+        "opening_protection": ["impact", "none", None, None],
+        "first_floor_elev_m": [1.4, None, None, None],
+        "equipment_elevated": [True, False, False, False],
+        "wui_class": [None, None, "intermix", None],
+        "defensible_space_m": [None, None, 10, None],
+        # Dune Point's renovation sits EXACTLY PLAN_YEARS out: the boundary
+        # that used to crash the budgeted plan with KeyError (year 4)
+        "renovation_year": [None, ri.ROOF_AGE_REF_YEAR + mc.PLAN_YEARS, None,
+                            None],
     })
     sites.to_csv("sim_sites.csv", index=False)
     pd.DataFrame({
@@ -168,8 +176,24 @@ def run():
     assert pack["kind"] == "results_pack" and pack["pack_version"] == 1
     assert set(pack["scenarios"]) == set(rh.APP_SCENARIOS), \
         "every app scenario must be present (failed source degrades, not drops)"
-    assert all(len(s["per_site"]) == 3 for s in pack["scenarios"].values())
-    print("ok  pack shape, all 10 scenarios, 3 sites per scenario")
+    assert all(len(s["per_site"]) == 4 for s in pack["scenarios"].values())
+    print("ok  pack shape, all 10 scenarios, 4 sites per scenario")
+
+    # 1b. per-site-per-peril coverage: Kona Shore (Hawaii, outside every fake
+    # hazard's centroids) is flagged on every peril; the CONUS sites read
+    # covered. Its zeros are thereby labeled "not modeled", not "modeled safe".
+    cov = {x["name"]: x["coverage"]
+           for x in pack["scenarios"]["present"]["per_site"]}
+    assert set(cov["Reef Bay"]) == {"tc", "cflood", "rflood", "prain", "wfire"}
+    assert all(cov["Reef Bay"].values()), "coastal CONUS site fully covered"
+    assert not any(cov["Kona Shore"].values()), \
+        "the Hawaii site must be flagged outside coverage on every peril here"
+    for layer in ("tc", "wfire", "prain"):
+        assert any(s.get("site") == "Kona Shore" and s.get("layer") == layer
+                   for s in meta["skipped"]), \
+            f"Kona Shore must be recorded as outside {layer} coverage"
+    print("ok  per-site coverage: Hawaii site flagged on every peril, "
+          "CONUS sites covered")
 
     # 2. failed wind source degrades gracefully and is recorded
     assert any(s.get("source") == "rcp26_2060" for s in meta["skipped"])
@@ -254,6 +278,12 @@ def run():
         if p.get("year") is not None:
             spent[p["year"]] = spent.get(p["year"], 0.0) + p["cost_usd"]
     assert all(v <= 1500000.0 * 1.001 for v in spent.values())
+    # the exact-boundary renovation (Dune Point, PLAN_YEARS out) must phase
+    # inside the plan without synergy, never into a nonexistent year 4
+    assert all(p["year"] in (None, 1, 2, 3) for p in planb["projects"])
+    dune = [p for p in planb["projects"] if p["site"] == "Dune Point"]
+    assert dune and not any(p.get("renovation_synergy") for p in dune), \
+        "a renovation exactly PLAN_YEARS out earns no synergy discount"
     r_b = subprocess.run([sys.executable, "validate_pack.py",
                           "sim_results_pack_b.json"],
                          capture_output=True, text=True)

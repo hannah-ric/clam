@@ -134,6 +134,53 @@ def test_phasing_and_budget():
     ok("phasing: renovation synergy, budget fill by BCR, deferral not deletion")
 
 
+def test_renovation_year_exact_boundary():
+    """The off-by-one this pins: a renovation_year exactly PLAN_YEARS out maps
+    to plan year PLAN_YEARS + 1, which has no budget line. It used to crash
+    the budgeted plan with KeyError (and land in a nonexistent year 4 without
+    a budget); it must instead be treated as outside the renovation window."""
+    ref = ri.ROOF_AGE_REF_YEAR
+    prj = [{"site": "B", "measure_key": "reroof", "bcr": 5.0, "cost_usd": 900.0,
+            "averted_direct_aal_usd": 100.0, "annuity_years": 25}]
+
+    # exactly at the boundary: renovation_year = ref + PLAN_YEARS (year 4)
+    df = pd.DataFrame([_site(name="B", renovation_year=ref + mc.PLAN_YEARS)])
+    out = mc.phase_projects([dict(p) for p in prj], df,
+                            budget_annual_usd=1000.0)   # must not KeyError
+    assert out[0]["year"] in range(1, mc.PLAN_YEARS + 1), \
+        "boundary case must land inside the plan, never a nonexistent year"
+    assert not out[0].get("renovation_synergy"), \
+        "a renovation outside the plan window earns no synergy discount"
+    assert out[0]["cost_usd"] == 900.0
+    free = mc.phase_projects([dict(p) for p in prj], df, budget_annual_usd=None)
+    assert free[0]["year"] == 1 and not free[0].get("renovation_synergy"), \
+        "without a budget the boundary case defaults to year 1, not year 4"
+
+    # last year INSIDE the window: renovation_year = ref + PLAN_YEARS - 1
+    df_in = pd.DataFrame([_site(name="B",
+                                renovation_year=ref + mc.PLAN_YEARS - 1)])
+    out_in = mc.phase_projects([dict(p) for p in prj], df_in,
+                               budget_annual_usd=1000.0)
+    assert out_in[0]["year"] == mc.PLAN_YEARS and \
+        out_in[0].get("renovation_synergy"), \
+        "the last in-window year still phases with the refurbishment"
+
+    # first year of the window: a renovation in the reference year itself
+    df_now = pd.DataFrame([_site(name="B", renovation_year=ref)])
+    out_now = mc.phase_projects([dict(p) for p in prj], df_now,
+                                budget_annual_usd=1000.0)
+    assert out_now[0]["year"] == 1 and out_now[0].get("renovation_synergy")
+
+    # far future and past renovations stay untouched by the window
+    for far in (ref + mc.PLAN_YEARS + 5, ref - 1):
+        df_far = pd.DataFrame([_site(name="B", renovation_year=far)])
+        out_far = mc.phase_projects([dict(p) for p in prj], df_far,
+                                    budget_annual_usd=1000.0)
+        assert out_far[0]["year"] == 1 and not out_far[0].get("renovation_synergy")
+    ok("renovation window: exact PLAN_YEARS boundary excluded, no KeyError, "
+       "in-window years keep synergy")
+
+
 def test_run_catalog_end_to_end():
     prep = {"wind": {"present": {"freq": np.array([0.01, 0.02]),
                                  "int": np.array([[70.0, 40.0], [45.0, 30.0]])},
@@ -200,5 +247,6 @@ if __name__ == "__main__":
     test_cost_models()
     test_catalog_effects_scope()
     test_phasing_and_budget()
+    test_renovation_year_exact_boundary()
     test_run_catalog_end_to_end()
     print("\nALL CATALOG-OP TESTS PASSED")
