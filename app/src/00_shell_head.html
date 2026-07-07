@@ -908,6 +908,10 @@
         </div>
         <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
       </div>
+      <div class="field"><label>Structural archetype</label>
+        <select id="mArch"><option value="">Not specified (published curve)</option><option value="lowrise_timber">Low-rise timber frame</option><option value="lowrise_masonry">Low-rise masonry</option><option value="midrise_concrete">Mid-rise concrete frame</option><option value="tower_concrete">High-rise concrete tower</option><option value="beachfront_lowrise">Beachfront low-rise</option><option value="setback_elevated">Set-back / elevated siting</option><option value="mep_basement">Critical plant in basement</option><option value="mep_elevated_plant">Critical plant elevated</option></select>
+        <span class="hint">Shifts the damage curves by structural form and siting; the fields above keep refining envelope condition on top.</span>
+      </div>
     </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>

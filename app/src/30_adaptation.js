@@ -78,15 +78,15 @@ function adaptedFinSite(s,sc,mods){
   const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
   let directEad=0,biEad=0;
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
-    {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK});
+    {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK,vHalf:vuln.vHalf});
   directEad+=w.eadUsd; biEad+=gop*reopenShare*w.eadFrac;
   let cvec=scaleVec(hzVector("cflood",s.latitude,s.longitude,sc));
   if(mods.cfDepthRed){const nv={};RPS.forEach(rp=>nv[rp]=Math.max(0,(cvec[rp]||0)-mods.cfDepthRed));cvec=nv;}
-  const cf=floodEad(cvec,value,FB_COAST+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const cf=floodEad(cvec,value,Math.max(FB_COAST+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=cf.eadUsd; biEad+=gop*reopenShare*cf.eadFrac;
-  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,fbRiver()+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=rf.eadUsd; biEad+=gop*reopenShare*rf.eadFrac;
-  const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,PRAIN_FB+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,Math.max(PRAIN_FB+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=pv.eadUsd; biEad+=gop*reopenShare*pv.eadFrac;
   const fb2=fireBurnPct(s,sc);
   const fFrac=Math.min((fb2.pct/100)*haz,1)*FIRE_MDD*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);

@@ -908,6 +908,10 @@
         </div>
         <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
       </div>
+      <div class="field"><label>Structural archetype</label>
+        <select id="mArch"><option value="">Not specified (published curve)</option><option value="lowrise_timber">Low-rise timber frame</option><option value="lowrise_masonry">Low-rise masonry</option><option value="midrise_concrete">Mid-rise concrete frame</option><option value="tower_concrete">High-rise concrete tower</option><option value="beachfront_lowrise">Beachfront low-rise</option><option value="setback_elevated">Set-back / elevated siting</option><option value="mep_basement">Critical plant in basement</option><option value="mep_elevated_plant">Critical plant elevated</option></select>
+        <span class="hint">Shifts the damage curves by structural form and siting; the fields above keep refining envelope condition on top.</span>
+      </div>
     </details>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
@@ -953,6 +957,11 @@ const SLR=SLR_REGIONS.global_mean;
 const SLR_REGION_BOXES=[["gulf",24.0,31.5,-100.5,-82.0],["florida_atlantic",24.0,37.5,-82.0,-74.0],["hawaii",18.0,23.0,-161.0,-154.0],["caribbean",17.0,19.5,-68.0,-64.0]];
 // appraisal convention, unified with the results pack (3% real, 25y)
 const APPRAISAL_DEFAULTS={"discountPct":3.0,"horizonYears":25};
+// structural archetypes: curve-level vulnerability differentiation;
+// the profile factor table stays the mapping layer on top. The
+// default reproduces the published curve exactly.
+const ARCHETYPES={"lowrise_timber":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap":null,"label":"Low-rise timber frame"},"lowrise_masonry":{"v_half_mult":1.08,"fb_add_m":0.0,"flood_cap":null,"label":"Low-rise masonry"},"midrise_concrete":{"v_half_mult":1.18,"fb_add_m":0.0,"flood_cap":null,"label":"Mid-rise concrete frame (4-7 stories)"},"tower_concrete":{"v_half_mult":1.3,"fb_add_m":0.0,"flood_cap":0.5,"label":"High-rise concrete tower"},"beachfront_lowrise":{"v_half_mult":0.95,"fb_add_m":-0.3,"flood_cap":null,"label":"Beachfront low-rise"},"setback_elevated":{"v_half_mult":1.0,"fb_add_m":0.5,"flood_cap":null,"label":"Set-back / elevated siting"},"mep_basement":{"v_half_mult":1.0,"fb_add_m":-0.2,"flood_cap":0.9,"label":"Critical plant in basement"},"mep_elevated_plant":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap":0.5,"label":"Critical plant elevated"}};
+const DEFAULT_ARCHETYPE="lowrise_timber";
 const FIRE_WARMING_UPLIFT=0.14;   // burn-probability uplift per deg C
 const TC_UPLIFT_PER_C=0.02;     // interim TC field intensity uplift per deg C
 
@@ -988,7 +997,7 @@ const SCEN_LABEL=(()=>{const o={present:"Present day"};
 // Wind intensity uplift for the interim TC field, per deg C of warming.
 const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
-function emanuelMdd(v){const vt=Math.max((v-V_THRESH)/(V_HALF-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+function emanuelMdd(v,vHalf){vHalf=vHalf||V_HALF;const vt=Math.max((v-V_THRESH)/(vHalf-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
@@ -1034,7 +1043,7 @@ function makeGridProvider(rows){
 }
 function siteEad(vec,value,opts){
   opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
-  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v)*dmgMult,1)};});
+  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
   if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
   const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
   for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
@@ -1255,6 +1264,10 @@ const ROOF_TYPE_FACTOR={shingle:1.1,metal:0.85,tile:0.95,membrane:0.95};
 const ROOF_AGE_REF_YEAR=2026;
 const OPENING_FACTOR={impact:0.85,partial:0.95,none:1.05};
 const FIRST_FLOOR_MAX_M=3.0, EQUIP_ELEV_FLOOD_CAP=0.5, FLOOD_CAP_DEFAULT=0.75;
+function archOf(site){
+  const key=String((site&&site.archetype)||"").toLowerCase();
+  return ARCHETYPES[key]||ARCHETYPES[DEFAULT_ARCHETYPE];
+}
 function vulnOf(site){
   let w=1;
   const c=String(site.construction||"").toLowerCase();
@@ -1272,9 +1285,18 @@ function vulnOf(site){
     if(isFinite(y)&&y>1800){ if(y<1995)w*=1.15; else if(y>=2010)w*=0.9; }
   }
   const ffe=+site.first_floor_elev_m;
-  const fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  let fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  /* archetype layer (schema v2): the archetype moves the CURVES (wind
+     half-damage speed, flood freeboard, flood cap); the factor table above
+     stays the mapping layer for envelope condition on top. The default
+     archetype is neutral, so profiles without one reproduce today's numbers
+     exactly. Site-measured equipment_elevated still caps DOWNWARD. */
+  const a=archOf(site);
+  fbBonus+=a.fb_add_m;
+  const capP=site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT;
+  const cap=a.flood_cap==null?capP:(site.equipment_elevated?Math.min(a.flood_cap,capP):a.flood_cap);
   return {windMult:Math.min(Math.max(w,0.5),1.6), fbBonus,
-          floodCap:site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT};
+          floodCap:cap, vHalf:V_HALF*a.v_half_mult};
 }
 
 /* ============================================================
@@ -1353,7 +1375,7 @@ function hzSite(site,hz,sc){
   }
   if(hz==="tc"){
     const {vec,meta}=provider()(la,lo,sc);
-    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult});
+    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult,vHalf:vuln.vHalf});
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec,hazardMeta:meta};
   }
   if(hz==="wfire"){
@@ -1364,11 +1386,11 @@ function hzSite(site,hz,sc){
   }
   if(hz==="prain"){
     const dvec=prainToDepth(hzVector("prain",la,lo,sc));
-    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,PRAIN_FB+vuln.fbBonus,null,vuln.floodCap);
+    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,Math.max(PRAIN_FB+vuln.fbBonus,0),null,vuln.floodCap);
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec:dvec};
   }
   const vec=hzVector(hz,la,lo,sc);
-  const {eadUsd,eadFrac,curve}=floodEad(vec,val,(hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,null,vuln.floodCap);
+  const {eadUsd,eadFrac,curve}=floodEad(vec,val,Math.max((hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,0),null,vuln.floodCap);
   return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
 }
 function scoreHazard(sites,hz,sc){
@@ -1438,10 +1460,22 @@ function windFactorTrail(site){
   return t;
 }
 function fbBonusTrail(site,vuln){
-  if(!(vuln.fbBonus>0))return [];
-  const ffe=+site.first_floor_elev_m;
-  const fromFfe=isFinite(ffe)&&ffe>=0;
-  return [{name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:vuln.fbBonus}];
+  const t=[];
+  const a=archOf(site);
+  const base=vuln.fbBonus-a.fb_add_m;      // the profile share (ffe/defended)
+  if(base>0){
+    const ffe=+site.first_floor_elev_m;
+    const fromFfe=isFinite(ffe)&&ffe>=0;
+    t.push({name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:base});
+  }
+  if(a.fb_add_m)t.push({name:"archetype: "+a.label,add:a.fb_add_m});
+  return t;
+}
+/* wind-side archetype entry for the trace: the archetype moves the CURVE
+   (half-damage speed), not the multiplier, so it gets its own line. */
+function archWindTrail(site){
+  const a=archOf(site);
+  return a.v_half_mult===1?[]:[{name:"archetype: "+a.label+" (half-damage speed x"+a.v_half_mult.toFixed(2)+")",mult:1}];
 }
 function explainPeril(site,hz,sc){
   const la=site.latitude,lo=site.longitude;
@@ -1465,9 +1499,9 @@ function explainPeril(site,hz,sc){
     out.source=meta.source==="grid"?{kind:"grid",dataset:ds,distKm:meta.dist}
       :{kind:"interim",detail:"regional wind anchors, inverse-distance weighted"};
     out.inputs={kind:"vec",vec:r.vec};
-    out.factors=windFactorTrail(site);
+    out.factors=windFactorTrail(site).concat(archWindTrail(site));
     out.windMult=vuln.windMult;
-    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+V_HALF+" m/s");
+    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+vuln.vHalf.toFixed(1)+" m/s"+(vuln.vHalf!==V_HALF?" (archetype-shifted from "+V_HALF+")":""));
     return out;
   }
   if(hz==="wfire"){
@@ -1678,15 +1712,15 @@ function adaptedFinSite(s,sc,mods){
   const scaleVec=v=>{if(haz===1)return v;const nv={};RPS.forEach(rp=>nv[rp]=(v[rp]||0)*haz);return nv;};
   let directEad=0,biEad=0;
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
-    {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK});
+    {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK,vHalf:vuln.vHalf});
   directEad+=w.eadUsd; biEad+=gop*reopenShare*w.eadFrac;
   let cvec=scaleVec(hzVector("cflood",s.latitude,s.longitude,sc));
   if(mods.cfDepthRed){const nv={};RPS.forEach(rp=>nv[rp]=Math.max(0,(cvec[rp]||0)-mods.cfDepthRed));cvec=nv;}
-  const cf=floodEad(cvec,value,FB_COAST+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const cf=floodEad(cvec,value,Math.max(FB_COAST+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=cf.eadUsd; biEad+=gop*reopenShare*cf.eadFrac;
-  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,fbRiver()+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=rf.eadUsd; biEad+=gop*reopenShare*rf.eadFrac;
-  const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,PRAIN_FB+vuln.fbBonus+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,Math.max(PRAIN_FB+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=pv.eadUsd; biEad+=gop*reopenShare*pv.eadFrac;
   const fb2=fireBurnPct(s,sc);
   const fFrac=Math.min((fb2.pct/100)*haz,1)*FIRE_MDD*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);
@@ -3796,6 +3830,7 @@ function loadSiteCsv(text){
     const ee2=row.get("equipment_elevated");if(ee2!==undefined&&String(ee2).trim()!=="")rec.equipment_elevated=truthy(ee2);
     const wu2=String(row.get("wui_class")||"").trim().toLowerCase();if(FIRE_WUI_PBURN[wu2]!=null||wu2==="none")rec.wui_class=wu2;
     const ds2=toNum(row.get("defensible_space_m"));if(isFinite(ds2)&&ds2>=0)rec.defensible_space_m=ds2;
+    const at2=String(row.get("archetype")||"").trim().toLowerCase();if(ARCHETYPES[at2]!=null)rec.archetype=at2;
     const ra2=row.get("roof_class_a");if(ra2!==undefined&&String(ra2).trim()!=="")rec.roof_class_a=truthy(ra2);
     /* named-insured aggregation: who is insured (named_insured), which physical
        site they sit on (site_id groups them into one map marker), and the
@@ -3816,7 +3851,7 @@ function loadSiteCsv(text){
    location or value is invalid. Pure; defined before restore() so it is testable. */
 const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
   "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
-  "wui_class","defensible_space_m","named_insured","site_id","site_name"];
+  "wui_class","defensible_space_m","archetype","named_insured","site_id","site_name"];
 function siteRecordFromFields(raw){
   raw=raw||{};
   const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
@@ -3834,6 +3869,7 @@ function siteRecordFromFields(raw){
   if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
   const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
   const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  const at=String(raw.archetype||"").trim().toLowerCase(); if(ARCHETYPES[at]!=null)rec.archetype=at;
   const ni=String(raw.named_insured||"").trim(); if(ni)rec.named_insured=ni.slice(0,80);
   const sid=String(raw.site_id||"").trim(); if(sid)rec.site_id=sid.slice(0,80);
   const snm=String(raw.site_name||"").trim(); if(snm)rec.site_name=snm.slice(0,120);
@@ -4055,6 +4091,7 @@ function openForm(mode,site){
   g("mOpening").value=s.opening_protection||""; set("mFfe",s.first_floor_elev_m);
   g("mEquipElev").checked=!!s.equipment_elevated;
   g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
+  g("mArch").value=s.archetype||"";
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
@@ -4069,6 +4106,7 @@ function submitForm(){
     year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
     roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
     equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value,
+    archetype:g("mArch").value,
     named_insured:g("mNamedInsured").value,site_id:g("mSiteId").value,site_name:g("mSiteName").value};
   const rec=siteRecordFromFields(raw);
   if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
@@ -4170,11 +4208,11 @@ function downloadTemplate(){
   // The first two rows share a site_id (CAMPUS-BEACH), so they aggregate into a
   // single site on the map with an HOA / operating-company named-insured breakout.
   const csv=
-    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,named_insured,site_id,site_name\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,,,\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,\n";
+    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,archetype,named_insured,site_id,site_name\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,beachfront_lowrise,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,tower_concrete,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,lowrise_timber,,,\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,,\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

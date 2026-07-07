@@ -322,6 +322,74 @@ def test_vhalf_calibration_roundtrip():
     ok("v_half calibration: round-trip recovery, bound clipping, record shape")
 
 
+def test_archetype_differentiation():
+    """Task 3 acceptance: two sites in the SAME hazard cell with different
+    archetypes produce different loss, and a site with no archetype
+    reproduces the published-curve numbers exactly."""
+    import assumptions as A
+    # per-site v_half broadcasts through wind_losses / emanuel_mdd
+    wind = np.array([[70.0, 70.0], [45.0, 45.0]])       # identical cell
+    vals = np.array([50e6, 50e6])
+    wm = np.ones(2)
+    vh = np.array([ri.V_HALF, ri.V_HALF * 1.30])        # timber vs tower
+    wl = ri.wind_losses(wind, vals, wm, v_half=vh)
+    assert (wl[:, 0] > wl[:, 1]).all(), \
+        "the tower archetype must lose less wind than timber in the same cell"
+    wl_def = ri.wind_losses(wind, vals, wm)
+    assert np.allclose(wl[:, 0], wl_def[:, 0]), \
+        "the timber/default column must equal the published curve exactly"
+
+    # full scenario path: same prep cell, archetypes differ
+    prep = {"wind": {"present": {"freq": np.array([0.02, 0.05]),
+                                 "int": wind}},
+            "surge": {("present", "present"): {"int": np.array([[4.0, 4.0],
+                                                                [0.8, 0.8]])}},
+            "rflood": {}}
+    rows = [{"archetype": None}, {"archetype": "tower_concrete"}]
+    vh2, fb_add, cap_o = ri.archetype_arrays(rows)
+    assert vh2[0] == ri.V_HALF and vh2[1] == ri.V_HALF * 1.30
+    fcap = ri.compose_flood_cap(np.full(2, ri.FLOOD_CAP_DEFAULT), cap_o,
+                                np.array([False, False]))
+    assert fcap[0] == ri.FLOOD_CAP_DEFAULT and fcap[1] == 0.5
+    r = ri.eval_scenario(prep, "present", vals, wm,
+                         np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER),
+                         flood_cap=fcap, v_half=vh2)
+    assert r["tc"]["ead"][0] > r["tc"]["ead"][1] > 0, \
+        "same cell, different archetype: wind loss must differ"
+    assert r["cflood"]["ead"][0] > r["cflood"]["ead"][1] > 0, \
+        "the tower flood cap must bind in deep water"
+    base = ri.eval_scenario(prep, "present", vals, wm,
+                            np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER))
+    assert base["tc"]["ead"][0] == r["tc"]["ead"][0], \
+        "the no-archetype site is bit-identical with or without the layer"
+
+    # the beachfront freeboard penalty raises flood loss in the same cell
+    # (mid-depth water, where the cap does not flatten the difference)
+    vh3, fb3, cap3 = ri.archetype_arrays([{"archetype": "beachfront_lowrise"},
+                                          {"archetype": None}])
+    assert fb3[0] == -0.3 and fb3[1] == 0.0
+    prep3 = {"wind": prep["wind"],
+             "surge": {("present", "present"): {"int": np.array([[1.6, 1.6],
+                                                                 [0.8, 0.8]])}},
+             "rflood": {}}
+    fbc = np.maximum(ri.FB_COAST + fb3, 0.0)
+    r3 = ri.eval_scenario(prep3, "present", vals, wm, fbc,
+                          np.full(2, ri.FB_RIVER))
+    assert r3["cflood"]["ead"][0] > r3["cflood"]["ead"][1], \
+        "beachfront siting must flood worse than the set-back default"
+
+    # site-measured equipment_elevated still caps DOWNWARD over mep_basement
+    _, _, cap_b = ri.archetype_arrays([{"archetype": "mep_basement"}])
+    got = ri.compose_flood_cap(np.array([ri.EQUIP_ELEV_FLOOD_CAP]), cap_b,
+                               np.array([True]))
+    assert got[0] == ri.EQUIP_ELEV_FLOOD_CAP, \
+        "measured elevated plant beats the basement archetype"
+    # unknown archetypes are the default, so existing profiles never break
+    assert A.archetype_of("no_such_thing") is A.ARCHETYPES[A.DEFAULT_ARCHETYPE]
+    assert A.archetype_of(None) is A.ARCHETYPES[A.DEFAULT_ARCHETYPE]
+    ok("archetypes: same-cell differentiation, neutral default, cap rules")
+
+
 def test_annuity():
     # 25 years at 3%: standard annuity factor ~17.413
     assert abs(ri.annuity(25, 0.03) - 17.4131) < 5e-4
@@ -385,6 +453,7 @@ if __name__ == "__main__":
     test_combine_countries_padding()
     test_capital_plan()
     test_vhalf_calibration_roundtrip()
+    test_archetype_differentiation()
     test_annuity()
     test_named_insured_rollup()
     print("\nALL IMPACT-OP TESTS PASSED")

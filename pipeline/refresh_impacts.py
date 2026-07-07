@@ -238,6 +238,36 @@ def vuln_v2(construction=None, year_built=None, defended=False,
     return wind_mult, fb_bonus, cap
 
 
+def archetype_arrays(rows):
+    """(v_half, fb_add_m, cap_override) per-site arrays from the archetype
+    field (profile schema v2). The archetype acts on the CURVES: v_half
+    shifts the wind curve, fb_add_m moves the effective flood freeboard,
+    cap_override replaces the flood damage cap (site-measured
+    equipment_elevated still wins downward). Absent/unknown archetypes are
+    the default (the published curve): existing profiles reproduce today's
+    numbers exactly."""
+    arch = [assumptions.archetype_of(r.get("archetype")) for r in rows]
+    v_half = np.array([V_HALF * a["v_half_mult"] for a in arch])
+    fb_add = np.array([a["fb_add_m"] for a in arch])
+    cap_o = np.array([np.nan if a["flood_cap"] is None else a["flood_cap"]
+                      for a in arch])
+    return v_half, fb_add, cap_o
+
+
+def compose_flood_cap(cap_profile, cap_override, equipment_elevated):
+    """Effective flood MDD cap: the profile's own cap when the archetype is
+    silent; else the archetype's cap, except that a site-measured elevated
+    plant (equipment_elevated) still caps DOWNWARD (site data beats
+    archetype)."""
+    cap_profile = np.asarray(cap_profile, float)
+    cap_override = np.asarray(cap_override, float)
+    ee = np.asarray(equipment_elevated, bool)
+    out = np.where(np.isnan(cap_override), cap_profile,
+                   np.where(ee, np.minimum(cap_override, cap_profile),
+                            cap_override))
+    return out
+
+
 def fire_vuln_of(roof_class_a=False, defensible_space_m=None):
     """Fire vulnerability multiplier from the wildfire profile fields,
     the app's fireVulnMult mirrored."""
@@ -404,7 +434,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   dmg_scale=1.0, haz_mult=1.0, exp_mult=1.0,
                   wind_dmg_mult=1.0, fb_bonus=0.0, cf_depth_red=0.0,
                   flood_cap=None, fb_prain=None, fire_vuln=None,
-                  fire_mult=1.0):
+                  fire_mult=1.0, v_half=None):
     """One scenario's portfolio result from prepared intensities.
 
     `prep` is the pure data structure build_country_prep() returns:
@@ -424,7 +454,8 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
             continue
         wnd = prep["wind"][skey]
         wl = wind_losses(wnd["int"], vals, wind_mult * wind_dmg_mult,
-                         dmg_scale, haz_mult)
+                         dmg_scale, haz_mult,
+                         v_half=V_HALF if v_half is None else v_half)
         w_parts.append((w, {"aal": float(site_ead(wl, wnd["freq"]).sum()),
                             "ep": ep_curve(wl.sum(axis=1), wnd["freq"]),
                             "ead": site_ead(wl, wnd["freq"])}))
@@ -528,7 +559,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
 
 
 def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
-                   flood_cap=None, fb_prain=None, fire_vuln=None):
+                   flood_cap=None, fb_prain=None, fire_vuln=None, v_half=None):
     """Averted direct AAL, cost, and BCR per measure per scenario."""
     an = annuity(HORIZON_YEARS, DISCOUNT_RATE)
     out = {}
@@ -554,7 +585,7 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
             adapted = eval_scenario(prep, app_key, values, wind_mult,
                                     fb_coast, fb_river, flood_cap=flood_cap,
                                     fb_prain=fb_prain, fire_vuln=fire_vuln,
-                                    **kw)
+                                    v_half=v_half, **kw)
             if adapted is None:
                 continue
             cost = float((values[in_scope] * m["cost_pct_value"] / 100.0).sum())
@@ -582,7 +613,7 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
 
 def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
                     scenarios, n_samples, seed, flood_cap=None,
-                    fb_prain=None, fire_vuln=None):
+                    fb_prain=None, fire_vuln=None, v_half=None):
     """Seeded joint Monte Carlo over the three physical factors. Returns
     per-scenario quantiles for acute AAL and 1-in-100 loss, plus a
     one-at-a-time driver ranking (the tornado, computed the app's way).
@@ -599,22 +630,23 @@ def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
                               fb_river, dmg_scale=draws["dmg"][i],
                               haz_mult=draws["haz"][i], exp_mult=draws["exp"][i],
                               flood_cap=flood_cap, fb_prain=fb_prain,
-                              fire_vuln=fire_vuln)
+                              fire_vuln=fire_vuln, v_half=v_half)
             aal[i] = r["acute"]["aal"] if r else 0.0
             var100[i] = r["acute"]["ep"][100] if r else 0.0
         central = eval_scenario(prep, app_key, values, wind_mult,
                                 fb_coast, fb_river, flood_cap=flood_cap,
-                                fb_prain=fb_prain, fire_vuln=fire_vuln)
+                                fb_prain=fb_prain, fire_vuln=fire_vuln,
+                                v_half=v_half)
         drivers = []
         for f in MC_FACTORS:
             lo = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
                                fb_river, flood_cap=flood_cap,
                                fb_prain=fb_prain, fire_vuln=fire_vuln,
-                               **{_MC_KW[f["key"]]: f["lo"]})
+                               v_half=v_half, **{_MC_KW[f["key"]]: f["lo"]})
             hi = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
                                fb_river, flood_cap=flood_cap,
                                fb_prain=fb_prain, fire_vuln=fire_vuln,
-                               **{_MC_KW[f["key"]]: f["hi"]})
+                               v_half=v_half, **{_MC_KW[f["key"]]: f["hi"]})
             swing = abs((hi["acute"]["aal"] if hi else 0.0) -
                         (lo["acute"]["aal"] if lo else 0.0))
             drivers.append({"label": f["label"], "swing_usd": round(swing, 2)})
@@ -642,7 +674,7 @@ _MC_KW = {"haz": "haz_mult", "dmg": "dmg_scale", "exp": "exp_mult"}
 # ---------------------------------------------------------------------------
 
 def run_catalog(prep, sites_c, values, wind_mult, fb_coast, fb_river, fcap,
-                base_by_scen, fb_prain=None, fire_vuln=None,
+                base_by_scen, fb_prain=None, fire_vuln=None, v_half=None,
                 plan_scenario_pref=("ssp245_2050", "present")):
     """Appraise every catalog measure per site (increment 2). Returns
     (measures_catalog section, projects list ready for phasing, scenario).
@@ -683,6 +715,7 @@ def run_catalog(prep, sites_c, values, wind_mult, fb_coast, fb_river, fcap,
         adapted = eval_scenario(prep, sc, values, wind_mult, fb_coast,
                                 fb_river, flood_cap=cap_eff,
                                 fb_prain=fb_prain, fire_vuln=fv_eff,
+                                v_half=v_half,
                                 wind_dmg_mult=knobs["wind_dmg_mult"],
                                 fb_bonus=knobs["fb_bonus"],
                                 cf_depth_red=knobs["cf_depth_red"])
@@ -804,11 +837,12 @@ def fit_v_half(calib_parts, observed_total, lo=VHALF_LO, hi=VHALF_HI,
 def build_calibration(calib_parts, observed_total, matched):
     vh, modeled_at_fit, clipped = fit_v_half(calib_parts, observed_total)
     base = None
-    for p in calib_parts:                      # bias uses the PUBLISHED curve
+    for p in calib_parts:      # bias uses the model AS RUN (archetype curves)
         base = (base or 0.0)
         w = p.get("wind")
         if w is not None and w["int"].size:
-            wl = wind_losses(w["int"], p["values"], p["wind_mult"])
+            wl = wind_losses(w["int"], p["values"], p["wind_mult"],
+                             v_half=p.get("v_half", V_HALF))
             base += float(site_ead(wl, w["freq"]).sum())
         base += p["flood_fixed"]
     bias = round(observed_total / base, 3) if base else None
@@ -1282,7 +1316,7 @@ def load_sites(path):
     for c in ("construction", "year_built", "roof_type", "roof_year",
               "opening_protection", "first_floor_elev_m", "stories", "keys",
               "buildings", "fema_zone", "backup_power", "renovation_year",
-              "wui_class", "defensible_space_m",
+              "wui_class", "defensible_space_m", "archetype",
               "named_insured", "site_id", "site_name"):
         if c not in df.columns:
             df[c] = None
@@ -1396,28 +1430,36 @@ def main(argv=None) -> int:
                  for r in sites_c.itertuples()]
         wm = np.array([v[0] for v in vulns])
         fbb = np.array([v[1] for v in vulns])
-        fcap = np.array([v[2] for v in vulns])
+        fcap_p = np.array([v[2] for v in vulns])
+        # archetype layer (profile schema v2): curve-level differentiation;
+        # the factor table above stays the mapping layer on top of it
+        vh, fb_add, cap_o = archetype_arrays(sites_c.to_dict("records"))
+        fbb = fbb + fb_add
+        fcap = compose_flood_cap(fcap_p, cap_o,
+                                 sites_c["equipment_elevated"].to_numpy(bool))
         fvuln = np.array([fire_vuln_of(r.roof_class_a, r.defensible_space_m)
                           for r in sites_c.itertuples()])
-        fb_coast = FB_COAST + fbb
-        fbp = np.full(len(sites_c), PRAIN_FB) + fbb
-        fb_river = FB_RIVER + fbb
+        fb_coast = np.maximum(FB_COAST + fbb, 0.0)
+        fbp = np.maximum(np.full(len(sites_c), PRAIN_FB) + fbb, 0.0)
+        fb_river = np.maximum(FB_RIVER + fbb, 0.0)
         scen = {}
         for app_key in rh.APP_SCENARIOS:
             r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river,
-                              flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln)
+                              flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln,
+                              v_half=vh)
             if r is not None:
                 scen[app_key] = r
         base_keys = {"present"} | set(UNCERTAINTY_SCENARIOS)
         adaptation = run_adaptation(prep, values, wm, fb_coast, fb_river,
                                     {k: v for k, v in scen.items()
                                      if k in base_keys}, flood_cap=fcap,
-                                    fb_prain=fbp, fire_vuln=fvuln)
+                                    fb_prain=fbp, fire_vuln=fvuln, v_half=vh)
         uncertainty = run_uncertainty(prep, values, wm, fb_coast, fb_river,
                                       [k for k in UNCERTAINTY_SCENARIOS
                                        if k in scen],
                                       args.mc, args.seed, flood_cap=fcap,
-                                      fb_prain=fbp, fire_vuln=fvuln)
+                                      fb_prain=fbp, fire_vuln=fvuln,
+                                      v_half=vh)
         if backtest is not None and "present" in scen:
             mask = sites_c["name"].astype(str).isin(backtest.index).to_numpy()
             if mask.any():
@@ -1426,6 +1468,7 @@ def main(argv=None) -> int:
                     "wind": None if wp is None else
                         {"freq": wp["freq"], "int": wp["int"][:, mask]},
                     "values": values[mask], "wind_mult": wm[mask],
+                    "v_half": vh[mask],
                     "flood_fixed": float(sum(
                         np.asarray(scen["present"][z]["ead"])[mask].sum()
                         for z in ("cflood", "rflood", "prain", "wfire")
@@ -1434,7 +1477,7 @@ def main(argv=None) -> int:
         cat_section, cat_projects, cat_sc = run_catalog(
             prep, sites_c, values, wm, fb_coast, fb_river, fcap,
             {k: v for k, v in scen.items() if k in base_keys},
-            fb_prain=fbp, fire_vuln=fvuln)
+            fb_prain=fbp, fire_vuln=fvuln, v_half=vh)
         per_country.append({"scen": scen, "adaptation": adaptation,
                             "catalog": cat_section,
                             "cat_projects": cat_projects, "cat_sc": cat_sc,

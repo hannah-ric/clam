@@ -31,7 +31,7 @@ const SCEN_LABEL=(()=>{const o={present:"Present day"};
 // Wind intensity uplift for the interim TC field, per deg C of warming.
 const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
-function emanuelMdd(v){const vt=Math.max((v-V_THRESH)/(V_HALF-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+function emanuelMdd(v,vHalf){vHalf=vHalf||V_HALF;const vt=Math.max((v-V_THRESH)/(vHalf-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
@@ -77,7 +77,7 @@ function makeGridProvider(rows){
 }
 function siteEad(vec,value,opts){
   opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
-  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v)*dmgMult,1)};});
+  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
   if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
   const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
   for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
@@ -298,6 +298,10 @@ const ROOF_TYPE_FACTOR={shingle:1.1,metal:0.85,tile:0.95,membrane:0.95};
 const ROOF_AGE_REF_YEAR=2026;
 const OPENING_FACTOR={impact:0.85,partial:0.95,none:1.05};
 const FIRST_FLOOR_MAX_M=3.0, EQUIP_ELEV_FLOOD_CAP=0.5, FLOOD_CAP_DEFAULT=0.75;
+function archOf(site){
+  const key=String((site&&site.archetype)||"").toLowerCase();
+  return ARCHETYPES[key]||ARCHETYPES[DEFAULT_ARCHETYPE];
+}
 function vulnOf(site){
   let w=1;
   const c=String(site.construction||"").toLowerCase();
@@ -315,9 +319,18 @@ function vulnOf(site){
     if(isFinite(y)&&y>1800){ if(y<1995)w*=1.15; else if(y>=2010)w*=0.9; }
   }
   const ffe=+site.first_floor_elev_m;
-  const fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  let fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  /* archetype layer (schema v2): the archetype moves the CURVES (wind
+     half-damage speed, flood freeboard, flood cap); the factor table above
+     stays the mapping layer for envelope condition on top. The default
+     archetype is neutral, so profiles without one reproduce today's numbers
+     exactly. Site-measured equipment_elevated still caps DOWNWARD. */
+  const a=archOf(site);
+  fbBonus+=a.fb_add_m;
+  const capP=site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT;
+  const cap=a.flood_cap==null?capP:(site.equipment_elevated?Math.min(a.flood_cap,capP):a.flood_cap);
   return {windMult:Math.min(Math.max(w,0.5),1.6), fbBonus,
-          floodCap:site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT};
+          floodCap:cap, vHalf:V_HALF*a.v_half_mult};
 }
 
 /* ============================================================
@@ -396,7 +409,7 @@ function hzSite(site,hz,sc){
   }
   if(hz==="tc"){
     const {vec,meta}=provider()(la,lo,sc);
-    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult});
+    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult,vHalf:vuln.vHalf});
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec,hazardMeta:meta};
   }
   if(hz==="wfire"){
@@ -407,11 +420,11 @@ function hzSite(site,hz,sc){
   }
   if(hz==="prain"){
     const dvec=prainToDepth(hzVector("prain",la,lo,sc));
-    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,PRAIN_FB+vuln.fbBonus,null,vuln.floodCap);
+    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,Math.max(PRAIN_FB+vuln.fbBonus,0),null,vuln.floodCap);
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec:dvec};
   }
   const vec=hzVector(hz,la,lo,sc);
-  const {eadUsd,eadFrac,curve}=floodEad(vec,val,(hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,null,vuln.floodCap);
+  const {eadUsd,eadFrac,curve}=floodEad(vec,val,Math.max((hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,0),null,vuln.floodCap);
   return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
 }
 function scoreHazard(sites,hz,sc){
@@ -481,10 +494,22 @@ function windFactorTrail(site){
   return t;
 }
 function fbBonusTrail(site,vuln){
-  if(!(vuln.fbBonus>0))return [];
-  const ffe=+site.first_floor_elev_m;
-  const fromFfe=isFinite(ffe)&&ffe>=0;
-  return [{name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:vuln.fbBonus}];
+  const t=[];
+  const a=archOf(site);
+  const base=vuln.fbBonus-a.fb_add_m;      // the profile share (ffe/defended)
+  if(base>0){
+    const ffe=+site.first_floor_elev_m;
+    const fromFfe=isFinite(ffe)&&ffe>=0;
+    t.push({name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:base});
+  }
+  if(a.fb_add_m)t.push({name:"archetype: "+a.label,add:a.fb_add_m});
+  return t;
+}
+/* wind-side archetype entry for the trace: the archetype moves the CURVE
+   (half-damage speed), not the multiplier, so it gets its own line. */
+function archWindTrail(site){
+  const a=archOf(site);
+  return a.v_half_mult===1?[]:[{name:"archetype: "+a.label+" (half-damage speed x"+a.v_half_mult.toFixed(2)+")",mult:1}];
 }
 function explainPeril(site,hz,sc){
   const la=site.latitude,lo=site.longitude;
@@ -508,9 +533,9 @@ function explainPeril(site,hz,sc){
     out.source=meta.source==="grid"?{kind:"grid",dataset:ds,distKm:meta.dist}
       :{kind:"interim",detail:"regional wind anchors, inverse-distance weighted"};
     out.inputs={kind:"vec",vec:r.vec};
-    out.factors=windFactorTrail(site);
+    out.factors=windFactorTrail(site).concat(archWindTrail(site));
     out.windMult=vuln.windMult;
-    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+V_HALF+" m/s");
+    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+vuln.vHalf.toFixed(1)+" m/s"+(vuln.vHalf!==V_HALF?" (archetype-shifted from "+V_HALF+")":""));
     return out;
   }
   if(hz==="wfire"){

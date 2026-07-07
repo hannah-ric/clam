@@ -86,6 +86,19 @@ def check_registry_self_consistency():
     for k, e in A.APPRAISAL.items():
         assert e["units"] and e["citation"], k
     print("ok  scalars and appraisal entries all carry units and citations")
+    # archetypes: a documented default that is exactly neutral, sane bounds
+    assert 6 <= len(A.ARCHETYPES) <= 10, "6 to 10 resort archetypes"
+    d = A.ARCHETYPES[A.DEFAULT_ARCHETYPE]
+    assert d["v_half_mult"] == 1.0 and d["fb_add_m"] == 0.0 \
+        and d["flood_cap"] is None, \
+        "the default archetype must reproduce the published curve exactly"
+    for k, a in A.ARCHETYPES.items():
+        assert a["label"] and a["basis"] and a["citation"], k
+        assert 0.8 <= a["v_half_mult"] <= 1.5, k
+        assert -0.3 <= a["fb_add_m"] <= 1.0, \
+            f"{k}: fb_add below -0.3 would push effective freeboard negative"
+        assert a["flood_cap"] is None or 0.0 < a["flood_cap"] <= 1.0, k
+    print("ok  archetypes: neutral default, bounded curve shifts, all cited")
 
 
 def check_producer_aliasing():

@@ -213,6 +213,91 @@ def scalar(key):
 
 
 # ---------------------------------------------------------------------------
+# Resort structural ARCHETYPES: differentiated vulnerability-curve settings.
+# The archetype describes structural FORM and siting and acts on the CURVES
+# (the wind curve's half-damage speed, the flood freeboard, the flood damage
+# cap); the existing profile factor table (construction, roof, openings,
+# first-floor height, equipment elevation) stays the mapping layer for
+# envelope CONDITION and keeps multiplying on top, so the two compose
+# without either replacing the other.
+#
+# The default is the low-rise timber archetype, which IS the published
+# emanuel_usa-parameter curve: an absent or unknown archetype reproduces
+# today's numbers exactly (pinned by tests), so existing profiles do not
+# break. Screening-grade values; the wind shifts follow the ordering of the
+# HAZUS-MH hurricane building classes (wood frame worst, engineered concrete
+# towers best), the flood adjustments are siting/plant-location judgments.
+#
+#   v_half_mult : multiplies the Emanuel curve's half-damage speed V_HALF
+#                 (>1 = stronger structure, curve shifts right)
+#   fb_add_m    : metres added to the effective flood/surge/rain freeboard
+#                 (negative = beachfront wave exposure defeats freeboard)
+#   flood_cap   : overrides the max flood damage ratio (None = profile's own
+#                 cap; site-measured equipment_elevated still wins downward)
+# ---------------------------------------------------------------------------
+
+_ARCH_CITE = ("HAZUS-MH hurricane model building classes (relative wind "
+              "fragility ordering) and USACE/FEMA depth-damage practice for "
+              "the flood-side siting adjustments; screening grade")
+
+ARCHETYPES = {
+    "lowrise_timber": {
+        "v_half_mult": 1.0, "fb_add_m": 0.0, "flood_cap": None,
+        "label": "Low-rise timber frame",
+        "basis": "the published emanuel_usa-parameter curve IS this "
+                 "archetype; absent/unknown archetypes reproduce it exactly"},
+    "lowrise_masonry": {
+        "v_half_mult": 1.08, "fb_add_m": 0.0, "flood_cap": None,
+        "label": "Low-rise masonry",
+        "basis": "masonry envelope survives higher winds than timber "
+                 "(HAZUS class ordering)"},
+    "midrise_concrete": {
+        "v_half_mult": 1.18, "fb_add_m": 0.0, "flood_cap": None,
+        "label": "Mid-rise concrete frame (4-7 stories)",
+        "basis": "engineered concrete frame; wind loss driven by envelope, "
+                 "not structure"},
+    "tower_concrete": {
+        "v_half_mult": 1.30, "fb_add_m": 0.0, "flood_cap": 0.5,
+        "label": "High-rise concrete tower",
+        "basis": "cladding/glazing-dominated wind loss well below timber; "
+                 "flood reaches only the podium and ground-floor systems, "
+                 "capping the damageable share"},
+    "beachfront_lowrise": {
+        "v_half_mult": 0.95, "fb_add_m": -0.3, "flood_cap": None,
+        "label": "Beachfront low-rise",
+        "basis": "open-coast exposure and salt fatigue lower the wind "
+                 "threshold; wave setup and run-up defeat part of the "
+                 "nominal freeboard"},
+    "setback_elevated": {
+        "v_half_mult": 1.0, "fb_add_m": 0.5, "flood_cap": None,
+        "label": "Set-back / elevated siting",
+        "basis": "siting above base flood elevation and back from the "
+                 "water adds effective freeboard"},
+    "mep_basement": {
+        "v_half_mult": 1.0, "fb_add_m": -0.2, "flood_cap": 0.9,
+        "label": "Critical plant in basement",
+        "basis": "water reaches MEP early (lower effective freeboard) and "
+                 "basement plant drives near-total service loss in deep "
+                 "water (higher cap)"},
+    "mep_elevated_plant": {
+        "v_half_mult": 1.0, "fb_add_m": 0.0, "flood_cap": 0.5,
+        "label": "Critical plant elevated",
+        "basis": "elevated MEP caps the flood damage ratio, mirroring the "
+                 "equipment_elevated profile field at archetype level"},
+}
+for _k, _a in ARCHETYPES.items():
+    _a["citation"] = _ARCH_CITE
+DEFAULT_ARCHETYPE = "lowrise_timber"
+
+
+def archetype_of(value):
+    """The archetype entry for a raw field value; absent/unknown values map
+    to the default (current behavior), so existing profiles never break."""
+    key = str(value).strip().lower() if value is not None else ""
+    return ARCHETYPES.get(key, ARCHETYPES[DEFAULT_ARCHETYPE])
+
+
+# ---------------------------------------------------------------------------
 # Appraisal convention (unified: the results pack's 3% real / 25 years).
 # The app's sliders stay adjustable; their DEFAULTS read this registry.
 # ---------------------------------------------------------------------------
@@ -280,6 +365,11 @@ def to_app_js():
         "// appraisal convention, unified with the results pack (3% real, 25y)\n"
         f"const APPRAISAL_DEFAULTS="
         f"{_js({'discountPct': round(disc * 100, 4), 'horizonYears': horizon})};\n"
+        "// structural archetypes: curve-level vulnerability differentiation;\n"
+        "// the profile factor table stays the mapping layer on top. The\n"
+        "// default reproduces the published curve exactly.\n"
+        f"const ARCHETYPES={_js({k: {f: v[f] for f in ('v_half_mult', 'fb_add_m', 'flood_cap', 'label')} for k, v in ARCHETYPES.items()})};\n"
+        f"const DEFAULT_ARCHETYPE={_js(DEFAULT_ARCHETYPE)};\n"
         f"const FIRE_WARMING_UPLIFT={_js(scalar('fire_warming_uplift_per_c'))};"
         "   // burn-probability uplift per deg C\n"
         f"const TC_UPLIFT_PER_C={_js(scalar('tc_intensity_uplift_per_c'))};"

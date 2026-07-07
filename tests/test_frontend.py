@@ -267,6 +267,43 @@ assert(vulnOf({equipment_elevated:true}).floodCap===0.5,"vulnOf v2: elevated equ
 assert(Math.abs(floodMdd(6.0,1.1)-0.75)<1e-12&&floodMdd(6.0,1.1,0.5)===0.5,
   "floodMdd: cap parameter binds in deep water, default unchanged");
 
+/* ---------------- Task 3: structural archetypes ---------------- */
+/* two sites in the SAME hazard cell with different archetypes must produce
+   different loss; absent or unknown archetypes reproduce today's numbers. */
+gridByHazard={};clearHazCache();
+const archRows=[];
+for(const sc of SCEN_KEYS){
+  archRows.push({lat:25.0,lon:-80.0,scenario:sc,hazard:"tc",v10:20,v25:28,v50:36,v100:48,v250:60,v500:66});
+  archRows.push({lat:25.0,lon:-80.0,scenario:sc,hazard:"cflood",v10:0.3,v25:0.7,v50:1.2,v100:1.8,v250:2.4,v500:2.9});
+}
+buildGridsFromRows(archRows);
+const aTimber={id:31,name:"T",latitude:25.0,longitude:-80.0,asset_value_usd:5e7};
+const aTower=Object.assign({},aTimber,{id:32,archetype:"tower_concrete"});
+const aBeach=Object.assign({},aTimber,{id:33,archetype:"beachfront_lowrise"});
+const aExplicit=Object.assign({},aTimber,{id:34,archetype:"lowrise_timber"});
+const aBad=Object.assign({},aTimber,{id:35,archetype:"spaceship"});
+assert(vulnOf(aTimber).vHalf===V_HALF&&vulnOf(aTower).vHalf===V_HALF*1.3,
+  "vulnOf: archetype shifts the wind half-damage speed, default stays put");
+assert(hzSite(aTower,"tc","present").ead<hzSite(aTimber,"tc","present").ead,
+  "same cell, different archetype: the tower loses less wind than timber");
+assert(hzSite(aBeach,"cflood","present").ead>hzSite(aTimber,"cflood","present").ead,
+  "same cell: beachfront siting floods worse than the default");
+assert(hzSite(aExplicit,"tc","present").ead===hzSite(aTimber,"tc","present").ead
+  &&hzSite(aExplicit,"cflood","present").ead===hzSite(aTimber,"cflood","present").ead,
+  "the explicit timber default is bit-identical to no archetype at all");
+assert(hzSite(aBad,"tc","present").ead===hzSite(aTimber,"tc","present").ead,
+  "an unknown archetype value falls back to current behavior, never breaks");
+assert(vulnOf(Object.assign({},aTimber,{archetype:"mep_basement",equipment_elevated:true})).floodCap===EQUIP_ELEV_FLOOD_CAP,
+  "site-measured elevated plant still caps DOWNWARD over the basement archetype");
+const exArch=explainPeril(aTower,"tc","present");
+assert(exArch.notes.join(" ").indexOf("archetype-shifted")>=0,
+  "the tc trace states the archetype-shifted half-damage speed");
+loadSiteCsv("name,latitude,longitude,asset_value_usd,archetype\\n"+
+            "A,25.0,-80.0,50000000,tower_concrete\\nB,25.0,-80.0,50000000,not_a_thing","x.csv");
+assert(sites.length===2&&sites[0].archetype==="tower_concrete"&&sites[1].archetype===undefined,
+  "site CSV ingests a valid archetype and drops an invalid one");
+gridByHazard={};clearHazCache();
+
 /* ---------------- v1.12: six perils, migration safety first ---------------- */
 gridByHazard={};clearHazCache();
 const plain={id:9,name:"Plain",latitude:29.5,longitude:-98.5,asset_value_usd:50000000};

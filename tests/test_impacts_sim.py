@@ -154,6 +154,8 @@ def run():
         "equipment_elevated": [True, False, False, False],
         "wui_class": [None, None, "intermix", None],
         "defensible_space_m": [None, None, 10, None],
+        # exercise the archetype layer through the real producer path
+        "archetype": [None, "beachfront_lowrise", None, None],
         # Dune Point's renovation sits EXACTLY PLAN_YEARS out: the boundary
         # that used to crash the budgeted plan with KeyError (year 4)
         "renovation_year": [None, ri.ROOF_AGE_REF_YEAR + mc.PLAN_YEARS, None,

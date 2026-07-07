@@ -59,6 +59,7 @@ function loadSiteCsv(text){
     const ee2=row.get("equipment_elevated");if(ee2!==undefined&&String(ee2).trim()!=="")rec.equipment_elevated=truthy(ee2);
     const wu2=String(row.get("wui_class")||"").trim().toLowerCase();if(FIRE_WUI_PBURN[wu2]!=null||wu2==="none")rec.wui_class=wu2;
     const ds2=toNum(row.get("defensible_space_m"));if(isFinite(ds2)&&ds2>=0)rec.defensible_space_m=ds2;
+    const at2=String(row.get("archetype")||"").trim().toLowerCase();if(ARCHETYPES[at2]!=null)rec.archetype=at2;
     const ra2=row.get("roof_class_a");if(ra2!==undefined&&String(ra2).trim()!=="")rec.roof_class_a=truthy(ra2);
     /* named-insured aggregation: who is insured (named_insured), which physical
        site they sit on (site_id groups them into one map marker), and the
@@ -79,7 +80,7 @@ function loadSiteCsv(text){
    location or value is invalid. Pure; defined before restore() so it is testable. */
 const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
   "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
-  "wui_class","defensible_space_m","named_insured","site_id","site_name"];
+  "wui_class","defensible_space_m","archetype","named_insured","site_id","site_name"];
 function siteRecordFromFields(raw){
   raw=raw||{};
   const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
@@ -97,6 +98,7 @@ function siteRecordFromFields(raw){
   if(raw.equipment_elevated!==undefined&&String(raw.equipment_elevated).trim()!=="")rec.equipment_elevated=truthy(raw.equipment_elevated);
   const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
   const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
+  const at=String(raw.archetype||"").trim().toLowerCase(); if(ARCHETYPES[at]!=null)rec.archetype=at;
   const ni=String(raw.named_insured||"").trim(); if(ni)rec.named_insured=ni.slice(0,80);
   const sid=String(raw.site_id||"").trim(); if(sid)rec.site_id=sid.slice(0,80);
   const snm=String(raw.site_name||"").trim(); if(snm)rec.site_name=snm.slice(0,120);

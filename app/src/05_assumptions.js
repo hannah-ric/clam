@@ -20,5 +20,10 @@ const SLR=SLR_REGIONS.global_mean;
 const SLR_REGION_BOXES=[["gulf",24.0,31.5,-100.5,-82.0],["florida_atlantic",24.0,37.5,-82.0,-74.0],["hawaii",18.0,23.0,-161.0,-154.0],["caribbean",17.0,19.5,-68.0,-64.0]];
 // appraisal convention, unified with the results pack (3% real, 25y)
 const APPRAISAL_DEFAULTS={"discountPct":3.0,"horizonYears":25};
+// structural archetypes: curve-level vulnerability differentiation;
+// the profile factor table stays the mapping layer on top. The
+// default reproduces the published curve exactly.
+const ARCHETYPES={"lowrise_timber":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap":null,"label":"Low-rise timber frame"},"lowrise_masonry":{"v_half_mult":1.08,"fb_add_m":0.0,"flood_cap":null,"label":"Low-rise masonry"},"midrise_concrete":{"v_half_mult":1.18,"fb_add_m":0.0,"flood_cap":null,"label":"Mid-rise concrete frame (4-7 stories)"},"tower_concrete":{"v_half_mult":1.3,"fb_add_m":0.0,"flood_cap":0.5,"label":"High-rise concrete tower"},"beachfront_lowrise":{"v_half_mult":0.95,"fb_add_m":-0.3,"flood_cap":null,"label":"Beachfront low-rise"},"setback_elevated":{"v_half_mult":1.0,"fb_add_m":0.5,"flood_cap":null,"label":"Set-back / elevated siting"},"mep_basement":{"v_half_mult":1.0,"fb_add_m":-0.2,"flood_cap":0.9,"label":"Critical plant in basement"},"mep_elevated_plant":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap":0.5,"label":"Critical plant elevated"}};
+const DEFAULT_ARCHETYPE="lowrise_timber";
 const FIRE_WARMING_UPLIFT=0.14;   // burn-probability uplift per deg C
 const TC_UPLIFT_PER_C=0.02;     // interim TC field intensity uplift per deg C
