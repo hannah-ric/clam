@@ -112,7 +112,13 @@ function applySimpleView(){
 /* ---- export ---- */
 function exportCsv(){
   if(!sites.length){toast("Load a portfolio first.");return;}
-  const src=hazardGrid?"climada_grid":"interim_model";
+  /* hazard_source is resolved PER SITE: "climada_grid" only when every peril's
+     grid actually reached that site; a site outside some peril's coverage is
+     labeled degraded with its modeled count, so a row can never claim grid
+     backing it did not receive. Column set unchanged (frozen contract). */
+  const src=s=>{if(!hazardGrid)return "interim_model";
+    const t=siteTrustSummary(s,scenario);
+    return t.modeled===t.total?"climada_grid":"climada_grid_degraded_"+t.modeled+"of"+t.total;};
   const cols=["site_id","name","brand","latitude","longitude","asset_value_usd","annual_revenue_usd","construction","year_built","defended","scenario","hazard_source"]
     .concat(EXPORT_ACUTE_LEGACY.map(hz=>"ead_"+hz+"_usd"))
     .concat(["ead_physical_total_usd","ead_physical_pct"])
@@ -133,7 +139,7 @@ function exportCsv(){
     const fin=finSite(s,scenario);
     const rpLoss=RPS.map(rp=>ACUTE.reduce((a,hz)=>a+g(hzr[hz].curve,rp),0).toFixed(0));
     const row=[s.id,csvCell(s.name),csvCell(s.brand||""),s.latitude,s.longitude,s.asset_value_usd,fin.revenue.toFixed(0),
-      s.construction||"",s.year_built||"",s.defended?"true":"",scenario,src]
+      s.construction||"",s.year_built||"",s.defended?"true":"",scenario,src(s)]
       .concat(EXPORT_ACUTE_LEGACY.map(hz=>hzr[hz].ead.toFixed(0)))
       .concat([physEad.toFixed(0),physPct.toFixed(3)])
       .concat(EXPORT_ACUTE_LEGACY.map(hz=>hzr[hz].band)).concat([ht.band])

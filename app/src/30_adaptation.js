@@ -263,7 +263,9 @@ function actionQueue(sitesArr,sc,af,budget){
    One row per site: the verified attributes plus this model's present-day
    direct-damage view, with its source stated honestly. */
 function brokerPackCsv(){
-  const src=hazardGrid?"climada_grid":"interim_model";
+  /* per-site source honesty: the old portfolio-wide "climada_grid" label let
+     a site outside a peril's coverage claim grid backing in front of a
+     broker. hazardSourceOf states, per peril, what actually fed this row. */
   const cols=["name","brand","latitude","longitude","asset_value_usd","annual_revenue_usd",
     "construction","year_built","roof_type","roof_year","opening_protection",
     "first_floor_elev_m","equipment_elevated","defended","wui_class",
@@ -286,7 +288,8 @@ function brokerPackCsv(){
       s.equipment_elevated?"true":"",s.defended?"true":"",
       s.wui_class||"",s.defensible_space_m!=null?s.defensible_space_m:"",
       s.roof_class_a?"true":"",
-      ead.toFixed(0),top?top.hz:"",rp100.toFixed(0),src].join(",")+"\n";
+      ead.toFixed(0),top?top.hz:"",rp100.toFixed(0),
+      hazardSourceOf(s,"present")].join(",")+"\n";
   });
   return csv;
 }

@@ -119,6 +119,45 @@ assert(htext.textContent.indexOf("4/6")>=0,"cflood now live: badge reads 4/6");
 assert(note.textContent.indexOf("Partial scenario coverage")>=0&&note.textContent.indexOf("coastal flood")>=0,
   "present-only cflood is flagged as partial, not hidden");
 
+/* ---------------- per-site-per-peril trust ---------------- */
+/* Miami sits on the loaded cells; Kona (Hawaii) is thousands of km outside
+   them. No site may display green on a peril whose grid did not reach it. */
+const miami={id:21,name:"Miami",latitude:25.05,longitude:-80.05,asset_value_usd:5e7};
+const kona={id:22,name:"Kona",latitude:19.64,longitude:-155.99,asset_value_usd:5e7};
+assert(siteTrust(miami,"tc","present").state==="modeled"&&siteTrust(miami,"tc","present").basis==="grid",
+  "in-coverage site is modeled on the grid-fed peril");
+assert(siteTrust(kona,"tc","present").state==="degraded"&&siteTrust(kona,"tc","present").detail.indexOf("outside grid coverage")>=0,
+  "outside-coverage site is degraded on the same peril, with the distance stated");
+assert(siteTrust(kona,"rflood","present").state==="degraded","rflood grid does not reach Kona: degraded");
+assert(siteTrust(miami,"heat","present").state==="degraded",
+  "heat grid exists but does not reach Miami: degraded, not green");
+assert(siteTrust(miami,"prain","present").state==="degraded"&&siteTrust(miami,"prain","present").basis==="none",
+  "no rainfall grid: degraded with an honest no-data basis");
+const tsM=siteTrustSummary(miami,"present"), tsK=siteTrustSummary(kona,"present");
+assert(tsM.modeled===3&&tsM.total===6,"Miami is modeled on exactly tc, cflood, rflood here");
+assert(tsK.modeled===0,"Kona is modeled on nothing here: every chip must degrade");
+const stripK=siteTrustStrip(kona), stripM=siteTrustStrip(miami);
+assert(stripK.indexOf('data-trust="modeled"')<0&&stripK.indexOf("0 of 6")>=0,
+  "the Kona trust strip shows no green chip at all");
+assert(stripM.indexOf('data-trust="modeled"')>=0&&stripM.indexOf("3 of 6")>=0,
+  "the Miami trust strip shows green only for the perils that reached it");
+assert(hazardSourceOf(kona,"present").indexOf("grid:-")===0,
+  "the export source string claims no grid backing for the uncovered site");
+assert(hazardSourceOf(miami,"present").indexOf("grid:tc+cflood+rflood")===0,
+  "the export source string lists exactly the grid-fed perils per site");
+sites=[miami,kona];
+const authT=perilAuthority().find(a=>a.key==="tc");
+assert(authT.live&&authT.sitesModeled===1&&authT.nSites===2&&authT.full===false,
+  "per-peril authority counts sites within coverage and withholds green");
+renderHazProv();
+assert(prov.innerHTML.indexOf("Site coverage")>=0&&prov.innerHTML.indexOf("1 of 2 sites within coverage")>=0,
+  "the Method panel states per-site coverage per peril");
+assert(note.textContent.indexOf("Sites outside coverage")>=0,
+  "hazNote calls out the perils with sites outside coverage");
+assert(prov.innerHTML.indexOf("var(--r-low)")<0,
+  "no chip reads green while any loaded site is outside its coverage");
+sites=[];
+
 /* ---------------- interim branch ---------------- */
 hazardGrid=null;hazardMeta=null;gridByHazard={};clearHazCache();
 renderHazProv();
@@ -563,8 +602,8 @@ assert(bpW.indexOf("roof_type")>=0&&bpW.indexOf("opening_protection")>=0
   &&bpW.indexOf("modeled_direct_ead_usd_present")>=0,
   "the broker pack carries secondary modifiers and the modeled view");
 assert(bpW.trim().split("\\n").length===sites.length+1,"broker pack: one row per site");
-assert(bpW.indexOf("interim_model")>=0,
-  "the broker pack states its hazard source honestly (interim here)");
+assert(bpW.indexOf("grid:-|interim:tc+cflood+rflood+heat|none:wfire+prain")>=0,
+  "the broker pack states its hazard source honestly PER SITE (no grid claims here)");
 const alW=actionListCsv("present",20,2);
 assert(alW.indexOf("live_model")>=0&&alW.split("\\n")[0].indexOf("owner")>=0,
   "the action list carries the source label and a blank owner column");

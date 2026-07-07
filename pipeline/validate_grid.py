@@ -10,8 +10,16 @@ match), and it sanity-checks the new surge layer.
 
 Usage:
     python validate_grid.py hazard_grid.csv [hazard_grid_meta.json]
+                            [--sites sites.csv]
 
 Exit code 0 = clean or warnings only; 1 = hard failure (do not ship the file).
+
+--sites runs the per-site coverage audit (check I): for every hazard in the
+grid, every site's distance to its nearest cell is checked against the app's
+200 km snap limit, and any site a peril does not cover (Hawaii on a layer
+without a Pacific domain, say) is listed by name. Those sites are exactly the
+ones the app must show as degraded rather than silently zero, so the audit is
+a WARNING surface, not a gate failure.
 
 Checks, in order (v2: heat- and rflood-aware):
   A. schema: required columns, parseable numerics, lat/lon in range, no NaN
@@ -31,6 +39,9 @@ Checks, in order (v2: heat- and rflood-aware):
   H. provenance cross-check (only when the meta JSON is passed): every layer
      the sidecar claims exists in the CSV and vice versa, so what the app's
      Phase 4 trust surface DISPLAYS can never drift from what it COMPUTES
+  I. per-site coverage audit (only with --sites): every site's distance to
+     the nearest cell of every hazard, against the app's 200 km snap; sites
+     outside a peril's coverage are listed so they are flagged, not zeroed
 """
 
 from __future__ import annotations
@@ -44,6 +55,62 @@ RPS = [10, 25, 50, 100, 250, 500]
 VCOLS = [f"v{rp}" for rp in RPS]
 APP_KEYS = ["present"] + [f"{p}_{h}" for h in (2030, 2050, 2080)
                           for p in ("ssp126", "ssp245", "ssp585")]
+MAX_SNAP_KM = 200.0             # the app's nearest-cell limit (mirrors it)
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance, [n1 x n2], pure numpy."""
+    la1 = np.radians(np.asarray(lat1, float))[:, None]
+    lo1 = np.radians(np.asarray(lon1, float))[:, None]
+    la2 = np.radians(np.asarray(lat2, float))[None, :]
+    lo2 = np.radians(np.asarray(lon2, float))[None, :]
+    a = (np.sin((la2 - la1) / 2) ** 2
+         + np.cos(la1) * np.cos(la2) * np.sin((lo2 - lo1) / 2) ** 2)
+    return 2 * 6371.0 * np.arcsin(np.sqrt(np.minimum(a, 1.0)))
+
+
+def audit_site_coverage(df, sites_path, max_km=MAX_SNAP_KM, list_cap=15):
+    """Check I: per-site per-hazard coverage against the app's snap limit.
+
+    Returns {hazard: [(name, dist_km), ...]} of sites OUTSIDE coverage and
+    prints the audit. Warning surface only: shipping is allowed, because the
+    uncovered sites are exactly what the app's per-site trust chips must show
+    as degraded; what is not allowed is silence about them.
+    """
+    sites = pd.read_csv(sites_path)
+    sites.columns = [str(c).strip().lower() for c in sites.columns]
+    need = ["name", "latitude", "longitude"]
+    missing = [c for c in need if c not in sites.columns]
+    if missing:
+        warn(f"--sites file {sites_path} missing columns {missing}; "
+             f"coverage audit skipped")
+        return None
+    s_lat = pd.to_numeric(sites["latitude"], errors="coerce").to_numpy()
+    s_lon = pd.to_numeric(sites["longitude"], errors="coerce").to_numpy()
+    names = sites["name"].astype(str).to_numpy()
+    good = np.isfinite(s_lat) & np.isfinite(s_lon)
+    s_lat, s_lon, names = s_lat[good], s_lon[good], names[good]
+    print(f"\nPer-site coverage audit ({len(names)} sites vs the app's "
+          f"{max_km:.0f} km snap):")
+    out = {}
+    for hz in sorted(df["hazard"].unique()):
+        cells = df.loc[df["hazard"] == hz, ["lat", "lon"]].drop_duplicates()
+        d = _haversine_km(s_lat, s_lon, cells["lat"].to_numpy(),
+                          cells["lon"].to_numpy()).min(axis=1)
+        outside = [(str(n), float(x)) for n, x in zip(names, d) if x > max_km]
+        out[hz] = outside
+        if not outside:
+            ok(f"hazard '{hz}': all {len(names)} sites within {max_km:.0f} km "
+               f"of a cell")
+            continue
+        warn(f"hazard '{hz}': {len(outside)} of {len(names)} site(s) OUTSIDE "
+             f"coverage; the app must show them as degraded on this peril, "
+             f"never silently zero")
+        for n, x in outside[:list_cap]:
+            print(f"        {n}: {x:.0f} km to the nearest {hz} cell")
+        if len(outside) > list_cap:
+            print(f"        ... and {len(outside) - list_cap} more")
+    return out
 
 
 def fail(msg):
@@ -59,7 +126,8 @@ def ok(msg):
     print(f"ok    {msg}")
 
 
-def main(path: str, meta_path: str | None = None) -> int:
+def main(path: str, meta_path: str | None = None,
+         sites_path: str | None = None) -> int:
     hard = False
     df = pd.read_csv(path)
     print(f"Loaded {len(df):,} rows from {path}\n")
@@ -247,13 +315,26 @@ def main(path: str, meta_path: str | None = None) -> int:
                 warn(f"meta records {n_skip} skipped layer(s) from the last run: "
                      f"the app shows this on the Method tab; confirm it is expected")
 
+    # I. per-site coverage audit ---------------------------------------------------
+    if sites_path:
+        try:
+            audit_site_coverage(df, sites_path)
+        except Exception as exc:
+            warn(f"coverage audit failed ({exc}); fix the sites file and rerun")
+
     print("\n" + ("RESULT: HARD FAILURE - do not ship this grid." if hard
                   else "RESULT: grid is shippable (review warnings above)."))
     return 1 if hard else 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("usage: python validate_grid.py hazard_grid.csv [hazard_grid_meta.json]")
-        raise SystemExit(2)
-    raise SystemExit(main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None))
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Acceptance gate for the hazard grid CSV.")
+    ap.add_argument("csv", help="hazard_grid.csv to validate")
+    ap.add_argument("meta", nargs="?", default=None,
+                    help="hazard_grid_meta.json provenance sidecar (optional)")
+    ap.add_argument("--sites", default=None, metavar="CSV",
+                    help="sites CSV for the per-site coverage audit (check I)")
+    args = ap.parse_args()
+    raise SystemExit(main(args.csv, args.meta, args.sites))

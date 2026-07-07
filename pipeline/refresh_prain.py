@@ -53,10 +53,45 @@ WARMING = {
 PRAIN_CC_PER_C = 0.07           # Clausius-Clapeyron moisture scaling per deg C
 NB_SYNTH_TRACKS = 9             # perturbed trajectories per historical track
 COUNTRIES = ["USA", "PRI", "VIR"]
-# country bounding boxes for the rain centroid grids (lon0, lat0, lon1, lat1)
-BBOXES = {"USA": (-100.5, 23.5, -74.0, 37.5),   # TC-relevant CONUS
-          "PRI": (-67.5, 17.7, -65.1, 18.7),
-          "VIR": (-65.2, 17.6, -64.5, 18.5)}
+# Rain DOMAINS: each pairs a centroid bbox (lon0, lat0, lon1, lat1) with the
+# IBTrACS basin whose storms actually rain there. The coverage audit behind
+# this structure: the original per-country BBOXES carried no Hawaii box and
+# the track fetch hardcoded basin="NA", so Hawaii resorts (whose cyclones,
+# e.g. Iniki and Lane, live in the East/Central Pacific basin) silently
+# scored zero TC rainfall. Hawaii is now its own EP-basin domain, and any
+# site outside every domain is FLAGGED by the consumers, never zeroed
+# silently. A country may span several domains (USA = CONUS + Hawaii).
+DOMAINS = [
+    {"key": "conus",  "iso3": "USA", "basin": "NA",
+     "bbox": (-100.5, 23.5, -74.0, 37.5)},          # TC-relevant CONUS
+    {"key": "hawaii", "iso3": "USA", "basin": "EP",
+     "bbox": (-161.0, 18.0, -154.0, 23.0)},
+    {"key": "pri",    "iso3": "PRI", "basin": "NA",
+     "bbox": (-67.5, 17.7, -65.1, 18.7)},
+    {"key": "vir",    "iso3": "VIR", "basin": "NA",
+     "bbox": (-65.2, 17.6, -64.5, 18.5)},
+]
+DOMAIN_MARGIN_DEG = 0.5         # a site this close to a box still reads from it
+
+
+def domains_for(iso3, site_lat=None, site_lon=None, margin=DOMAIN_MARGIN_DEG):
+    """The country's rain domains; when site coordinates are given, only the
+    domains that actually cover at least one site (so a CONUS-only portfolio
+    never fetches Pacific tracks)."""
+    doms = [d for d in DOMAINS if d["iso3"] == iso3]
+    if site_lat is None:
+        return doms
+    return [d for d in doms
+            if bool(domain_covers(d, site_lat, site_lon, margin).any())]
+
+
+def domain_covers(domain, lat, lon, margin=DOMAIN_MARGIN_DEG):
+    """Boolean array: which sites the domain's bbox (plus margin) speaks for."""
+    w, s, e, n = domain["bbox"]
+    lat = np.asarray(lat, float)
+    lon = np.asarray(lon, float)
+    return ((lat >= s - margin) & (lat <= n + margin)
+            & (lon >= w - margin) & (lon <= e + margin))
 
 
 # ---------------------------------------------------------------------------
@@ -88,12 +123,14 @@ def prain_rows(present_grid, grid_deg=rh.GRID_DEG):
 # CLIMADA seams (version-sensitive, mocked in tests)
 # ---------------------------------------------------------------------------
 
-def fetch_tracks(iso3):
-    """IBTrACS historical tracks near the country box, densified and
-    perturbed into a synthetic set (the standard CLIMADA track recipe)."""
+def fetch_tracks(domain):
+    """IBTrACS historical tracks for the domain's basin near its box,
+    densified and perturbed into a synthetic set (the standard CLIMADA track
+    recipe)."""
     from climada.hazard import TCTracks
-    w, s, e, n = BBOXES[iso3]
-    tr = TCTracks.from_ibtracs_netcdf(basin="NA", year_range=(1980, 2024))
+    w, s, e, n = domain["bbox"]
+    tr = TCTracks.from_ibtracs_netcdf(basin=domain["basin"],
+                                      year_range=(1980, 2024))
     try:
         tr = tr.tracks_in_exp_bbox(w, e, s, n)     # not in every release
     except Exception:
@@ -103,11 +140,11 @@ def fetch_tracks(iso3):
     return tr
 
 
-def rain_hazard(tracks, iso3):
-    """TCRain accumulated rainfall (mm) on a country centroid grid."""
+def rain_hazard(tracks, domain):
+    """TCRain accumulated rainfall (mm) on the domain's centroid grid."""
     from climada.hazard import Centroids
     from climada_petals.hazard import TCRain
-    w, s, e, n = BBOXES[iso3]
+    w, s, e, n = domain["bbox"]
     res_deg = 150 / 3600.0
     try:
         cen = Centroids.from_pnt_bounds((w, s, e, n), res=res_deg)
@@ -129,21 +166,28 @@ def main(argv=None) -> int:
     rh.ensure_cartopy_cache()
 
     meta = {"generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "script": "refresh_prain.py v1 (increment 3)",
-            "method": "Petals TCRain over IBTrACS-derived synthetic tracks; "
-                      "scenarios scale by Clausius-Clapeyron per WARMING",
+            "script": "refresh_prain.py v2 (basin-aware rain domains)",
+            "method": "Petals TCRain over IBTrACS-derived synthetic tracks per "
+                      "basin domain; scenarios scale by Clausius-Clapeyron per "
+                      "WARMING",
             "prain_cc_per_c": PRAIN_CC_PER_C,
             "nb_synth_tracks": NB_SYNTH_TRACKS,
+            "domains": [{"key": d["key"], "iso3": d["iso3"],
+                         "basin": d["basin"], "bbox": list(d["bbox"])}
+                        for d in DOMAINS],
             "units": {"prain": "mm event-accumulated rainfall"},
             "layers": [], "skipped": []}
     frames = []
-    for iso3 in args.countries:
+    domains = [d for d in DOMAINS if d["iso3"] in args.countries]
+    for dom in domains:
+        label = f"{dom['iso3']}/{dom['key']}"
         try:
-            tracks = fetch_tracks(iso3)
-            haz = rain_hazard(tracks, iso3)
+            tracks = fetch_tracks(dom)
+            haz = rain_hazard(tracks, dom)
         except Exception as exc:
-            LOG.warning("Skipping %s: %s", iso3, exc)
-            meta["skipped"].append({"country": iso3, "layer": "prain",
+            LOG.warning("Skipping %s: %s", label, exc)
+            meta["skipped"].append({"country": dom["iso3"], "layer": "prain",
+                                    "domain": dom["key"],
                                     "reason": str(exc)[:300]})
             continue
         lat = np.asarray(haz.centroids.lat, float)
@@ -152,14 +196,26 @@ def main(argv=None) -> int:
         present = rh.thin_to_grid(lat, lon,
                                   {rp: inten[i] for i, rp
                                    in enumerate(rh.RETURN_PERIODS)})
+        # keep only cells inside the domain box: a stray centroid must not
+        # let one domain speak for another's territory
+        inside = domain_covers(dom, present["lat"].to_numpy(),
+                               present["lon"].to_numpy(), margin=0.0)
+        present = present.loc[inside].reset_index(drop=True)
+        if not len(present):
+            LOG.warning("Skipping %s: no cells inside the domain box", label)
+            meta["skipped"].append({"country": dom["iso3"], "layer": "prain",
+                                    "domain": dom["key"],
+                                    "reason": "no cells inside the domain box"})
+            continue
         rows = prain_rows(present)
         frames.append(rows)
         for sc in WARMING:
             meta["layers"].append({"hazard": "prain", "scenario": sc,
-                                   "country": iso3,
+                                   "country": dom["iso3"], "domain": dom["key"],
+                                   "basin": dom["basin"],
                                    "cells": int(len(rows) / len(WARMING))})
         LOG.info("  prain %s -> %d cells x %d scenarios (max v100 %.0f mm)",
-                 iso3, len(rows) // len(WARMING), len(WARMING),
+                 label, len(rows) // len(WARMING), len(WARMING),
                  float(rows["v100"].max()))
     if not frames:
         LOG.error("No rainfall layer produced.")

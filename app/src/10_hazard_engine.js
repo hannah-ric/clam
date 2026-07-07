@@ -315,6 +315,61 @@ function vulnOf(site){
           floodCap:site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT};
 }
 
+/* ============================================================
+   Per-site-per-peril trust
+   The trust question used to be answered once per peril ("is a grid
+   loaded?"), which let a site display green on a peril whose grid never
+   reached it (a Hawaii site on a CONUS-only rainfall grid, say). It is now
+   answered per site per peril: "modeled" ONLY when the loaded grid served
+   THIS site a value within the 200 km snap and inside coverage; everything
+   else is "degraded" (a documented interim model fills in, or the peril
+   honestly scores zero for lack of data). No surface may show green for a
+   site-peril pair unless siteTrust says modeled.
+   ============================================================ */
+function trustFallback(site,hz){
+  if(hz==="tc")return {basis:"interim",detail:"interim wind anchors fill in"};
+  if(hz==="cflood")return {basis:"interim",detail:"coast-proximity screening fills in"};
+  if(hz==="rflood")return {basis:"interim",detail:"terrain screening fills in"};
+  if(hz==="heat")return {basis:"interim",detail:"latitude climatology fills in"};
+  if(hz==="wfire"){
+    const wui=FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]!=null;
+    return wui?{basis:"interim",detail:"wui_class screening fills in"}
+             :{basis:"none",detail:"no data: wildfire scores zero"};
+  }
+  return {basis:"none",detail:"no interim model: rainfall scores zero"};
+}
+function siteTrust(site,hz,sc){
+  sc=sc||(typeof scenario!=="undefined"?scenario:"present");
+  const g=gridByHazard[hz];
+  if(g){
+    const r=g(site.latitude,site.longitude,sc);
+    if(!(r.meta&&r.meta.outside))
+      return {state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+    const fb=trustFallback(site,hz);
+    return {state:"degraded",basis:fb.basis,distKm:r.meta.dist,
+      detail:"outside grid coverage ("+Math.round(r.meta.dist)+" km to the nearest cell); "+fb.detail};
+  }
+  const fb=trustFallback(site,hz);
+  return {state:"degraded",basis:fb.basis,detail:"no grid loaded; "+fb.detail};
+}
+function siteTrustSummary(site,sc){
+  const byHz={};let modeled=0;
+  HAZARDS.forEach(h=>{const t=siteTrust(site,h.key,sc);byHz[h.key]=t;if(t.state==="modeled")modeled++;});
+  return {modeled,total:HAZARDS.length,byHz};
+}
+/* compact per-site source string for the CSV exports: states, per peril,
+   whether this site's figure is grid-fed or degraded. Pipe-separated so it
+   stays a single unquoted CSV cell. */
+function hazardSourceOf(site,sc){
+  const t=siteTrustSummary(site,sc);
+  const by={grid:[],interim:[],none:[]};
+  HAZARDS.forEach(h=>{const x=t.byHz[h.key];
+    by[x.state==="modeled"?"grid":(x.basis==="none"?"none":"interim")].push(h.key);});
+  return ["grid:"+(by.grid.join("+")||"-"),
+          "interim:"+(by.interim.join("+")||"-"),
+          "none:"+(by.none.join("+")||"-")].join("|");
+}
+
 // per-hazard vector for a site: grid for that hazard if loaded, else interim
 function hzVector(hz,la,lo,sc){
   if(hz==="tc") return provider()(la,lo,sc).vec;

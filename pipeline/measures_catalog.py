@@ -29,7 +29,9 @@ import refresh_impacts as ri
 
 RENOV_SYNERGY = 0.85          # cost factor when bundled with a planned
                               # refurbishment (mobilization already paid)
-RENOV_WINDOW_YEARS = 3        # renovation_year within this window qualifies
+RENOV_WINDOW_YEARS = 3        # renovation_year qualifies when it falls in plan
+                              # years 1..RENOV_WINDOW_YEARS (reference year is
+                              # year 1); anything later is outside the plan
 PLAN_YEARS = 3                # the short-term capital plan horizon
 
 
@@ -272,7 +274,12 @@ def phase_projects(projects, sites_df, budget_annual_usd=None):
     renov = {}
     for _, row in sites_df.iterrows():
         ry = _num(row.get("renovation_year"))
-        if ry and 0 < ry - ri.ROOF_AGE_REF_YEAR + 1 <= RENOV_WINDOW_YEARS + 1:
+        # plan year 1 is the reference year, so a renovation qualifies only
+        # when its plan year lands inside 1..min(RENOV_WINDOW_YEARS,
+        # PLAN_YEARS): a renovation exactly PLAN_YEARS out is plan year
+        # PLAN_YEARS + 1, which has no budget line and must not be assigned
+        if ry and 0 < ry - ri.ROOF_AGE_REF_YEAR + 1 <= min(RENOV_WINDOW_YEARS,
+                                                           PLAN_YEARS):
             renov[str(row["name"])] = int(ry - ri.ROOF_AGE_REF_YEAR + 1)
     spent = {y: 0.0 for y in range(1, PLAN_YEARS + 1)}
     out = []

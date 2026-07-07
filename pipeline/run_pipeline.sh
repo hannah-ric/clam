@@ -167,8 +167,15 @@ else
 fi
 
 # --- 4. acceptance gate --------------------------------------------------------
+# When a sites.csv sits next to the pipeline, the gate also audits per-site
+# coverage: any site outside a peril's coverage is listed (never silently
+# zeroed; the app shows those sites as degraded on that peril).
 echo; echo "== STEP 4  Validation gate (ship ONLY if this passes) ==============="
-run python validate_grid.py hazard_grid.csv hazard_grid_meta.json
+if [ -f sites.csv ]; then
+  run python validate_grid.py hazard_grid.csv hazard_grid_meta.json --sites sites.csv
+else
+  run python validate_grid.py hazard_grid.csv hazard_grid_meta.json
+fi
 
 echo
 echo "=============================================================="
