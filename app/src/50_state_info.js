@@ -137,7 +137,9 @@ const INFO={
     "<p>It is among the least precise perils here and improves the most when a CLIMADA river-flood grid is loaded.</p>"},
   heat:{t:"Extreme heat",b:
     "<p>Reported as <b>indicators</b>, not a dollar loss: days per year over 32&deg;C and 35&deg;C, and cooling degree-days.</p>"+
-    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days.</p>"},
+    "<p>Two lenses on the same days. <b>Dry-bulb</b> temperature is the structural and financial view (equipment ratings, the heat revenue-at-risk math). The <b>feels-like heat index</b> is the guest-comfort, cooling-load, and outdoor-labor view: 33&deg;C at 75% coastal humidity is dangerous where 33&deg;C of dry desert air is not, and a beach portfolio lives on the humid side. Humid-heat days (feels-like over 35&deg;C) are counted with a documented screening humidity: warm-season RH decays from 80% at the coast toward 45% inland, then the NOAA heat-index regression. They are never fewer than the dry-bulb count.</p>"+
+    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days (dry-bulb, so the money is unchanged by the comfort lens).</p>",
+    s:"Heat index: NOAA/NWS Rothfusz regression; humidity is a coastal-proximity screening proxy, labeled as such."},
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
@@ -285,6 +287,11 @@ const INFO={
     "<p>Every site-and-measure pair the model finds in scope, ranked by benefit-cost ratio. With a program budget set, funding fills from the top: nothing below breakeven is funded, and what does not fit is kept on the list as unfunded rather than dropped, the same defer-not-delete discipline the pipeline's capital plan uses.</p>"+
     "<p>Rows are appraised one measure at a time. The program roll-up recomputes the funded set jointly per site, so overlapping measures are never double-counted; the joint figure is the one to quote.</p>"+
     "<p>When a CLIMADA results pack is loaded, its capital plan is the canonical appraisal (full event sets, refurbishment-window phasing) and is shown beside this interactive queue and included in the export. Measure costs here are planning-grade defaults until replaced with engineering estimates; the export carries the assumptions so every number can be traced.</p>"},
+  decision:{t:"The decision view",b:
+    "<p>One row per site, ranked: the landing artifact. Read a row left to right and you have the decision: <b>what drives the site</b> (its dominant peril by expected annual cost, business interruption and heat included), what a <b>1-in-100 year does to it in physical units</b> (dollars of damage, metres of flood depth at the structure, days of downtime), what it costs <b>every year</b> (EAD), the <b>best in-scope measure</b> with its benefit-cost ratio, and how much of the model is real data (<b>n of 6 perils modeled</b>).</p>"+
+    "<p>Physical units lead; the qualitative bands stay on the ratings surfaces as the secondary read. Click any column header to re-rank, click a row to open the site's scorecard, where the <b>why-these-numbers trace</b> takes every figure back to its data source, one interaction away.</p>"+
+    "<p>Per-site 1-in-100 figures assume that site's own 1-in-100 intensity; they are not addable into a portfolio tail (the results pack's joint event curve is the canonical tail).</p>",
+    s:"A display ranking over the same pinned math as every other tab; it computes nothing new."},
   brokerPack:{t:"Broker evidence pack",b:
     "<p>A CSV built for the renewal submission: per site, the verified construction and protection attributes underwriters call secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes), plus this model's present-day damage view, so your broker can put a documented alternative view beside the insurer's model.</p>"+
     "<p>Documented attributes are the highest-return lever in renewal pricing: they change the insurer's modeled loss, not just the negotiation. Blank cells are honest blanks; fill them from surveys rather than guesses.</p>"+
@@ -373,6 +380,10 @@ function updateLegend(){
       d.innerHTML='<div class="lh">'+title+'</div>'+
         bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
     }
+    /* Task 6: the confidence key, in every colour mode */
+    d.innerHTML+='<div class="lh" style="margin-top:6px">Model basis</div>'+
+      '<span class="li"><span class="mono" style="font-weight:600">n/6</span>&nbsp;perils modeled at the site</span>'+
+      '<span class="li"><i style="background:#fff;border:2px dashed #43535F"></i>any peril degraded</span>';
     return d;
   };
   legendCtl.addTo(map);
@@ -408,12 +419,22 @@ function drawMarkers(scored){
     const rad=7+16*Math.sqrt(Math.max(g.value,0)/maxV);
     const activeEad=g.perHaz[activeHazard]||0, activePct=g.value?activeEad/g.value*100:0;
     const activeBand=heat?heatBand(g.heatDays):bandOf(activePct);
+    /* Task 6: confidence ON the marker, not only in chip colour. A fully
+       modeled site keeps the solid white ring; any degraded peril switches
+       the ring to dashed slate, and every marker carries a permanent n/6
+       text badge, so the model basis reads at a glance (and survives
+       greyscale printing and colour-blind palettes). */
+    const tr=groupTrust(g,scenario);
+    const full=tr.modeled===tr.total;
     const m=L.circleMarker([g.latitude,g.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
+      radius:rad,color:full?"#fff":"#43535F",weight:full?1.5:2,dashArray:full?null:"3 3",
+      fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
     }).addTo(map);
+    m.bindTooltip(tr.modeled+"/"+tr.total,{permanent:true,direction:"right",
+      offset:[rad-2,0],className:"trustbadge"+(full?"":" degraded")});
     const metric=heat ? g.heatDays+" days &gt;32&deg;C"
                       : fmt$(activeEad)+"/yr &middot; "+activePct.toFixed(2)+"%";
-    const targetId=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0].id;
+    const targetId=tr.target.id;
     const breakout=g.multi
       ? "<div style='margin-top:5px;border-top:1px solid #E3E8E5;padding-top:5px'><b>Named insured</b> ("+g.byInsured.length+")"+
         g.byInsured.map(r=>"<br>"+esc(r.insured)+": "+fmt$(r.value)+" val &middot; "+fmt$(r.ead)+"/yr ("+r.share.toFixed(0)+"%)").join("")+"</div>"
@@ -421,6 +442,8 @@ function drawMarkers(scored){
     m.bindPopup("<b>"+esc(g.name)+"</b>"+(g.multi?" <span class='mono'>("+g.members.length+" insured groups)</span>":"")+"<br>"+esc(g.brand||"")+
       "<br><span class='mono'>Site value "+fmt$(g.value)+"</span>"+
       "<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+activeBand+"</span>"+
+      "<br><span class='mono'>Model basis: "+tr.modeled+" of "+tr.total+" perils modeled"+
+        (tr.degraded.length?" &middot; degraded: "+esc(tr.degraded.join(", ")):"")+"</span>"+
       breakout+
       "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
     m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });

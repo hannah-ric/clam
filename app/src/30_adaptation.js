@@ -149,6 +149,23 @@ function layerStatsCalc(varByRp,acuteAal){
    are called, never modified, so no existing number can change.
    ============================================================ */
 
+/* the best in-scope measure for one site at the current library settings:
+   the shared building block for the decision view, the adaptation
+   recommendations, and the tolerance lanes (one formula, three surfaces) */
+function bestMeasureFor(s,sc,af){
+  const sBase=adaptedFinSite(s,sc,{}).totalAal;
+  let best=null;
+  MEASURES.forEach(m=>{
+    if(!m.inScope(s,sc))return;
+    const st=adapt.m[m.key];
+    const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+    const cost=m.siteCost(s,st);
+    const bcr=cost>0?averted*af/cost:0;
+    if(!best||bcr>best.bcr)best={name:m.name,averted,cost,bcr};
+  });
+  return best;
+}
+
 /* R1: screen the portfolio against the operator's tolerance thresholds and
    route every breach to a decision lane: capex when a measure at that site
    clears breakeven, risk transfer or acceptance when none does. af is the

@@ -8,6 +8,7 @@ function render(){
   const scored=scoreHazard(sites,activeHazard,scenario);
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
+  renderDecision();
   renderSummary();
   renderRiskMatrix();
   renderQuadrant();
@@ -20,6 +21,50 @@ function render(){
   renderBacktest();
   renderHazProv();
   renderResultsPack();
+}
+/* Task 6: the ranked decision view (the Summary tab's landing artifact).
+   Sortable by any column; a row click opens the scorecard, which carries the
+   why-these-numbers trace. Physical units lead; the qualitative bands stay
+   on the ratings surfaces. */
+let decisionSort={key:"ead",dir:-1};
+function renderDecision(){
+  const host=document.getElementById("decisionHost"); if(!host)return;
+  if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
+  const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
+  const rows=decisionRows(sites,scenario,tolAf());
+  const k=decisionSort.key,d=decisionSort.dir;
+  rows.sort((a,b)=>{const va=a[k],vb=b[k];
+    return (typeof va==="string"||typeof vb==="string")
+      ?d*String(va||"").localeCompare(String(vb||""))
+      :d*((va||0)-(vb||0));});
+  const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
+  const th=(label,key,num)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer" title="click to rank by '+label+'">'+label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
+  let h='<table class="tbl"><thead><tr>'+
+    th("Site","name")+th("Dominant peril","dom")+
+    th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
+    th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
+    th("Top measure","measure")+th("BCR","bcr",1)+
+    th("Basis","trustModeled",1)+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
+      '<td>'+esc(perilName(r.dom))+'</td>'+
+      '<td class="num mono">'+fmt$(r.dmg100)+'</td>'+
+      '<td class="num mono">'+fmt$(r.ead)+'</td>'+
+      '<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
+      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
+      '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
+      '<td class="num mono" style="color:'+(r.bcr>=1?"#2E8B6F":"#B23A32")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
+      '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
+  });
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("th[data-dsort]").forEach(el=>el.onclick=()=>{
+    const key=el.dataset.dsort;
+    if(decisionSort.key===key)decisionSort.dir*=-1;
+    else decisionSort={key,dir:(key==="name"||key==="dom"||key==="measure")?1:-1};
+    renderDecision();
+  });
+  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 }
 function renderSummary(){
   const host=document.getElementById("sumKpis"); if(!host)return;
@@ -259,8 +304,8 @@ function renderOverview(scored){
     const avg=k=>scored.rows.reduce((a,r)=>a+(r.indicators?r.indicators[k]:0),0)/(scored.rows.length||1);
     cards=[
       ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
-      ["Avg days over 32\u00b0C",Math.round(avg("daysOver32"))+"/yr","portfolio mean","heat"],
-      ["Avg days over 35\u00b0C",Math.round(avg("daysOver35"))+"/yr","portfolio mean","heat"],
+      ["Avg days over 32\u00b0C",Math.round(avg("daysOver32"))+"/yr","portfolio mean, dry-bulb","heat"],
+      ["Avg days over 35\u00b0C",Math.round(avg("daysOver35"))+"/yr","dry-bulb \u00b7 feels-like &gt;35\u00b0C: "+Math.round(avg("daysHi35"))+"/yr","heat"],
       ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
     ];
   }else{
@@ -394,8 +439,8 @@ function siteTrustStrip(site){
   const t=siteTrustSummary(site,scenario);
   const bits=HAZARDS.map(h=>{const x=t.byHz[h.key];const on=x.state==="modeled";
     return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")"+(x.note?"; "+x.note:""):"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
-  return '<div class="ratecell" style="margin:2px 0 10px">'+bits+
-    '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'</span></div>';
+  return '<div class="ratecell" style="margin:2px 0 10px">'+bits+notModeledChips()+
+    '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'; dashed chips are perils this tool does not model at all</span></div>';
 }
 function renderDetail(r){
   if(!r){document.getElementById("detailBody").style.display="none";document.getElementById("detailHint").style.display="block";return;}
@@ -416,10 +461,12 @@ function renderDetail(r){
       '<div class="card"><div class="l">Value</div><div class="v" style="font-size:20px">'+fmt$(r.asset_value_usd)+'</div><div class="foot">days &gt;32&deg;C, present to 2080: '+nowS.indicators.daysOver32+' &rarr; '+lateS.indicators.daysOver32+infoBtn("scenShift")+'</div></div>'+
     '</div>';
     table='<table class="tbl"><thead><tr><th>Indicator</th><th class="num">Value / yr</th></tr></thead><tbody>'+
-      '<tr><td>Days over 32&deg;C</td><td class="num mono">'+ind.daysOver32+'</td></tr>'+
-      '<tr><td>Days over 35&deg;C</td><td class="num mono">'+ind.daysOver35+'</td></tr>'+
+      '<tr><td>Days over 32&deg;C (dry-bulb)</td><td class="num mono">'+ind.daysOver32+'</td></tr>'+
+      '<tr><td>Days over 35&deg;C (dry-bulb)</td><td class="num mono">'+ind.daysOver35+'</td></tr>'+
+      '<tr><td>Humid-heat days (feels-like &gt;35&deg;C)'+infoBtn("heat")+'</td><td class="num mono">'+ind.daysHi35+'</td></tr>'+
       '<tr><td>Cooling degree-days</td><td class="num mono">'+ind.cdd+'</td></tr>'+
-      '<tr><td>Effective warm-season index</td><td class="num mono">'+ind.effT+' &deg;C</td></tr></tbody></table>';
+      '<tr><td>Effective warm-season index (dry-bulb)</td><td class="num mono">'+ind.effT+' &deg;C</td></tr>'+
+      '<tr><td>Feels-like at that index (heat index, RH '+Math.round(ind.rhWarm*100)+'%)</td><td class="num mono">'+ind.hiT+' &deg;C</td></tr></tbody></table>';
   }else{
     const rpRows=RPS.map(rp=>{const c=r.curve.find(x=>x.rp===rp);return '<tr><td class="mono">1 in '+rp+'</td><td class="num mono">'+c.v.toFixed(hz==="tc"?0:2)+' '+H.unit+'</td><td class="num mono">'+fmt$(c.loss)+'</td></tr>';}).join("");
     mid='<div class="cards" style="grid-template-columns:1fr 1fr;margin-bottom:14px">'+
@@ -544,20 +591,11 @@ function renderAdaptation(){
     })();
   document.getElementById("layerChart").innerHTML=layerSvg(tailCurve,ls);
   document.getElementById("sweepHost").innerHTML=sweepTable(tailCurve,tailBase);
-  // per-site recommendations: best measure by site BCR
-  const rec=sites.map(s=>{
-    const sBase=adaptedFinSite(s,scenario,{}).totalAal;
-    let best=null;
-    MEASURES.forEach(m=>{
-      if(!m.inScope(s,scenario))return;
-      const st=adapt.m[m.key];
-      const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
-      const cost=m.siteCost(s,st);
-      const bcr=cost>0?averted*af/cost:0;
-      if(!best||bcr>best.bcr)best={name:m.name,averted,cost,bcr};
-    });
-    return {site:s.name,id:s.id,aal:sBase,best};
-  }).sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
+  // per-site recommendations: best measure by site BCR (shared helper)
+  const rec=sites.map(s=>({site:s.name,id:s.id,
+    aal:adaptedFinSite(s,scenario,{}).totalAal,
+    best:bestMeasureFor(s,scenario,af)}))
+    .sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
   document.getElementById("recBody").innerHTML=rec.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
     (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
@@ -1011,6 +1049,11 @@ function renderHazProv(){
   const auth=perilAuthority();
   const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"+(a.nSites?", "+a.sitesModeled+"/"+a.nSites+" sites within coverage":"")):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';
   const chips=auth.map(chip).join("");
+  /* Parallel swap: the perils this tool does NOT model, stated in gray on the
+     same surface that vouches for the ones it does. Same row in both branches:
+     absence of a model is a fact about the tool, not about the data loaded. */
+  const nmRow='<span class="k">Not modeled</span><span class="v">'+notModeledChips()+
+    ' hail, non-TC pluvial flooding, and drought are outside this tool’s scope entirely; no figure here includes them (hover a chip for what to do instead)</span>';
   const md=hazardMeta&&hazardMeta.data;
   if(hazardGrid){
     const nLive=auth.filter(a=>a.live).length;
@@ -1023,6 +1066,7 @@ function renderHazProv(){
     badge.title=md&&md.generated_utc?("Pipeline run "+String(md.generated_utc).slice(0,10)):"Per-peril detail on the Method tab";
     let kv=
       '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario or site coverage; green needs every scenario AND every site inside coverage</small>':'')+'</span>'+
+      nmRow+
       (uncovered.length?'<span class="k">Site coverage</span><span class="v">'+uncovered.map(a=>a.label.toLowerCase()+": "+a.sitesModeled+" of "+a.nSites+" sites within coverage").join(" \u00b7 ")+' <small>sites outside a peril\u2019s coverage show degraded on that peril, never a silent zero</small></span>':'')+
       /* Task 4: flood depth basis at a glance */
       ((sites.length&&(gridByHazard.cflood||gridByHazard.rflood))?(function(){
@@ -1054,6 +1098,7 @@ function renderHazProv(){
     badge.classList.remove("authoritative");text.textContent="Interim model";badge.title="";
     document.getElementById("hazProv").innerHTML=
       '<span class="k">Perils</span><span class="v">'+chips+' <small>all on the interim model until a grid is loaded</small></span>'+
+      nmRow+
       '<span class="k">Source</span><span class="v">Built-in interim model</span>'+
       '<span class="k">Basis</span><span class="v">Regional wind anchors, coast-distance flood proxies, latitude-and-continentality heat</span>'+
       '<span class="k">Status</span><span class="v">Exploration only, not for disclosure</span>';
@@ -1172,7 +1217,9 @@ function renderScrub(){
 /* ---- score tracing (scorecard) ---- */
 function fmtVecLine(ex){
   if(ex.inputs.kind==="indicators"){const d=ex.inputs.indicators||{};
-    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C, "+d.cdd+" cooling degree days";}
+    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C (dry-bulb), "+
+      (d.daysHi35!=null?d.daysHi35+" humid-heat days (feels-like >35C at screening RH "+Math.round((d.rhWarm||0)*100)+"%), ":"")+
+      d.cdd+" cooling degree days";}
   if(ex.inputs.kind==="burn")return (+ex.inputs.burnPct).toFixed(2)+" % annual burn probability";
   const v=ex.inputs.vec||{};
   return RPS.map(rp=>"1-in-"+rp+": "+(+v[rp]||0).toFixed(ex.hz==="tc"?0:2)).join(" \u00b7 ")+" "+ex.unit;
