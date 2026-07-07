@@ -929,6 +929,66 @@ assert(INFO.heat.b.indexOf("feels-like")>=0&&INFO.heat.b.indexOf("dry-bulb")>=0,
   "the heat INFO explains both lenses and which one carries the money");
 gridByHazard={};clearHazCache();hazardGrid=null;
 
+/* ---------- v2.3.0: the executive action plan (which sites / what / $ / when) */
+gridByHazard={};clearHazCache();hazardGrid=null;resultsPack=null;scenario="present";
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+sites=[
+ {id:1,name:"Reef",brand:"A",latitude:25.8,longitude:-80.13,asset_value_usd:120e6,construction:"frame",year_built:1988},
+ {id:2,name:"Plains",brand:"B",latitude:39.0,longitude:-97.0,asset_value_usd:60e6,construction:"engineered",year_built:2015,defended:true},
+];
+/* BY WHEN: the deadline restates the operator's tolerance, never a new model */
+document.getElementById("pathSel").value="";   // clear the C2 test's pathway pick
+const _bpsAt=(s,sc)=>finSite(s,sc).totalAal/s.asset_value_usd*1e4;
+const _pwX=currentPathway();
+assert(_pwX==="ssp245","urgency walks the default pathway when the top bar is blank");
+const _scanX=["present"].concat(HORIZONS.map(h=>_pwX+"_"+h));
+assert(Math.max.apply(null,_scanX.slice(1).map(sc=>_bpsAt(sites[0],sc)))>_bpsAt(sites[0],"present"),
+  "fixture sanity: warming raises the coastal site's cost, so a future crossing exists");
+tolerance={siteAalBps:_bpsAt(sites[0],"present")-1e-9,portAalPct:1e9,varPctValue:1e9};
+assert(execUrgency(sites[0]).when==="now"&&execUrgency(sites[0]).label==="Act now",
+  "urgency: over your tolerance today reads act now");
+tolerance.siteAalBps=Math.max.apply(null,_scanX.map(sc=>_bpsAt(sites[0],sc)))+1;
+assert(execUrgency(sites[0]).when==="monitor","urgency: never over the line by 2080 reads monitor");
+tolerance.siteAalBps=_bpsAt(sites[0],"present")+1e-9;
+const _uX=execUrgency(sites[0]);
+const _firstX=_scanX.slice(1).find(sc=>_bpsAt(sites[0],sc)>tolerance.siteAalBps);
+assert(_uX.when!=="now"&&_uX.when!=="monitor"&&_uX.label==="Act by "+_firstX.split("_")[1],
+  "urgency: a future breach is dated to the FIRST horizon over the line");
+/* WHAT AND THE DOLLARS: the plan carries the engine's own cost/averted figures */
+tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
+const _arX=execActionRows(2);
+assert(_arX.length===2&&_arX[0].cost>=_arX[1].cost,
+  "action rows: one row per site, biggest all-in risk first");
+const _bmX=bestMeasureFor(sites.find(s=>s.id===_arX[0].id),"present",tolAf());
+assert(_arX[0].measure===_bmX.name&&Math.abs(_arX[0].measureCost-_bmX.cost)<1e-6
+  &&Math.abs(_arX[0].averted-_bmX.averted)<1e-6,
+  "action rows: the do-this line carries the engine's own cost and averted dollars");
+assert(Math.abs(_arX[0].paybackYears-_arX[0].measureCost/_arX[0].averted)<1e-9,
+  "action rows: payback is one-time cost over averted annual loss");
+assert(_arX[0].mitigatedPct>0&&Math.abs(_arX[0].mitigatedPct-_arX[0].averted/_arX[0].cost*100)<1e-9,
+  "action rows: the share of the site's risk mitigated reconciles");
+const _prX=execProgram(), _qX=actionQueue(sites,"present",tolAf(),0);
+assert(_prX.n===_qX.roll.n&&Math.abs(_prX.cost-_qX.roll.cost)<1e-6
+  &&Math.abs(_prX.averted-_qX.roll.averted)<1e-6,
+  "the program roll-up equals the action queue's joint roll (no double counting)");
+/* a loaded capital plan pins the canonical schedule per site */
+resultsPack={data:{pack_version:1,kind:"results_pack",scenarios:{},adaptation:{},
+ capital_plan:{projects:[{site:"Reef",measure:"M",year:1},{site:"Plains",measure:"N",deferred:true}]},
+ uncertainty:{}},name:"p.json",loaded:"x"};
+const _ar2X=execActionRows(2);
+assert(_ar2X.find(r=>r.name==="Reef").packYear===1
+  &&_ar2X.find(r=>r.name==="Plains").packYear==="deferred",
+  "a loaded capital plan pins the canonical phase (Y1 / deferred) per site");
+resultsPack=null;
+/* the analyst decision view states the same deadline, and the surfaces explain themselves */
+renderDecision();
+const _dhX=document.getElementById("decisionHost").innerHTML;
+assert(_dhX.indexOf("Act by")>=0&&_dhX.indexOf("whenchip")>=0,
+  "the analyst decision view carries the shared act-by column");
+assert(INFO.execPlan&&INFO.execPlan.b.indexOf("tolerance")>=0
+  &&INFO.execPlan.b.indexOf("planning-grade")>=0&&INFO.execHome,
+  "the executive plan carries an INFO popover stating its deadline and cost bases");
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

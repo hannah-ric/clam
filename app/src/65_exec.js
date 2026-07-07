@@ -66,22 +66,64 @@ function execSetHazard(v){
   persist(); render();
 }
 
-/* the ranked priorities: the portfolio's all-in cost concentration, joined
-   with the decision view's dominant peril, best measure, and model basis */
-function execPriorities(n){
+/* ---- the action plan: which sites, what to do at what cost, by when ----
+   execUrgency answers BY WHEN, honestly derived rather than invented: it
+   walks the site from Present through 2030/2050/2080 under the selected
+   pathway and reports the first horizon at which the site's all-in annual
+   cost crosses the operator's own tolerance line (set on the Summary tab).
+   Over it today: act now. Never over by 2080: monitor. The deadline is
+   therefore a restatement of the user's stated appetite, not a new model. */
+function execUrgency(s){
+  if(!s||!tolerance||!isFinite(tolerance.siteAalBps))return {when:"monitor",horizon:null,label:"Monitor",pathway:currentPathway()};
+  const p=currentPathway();
+  const steps=[["now","present"]].concat(HORIZONS.map(h=>[String(h),p+"_"+h]));
+  for(const [tag,sc] of steps){
+    const bps=s.asset_value_usd?finSite(s,sc).totalAal/s.asset_value_usd*1e4:0;
+    if(bps>tolerance.siteAalBps)
+      return {when:tag,horizon:tag==="now"?null:+tag,label:tag==="now"?"Act now":"Act by "+tag,pathway:p};
+  }
+  return {when:"monitor",horizon:null,label:"Monitor",pathway:p};
+}
+
+/* one row per site, biggest all-in annual cost first: the risk, the best
+   value measure with the engine's own dollars (one-time cost, averted
+   annual loss, share of the site's risk mitigated, simple payback), the
+   decision lane when no measure clears breakeven, the act-by urgency, and
+   the canonical capital-plan phase when a results pack is loaded. */
+function execActionRows(n){
   const af=tolAf();
   const f=finPortfolio(sites,scenario);
   const dr={};decisionRows(sites,scenario,af).forEach(r=>{dr[r.id]=r;});
   const bands={};scorePhysTotal(sites,scenario).rows.forEach(r=>{bands[r.id]=r.band;});
-  const tf=toleranceFlags(sites,scenario,af);
-  const breach={};tf.siteBreaches.forEach(b=>{breach[b.id]=true;});
-  const rows=f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal).slice(0,n).map(r=>{
+  const plan={};
+  if(resultsPack&&resultsPack.data&&resultsPack.data.capital_plan&&Array.isArray(resultsPack.data.capital_plan.projects))
+    resultsPack.data.capital_plan.projects.forEach(pr=>{if(!(pr.site in plan))plan[pr.site]=pr;});
+  return f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal).slice(0,n).map(r=>{
+    const s=sites.find(x=>x.id===r.id);
     const d=dr[r.id]||{};
-    return {id:r.id,name:r.name,brand:r.brand,cost:r.totalAal,dom:d.dom||"tc",
-      measure:d.measure||null,bcr:d.bcr||0,trustModeled:d.trustModeled||0,
-      trustTotal:d.trustTotal||HAZARDS.length,band:bands[r.id]||"Minimal",breach:!!breach[r.id]};
+    const best=s?bestMeasureFor(s,scenario,af):null;
+    const u=execUrgency(s);
+    const priced=!!(best&&best.cost>0&&best.averted>0);
+    const pk=plan[r.name]||null;
+    return {id:r.id,name:r.name,brand:r.brand,cost:r.totalAal,value:r.value,
+      pctValue:r.value?r.totalAal/r.value*100:0,
+      dom:d.dom||"tc",band:bands[r.id]||"Minimal",
+      trustModeled:d.trustModeled||0,trustTotal:d.trustTotal||HAZARDS.length,
+      measure:best?best.name:null,measureCost:best?best.cost:0,
+      averted:best?best.averted:0,bcr:best?best.bcr:0,
+      paybackYears:priced?best.cost/best.averted:null,
+      mitigatedPct:(priced&&r.totalAal>0)?best.averted/r.totalAal*100:0,
+      urgency:u,
+      lane:(u.when!=="monitor")?((best&&best.bcr>=1)?"capex":"transfer"):"monitor",
+      packYear:pk?(pk.deferred?"deferred":(pk.year!=null?pk.year:null)):null};
   });
-  return {rows,tf,f};
+}
+
+/* the whole program in one line: fund everything above breakeven (or within
+   the stated budget) and report the joint benefit, never double-counted */
+function execProgram(){
+  const q=actionQueue(sites,scenario,tolAf(),(adapt&&adapt.budget)?+adapt.budget:0);
+  return q.roll;
 }
 
 /* cost trajectory sparkline: Present to 2080 under the current pathway.
@@ -149,7 +191,11 @@ function renderExecHome(){
   let focusId=null;
   try{focusId=(document.activeElement&&document.activeElement.id)||null;}catch(e){}
 
-  const p=execPriorities(5), f=p.f, tf=p.tf;
+  const af=tolAf();
+  const f=finPortfolio(sites,scenario);
+  const tf=toleranceFlags(sites,scenario,af);
+  const planRows=execActionRows(5);
+  const prog=execProgram();
   const agg=aggregatePortfolio(sites,scenario);
   const pathway=currentPathway();
   const curLabel=SCEN_LABEL[scenario]||scenario;
@@ -200,33 +246,59 @@ function renderExecHome(){
     tolTile+
     '<div class="exectile" title="'+esc(HAZARD_LABEL[domK])+' drives '+domShare.toFixed(0)+'% of the expected annual cost"><div class="l">Largest driver</div><div class="v">'+esc(EXEC_PERIL_SHORT[domK]||domK)+'</div><div class="f">'+domShare.toFixed(0)+'% of annual cost</div></div>'+
     '</div>';
-  h+='<div class="execsec">How the cost grows · '+esc(PATHWAY_LABEL[pathway]||pathway)+'</div>'+execSparkSvg(steps,vals,curIdx);
-  h+='<div class="execsec">Where it comes from</div>'+execMixHtml(agg.byPeril,agg.total);
-  h+='<div class="execsec">Top priorities</div>';
+  /* THE PLAN: which sites (biggest all-in risk first), what to do with the
+     engine's own dollars, and by when (the tolerance-crossing horizon) */
+  h+='<div class="execsec">Top risks &amp; the plan'+infoBtn("execPlan")+'</div>';
   h+='<ol class="prio">';
-  p.rows.forEach(r=>{
+  planRows.forEach(r=>{
     const full=r.trustModeled===r.trustTotal;
+    const u=r.urgency;
+    const whenCls=u.when==="now"?"now":(u.when==="monitor"?"monitor":"soon");
+    const priced=r.paybackYears!=null;
+    let planLine;
+    if(priced&&r.lane!=="transfer"){
+      planLine='<span class="prioplan">Do: <b>'+esc(r.measure)+'</b><br>'+
+        '<span class="prionums">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
+    }else if(r.lane==="transfer"){
+      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
+        ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
+    }else{
+      planLine='<span class="prioplan">No priced measure in scope; the adaptation tab has the full library</span>';
+    }
+    let whenLine='<span class="priowhen"><span class="whenchip '+whenCls+'">'+esc(u.label)+'</span> ';
+    if(u.when==="now")whenLine+='over your tolerance today'+(priced?' · each year of delay forfeits '+fmt$(r.averted):'');
+    else if(u.when==="monitor")whenLine+='inside tolerance through 2080 · re-check at renewal';
+    else whenLine+='crosses your tolerance by '+esc(String(u.horizon))+' under the '+esc(EXEC_PATHWAY_NAME[u.pathway]||u.pathway);
+    if(r.packYear!=null)whenLine+=' · <span class="mono" title="Phase from the loaded CLIMADA capital plan (results pack)">plan: '+(r.packYear==="deferred"?"deferred":"Y"+r.packYear)+'</span>';
+    whenLine+='</span>';
     h+='<li>'+
       '<button type="button" class="priobtn" data-exfocus="'+(+r.id)+'" aria-label="Open the scorecard for '+esc(r.name)+'">'+
       '<span class="priotop"><span class="nm">'+esc(r.name)+'</span><span class="cost">'+fmt$(r.cost)+'/yr</span></span>'+
       '<span class="priometa">'+
-        (r.breach?'<span class="tolbreach" title="Over your stated risk tolerance"></span>':"")+
         '<span title="Dominant peril at this site"><span class="perildot" style="background:'+(HAZARD_BY[r.dom]?HAZARD_BY[r.dom].color:"#7A8893")+'"></span>'+esc(HAZARD_LABEL[r.dom]||r.dom)+'</span>'+
         '<span class="pill mini '+esc(r.band)+'">'+esc(r.band)+'</span>'+
+        '<span class="mono" title="Annual climate cost as a share of this site\'s value">'+r.pctValue.toFixed(2)+'% of value</span>'+
         '<span class="mono" style="font-size:10px;color:'+(full?"var(--ink-2)":"#8A4A1B")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site; the scorecard trust strip has the detail">'+r.trustModeled+'/'+r.trustTotal+' modeled</span>'+
       '</span>'+
-      (r.measure
-        ?'<span class="prioact">Best value: <b>'+esc(r.measure)+' · BCR '+r.bcr.toFixed(1)+'x</b></span>'
-        :'<span class="prioact">No priced measure in scope; see the adaptation tab</span>')+
+      planLine+whenLine+
       '</button>'+
       '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Zoom the map to '+esc(r.name)+'" aria-label="Zoom the map to '+esc(r.name)+'">◎</button>'+
       '</li>';
   });
   h+='</ol>';
-  if(sites.length>p.rows.length)h+='<div class="execnote">Ranked by all-in annual cost (damage, interruption, heat); the analyst workspace ranks all '+sites.length+' sites with every column.</div>';
+  if(prog&&prog.n>0){
+    h+='<div class="execprog">Funding all <b>'+prog.n+'</b> action'+(prog.n>1?"s":"")+' above breakeven'+
+      ((adapt&&adapt.budget>0)?' within the '+fmt$(adapt.budget)+' budget':'')+
+      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> (program BCR '+prog.bcr.toFixed(1)+'x, no double counting). '+
+      '<button type="button" class="lightbtn" id="execProgBtn" style="margin-top:6px">Open the capital plan</button></div>';
+  }
+  if(sites.length>planRows.length)h+='<div class="execnote">The '+planRows.length+' largest of '+sites.length+' sites by all-in annual cost (damage, interruption, heat); the analyst decision view ranks them all.</div>';
+  h+='<div class="execsec">How the cost grows · '+esc(PATHWAY_LABEL[pathway]||pathway)+'</div>'+execSparkSvg(steps,vals,curIdx);
+  h+='<div class="execsec">Where it comes from</div>'+execMixHtml(agg.byPeril,agg.total);
   h+='<div class="execnote">'+(hazardGrid
     ?"Running on your loaded CLIMADA data ("+live+" of "+HAZARDS.length+" perils); perils still on the built-in estimate are labelled wherever they appear."
-    :"Exploring with built-in screening estimates: good for a first look, not for disclosure. Load your climate data via the analyst workspace's Method &amp; data tab.")+'</div>';
+    :"Exploring with built-in screening estimates: good for a first look, not for disclosure. Load your climate data via the analyst workspace's Method &amp; data tab.")+
+    ' Measure costs and averted losses are planning-grade figures from published mitigation studies, scaled to each site\'s value and profile: firm for ranking, replace with engineering estimates before committing capital.</div>';
   h+='</div>';
   h+='<div class="execactions">'+
     '<button type="button" class="lightbtn primary" id="execFullBtn">Open full analysis</button>'+
@@ -238,6 +310,7 @@ function renderExecHome(){
   const fb=document.getElementById("execFullBtn"); if(fb)fb.onclick=()=>setExecMode(false);
   const bb=document.getElementById("execBriefBtn"); if(bb)bb.onclick=openBrief;
   const eb=document.getElementById("execBasisBtn"); if(eb)eb.onclick=()=>{setExecMode(false);switchTab("method");};
+  const pg=document.getElementById("execProgBtn"); if(pg)pg.onclick=()=>{setExecMode(false);switchTab("adaptation");};
 
   /* the timeline pill: Present to 2080 plus the emissions outlook */
   if(time){

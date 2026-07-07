@@ -33,6 +33,10 @@ function renderDecision(){
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
   const rows=decisionRows(sites,scenario,tolAf());
+  /* act-by (v2.3.0): the tolerance-crossing horizon, shared with the
+     executive plan so the two surfaces state the same deadline */
+  rows.forEach(r=>{const s=sites.find(x=>x.id===r.id);const u=execUrgency(s);
+    r.actBy=u.label;r.actByOrd=u.when==="now"?0:(u.horizon||9999);});
   const k=decisionSort.key,d=decisionSort.dir;
   rows.sort((a,b)=>{const va=a[k],vb=b[k];
     return (typeof va==="string"||typeof vb==="string")
@@ -45,6 +49,7 @@ function renderDecision(){
     th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
     th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
     th("Top measure","measure")+th("BCR","bcr",1)+
+    th("Act by","actByOrd",1)+
     th("Basis","trustModeled",1)+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
@@ -55,6 +60,7 @@ function renderDecision(){
       '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
       '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
       '<td class="num mono" style="color:'+(r.bcr>=1?"#2E8B6F":"#B23A32")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
+      '<td class="num"><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></td>'+
       '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
   });
   h+='</tbody></table>';

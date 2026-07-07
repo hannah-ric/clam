@@ -205,13 +205,22 @@ Run the gates after any code change; `test_frontend.py` after any app edit.
 ## The executive home (v2.3.0)
 
 The app lands on a map-first executive view: a full-bleed map with a floating
-priorities panel (headline expected annual climate cost, the 1-in-100 tail,
-the tolerance position, the largest driver, a Present-to-2080 cost trajectory,
-the peril mix, and the top five sites ranked by all-in annual cost, each with
-its best value action), a timeline pill that walks every figure through the
-SSP horizons, and a colour bar for what the markers encode. Everything is a
-display lens over the same engine the analyst tabs run, so the two views can
-never disagree; a priority click opens the site scorecard with its
+panel built around three questions. Which sites: the top of the portfolio
+ranked by all-in annual cost (damage, interruption, heat together), beside
+the headline cost, the 1-in-100 tail, the tolerance position, and the
+largest driver. What to do: each site's best value measure with the engine's
+own dollars (one-time cost, averted annual loss, share of the site's risk
+removed, simple payback), the transfer-or-accept lane when nothing clears
+breakeven, and a program roll-up whose joint benefit is never
+double-counted. By when: an act-by deadline derived from the operator's own
+risk tolerance (the first horizon, Present through 2080 under the selected
+pathway, at which the site crosses the stated line; over it today reads act
+now, with the yearly cost of delay), plus the canonical capital-plan phase
+when a results pack is loaded. A timeline pill walks every figure through
+the SSP horizons and a colour bar switches what the markers encode.
+Everything is a display lens over the same engine the analyst tabs run
+(the decision view carries the identical act-by column), so the two views
+can never disagree; a priority click opens the site scorecard with its
 why-these-numbers trace, and the top-bar Export menu consolidates the board
 brief, the Power BI CSV, the broker evidence pack, the action list, and the
 site template. The Analyst switch restores the full tab workspace, and the
