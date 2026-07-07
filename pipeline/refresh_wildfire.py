@@ -60,20 +60,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import portfolio_regions
 import refresh_hazard as rh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_wildfire")
 
-# MIRRORS the WARMING table in the app and refresh_heat.py; change all three.
-WARMING = {
-    "present": 0.0,
-    "ssp126_2030": 0.6, "ssp126_2050": 1.0, "ssp126_2080": 1.3,
-    "ssp245_2030": 0.7, "ssp245_2050": 1.4, "ssp245_2080": 2.3,
-    "ssp585_2030": 0.8, "ssp585_2050": 2.0, "ssp585_2080": 3.6,
-}
-FIRE_WARMING_UPLIFT = 0.14      # fractional burn-probability increase per deg C
+# Both scenario constants read from the single sourced registry
+# (assumptions.py: units, baseline period, and citation per entry).
+WARMING = assumptions.WARMING_TABLE
+FIRE_WARMING_UPLIFT = assumptions.scalar("fire_warming_uplift_per_c")
 
 # The resort footprint. A nationwide FIRMS download is trimmed to these boxes so
 # Petals builds centroids over cells that can actually host a site. The boxes

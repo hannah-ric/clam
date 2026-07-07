@@ -1,4 +1,5 @@
 00_shell_head.html
+05_assumptions.js
 10_hazard_engine.js
 20_finance.js
 30_adaptation.js

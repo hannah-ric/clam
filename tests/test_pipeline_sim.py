@@ -38,16 +38,28 @@ class FakeCentroids:
 
 
 class FakeHaz:
-    def __init__(self, kind, skey, slr=0.0, subset=None):
-        idx = np.arange(len(LAT)) if subset is None else np.where(subset)[0]
-        self.centroids = FakeCentroids(LAT[idx], LON[idx])
-        self._rp = np.zeros((len(RPS), len(idx)))
+    def __init__(self, kind, skey, slr=0.0, idx=None):
+        self._kind, self._skey, self._slr = kind, skey, slr
+        self._idx = np.arange(len(LAT)) if idx is None else np.asarray(idx)
+        self.centroids = FakeCentroids(LAT[self._idx], LON[self._idx])
+        self._rp = np.zeros((len(RPS), len(self._idx)))
         for i, rp in enumerate(RPS):
             if kind == "wind":
-                self._rp[i] = BASE_V100[idx] * UPLIFT[skey] * RP_SHAPE[rp]
+                self._rp[i] = BASE_V100[self._idx] * UPLIFT[skey] * RP_SHAPE[rp]
             else:  # surge: SLOSH-ish linear from wind, minus fake 1m elevation, + SLR
-                v = BASE_V100[idx] * UPLIFT[skey] * RP_SHAPE[rp]
+                v = BASE_V100[self._idx] * UPLIFT[skey] * RP_SHAPE[rp]
                 self._rp[i] = np.maximum(0.10 * (v - 26.0) - 1.0 + slr, 0.0)
+
+    def select(self, extent=None):
+        """The CLIMADA Hazard.select(extent=...) shape the per-region SLR
+        subsetting calls: (lon_min, lon_max, lat_min, lat_max)."""
+        lo0, lo1, la0, la1 = extent
+        la = np.asarray(self.centroids.lat, float)
+        lo = np.asarray(self.centroids.lon, float)
+        m = (la >= la0) & (la <= la1) & (lo >= lo0) & (lo <= lo1)
+        if not m.any():
+            return None
+        return FakeHaz(self._kind, self._skey, self._slr, idx=self._idx[m])
 
 
 def fake_fetch_wind(iso3, source, meta):
@@ -57,15 +69,15 @@ def fake_fetch_wind(iso3, source, meta):
     meta.setdefault("wind_sources", {})[f"{iso3}:{skey}"] = {
         "data_type": "tropical_cyclone",
         "properties_matched": {"simulated": True, "source": skey}}
-    h = FakeHaz("wind", skey)
-    h._skey = skey
-    return h
+    return FakeHaz("wind", skey)
 
 
 def fake_compute_surge(wind_haz, slr):
-    # Petals-style behaviour: returns a hazard on the COASTAL SUBSET only,
+    # Petals-style behaviour: returns a hazard on the COASTAL SUBSET of
+    # whatever centroids the (possibly region-subset) wind hazard carries,
     # forcing align_to_cells to restore inland zeros.
-    return FakeHaz("surge", wind_haz._skey, slr=slr, subset=COASTAL)
+    idx = wind_haz._idx[COASTAL[wind_haz._idx]]
+    return FakeHaz("surge", wind_haz._skey, slr=slr, idx=idx)
 
 
 def fake_local_rp(haz, rps):
@@ -139,6 +151,23 @@ def run():
     assert d_fut > d_now > 0, (d_now, d_fut)
     # SLR + wind uplift both enter: future minus present exceeds SLR alone
     assert d_fut - d_now >= rh.SLR_M["ssp585_2080"] - 0.03
+    # 4a. REGIONAL SLR: the Florida-Atlantic cell (25.0, -80) rises by its
+    # region's table, the coastal Gulf cell (29.25, -94.75) by the (higher)
+    # Gulf table; the fake surge is 0.10 x wind - 1 + SLR, so the rise is
+    # exactly wind-uplift effect + regional SLR, cell by cell
+    rise_fa_want = 0.10 * 60.0 * (UPLIFT["rcp85_2080"] - 1.0) \
+        + rh.slr_of("ssp585_2080", "florida_atlantic")
+    assert np.isclose(d_fut - d_now, rise_fa_want, atol=0.02), \
+        (d_fut - d_now, rise_fa_want)
+    g_now = cf[(cf.scenario == "present") & np.isclose(cf.lat, 29.25)]["v100"].iloc[0]
+    g_fut = cf[(cf.scenario == "ssp585_2080") & np.isclose(cf.lat, 29.25)]["v100"].iloc[0]
+    rise_g_want = 0.10 * 55.0 * (UPLIFT["rcp85_2080"] - 1.0) \
+        + rh.slr_of("ssp585_2080", "gulf")
+    assert np.isclose(g_fut - g_now, rise_g_want, atol=0.02), \
+        (g_fut - g_now, rise_g_want)
+    assert rh.slr_of("ssp585_2080", "gulf") > rh.slr_of("ssp585_2080",
+                                                        "florida_atlantic") \
+        > 0, "the Gulf table must sit above Florida-Atlantic (subsidence)"
 
     # 4b. rflood: partial-coverage input restored to full coverage with dry zeros;
     #     the simulated missing dataset is skipped and recorded, not fatal

@@ -5,26 +5,31 @@
 const V_THRESH=25.7, V_HALF=74.7;
 const RPS=[10,25,50,100,250,500];
 // Scenario keys are "present" or "<pathway>_<horizon>" on the CMIP6 SSP-RCP
-// framework. Warming (deg C above present) and sea-level rise (m) are
-// screening-grade central estimates consistent with IPCC AR6 ranges.
+// framework. The WARMING and SLR_REGIONS tables are GENERATED into
+// 05_assumptions.js from pipeline/assumptions.py (the single sourced
+// registry: AR6 central + explicit conservative delta, with units, baseline
+// period, and citation per entry), so app and pipeline can never disagree.
 const PATHWAYS=["ssp126","ssp245","ssp585"];
 const HORIZONS=[2030,2050,2080];
 const PATHWAY_LABEL={present:"Present day",ssp126:"SSP1-2.6",ssp245:"SSP2-4.5",ssp585:"SSP5-8.5"};
-const WARMING={present:0,
-  ssp126_2030:0.6,ssp126_2050:1.0,ssp126_2080:1.3,
-  ssp245_2030:0.7,ssp245_2050:1.4,ssp245_2080:2.3,
-  ssp585_2030:0.8,ssp585_2050:2.0,ssp585_2080:3.6};
-const SLR={present:0,
-  ssp126_2030:0.09,ssp126_2050:0.19,ssp126_2080:0.34,
-  ssp245_2030:0.10,ssp245_2050:0.22,ssp245_2080:0.44,
-  ssp585_2030:0.11,ssp585_2050:0.27,ssp585_2080:0.62};
 function warming(sc){return WARMING[sc]||0;}
-function slrOf(sc){return SLR[sc]||0;}
+/* sea-level rise is REGIONAL (Gulf subsidence most of all): with a location,
+   the first matching region box's table applies; without one, or outside
+   every box, the global-mean table (the legacy single table) applies. */
+function slrRegionOf(la,lo){
+  for(const [name,la0,la1,lo0,lo1] of SLR_REGION_BOXES)
+    if(la>=la0&&la<=la1&&lo>=lo0&&lo<=lo1)return name;
+  return "global_mean";
+}
+function slrOf(sc,la,lo){
+  const t=(la!=null&&lo!=null&&SLR_REGIONS[slrRegionOf(la,lo)])||SLR;
+  return t[sc]||0;
+}
 const SCEN_KEYS=["present"].concat([].concat(...HORIZONS.map(h=>PATHWAYS.map(p=>p+"_"+h))));
 const SCEN_LABEL=(()=>{const o={present:"Present day"};
   for(const p of PATHWAYS)for(const h of HORIZONS)o[p+"_"+h]=PATHWAY_LABEL[p]+" \u00b7 "+h;return o;})();
-// Wind intensity uplift for the interim TC field: ~2% per deg C of warming.
-const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+0.02*warming(k);return o;})();
+// Wind intensity uplift for the interim TC field, per deg C of warming.
+const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
 function emanuelMdd(v){const vt=Math.max((v-V_THRESH)/(V_HALF-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
@@ -213,7 +218,7 @@ function coastalFloodVector(la,lo,sc){
   const near=Math.exp(-coastKm(la,lo)/40);
   const surge=(interimVector(la,lo,"present").vec[100])/74.7;
   const base100=1.8*near*(0.5+0.5*surge);
-  const rise=slrOf(sc)*near;                                   // SLR lifts the curve
+  const rise=slrOf(sc,la,lo)*near;                     // regional SLR lifts the curve
   const shape={10:0.35,25:0.55,50:0.78,100:1.0,250:1.25,500:1.45};
   const vec={};for(const rp of RPS)vec[rp]=Math.max(0,base100*shape[rp]+rise);return vec;
 }
@@ -260,7 +265,7 @@ function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate",
    (a grid is required), so loading nothing reproduces the five-peril math. */
 const FIRE_MDD=0.6;                              // conditional damage ratio when a site burns
 const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual burn %, by WUI class
-const FIRE_WARMING_UPLIFT=0.14;                  // burn-probability uplift per deg C
+/* FIRE_WARMING_UPLIFT lives in the generated 05_assumptions.js registry */
 const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;

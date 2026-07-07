@@ -80,6 +80,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import refresh_hazard as rh
 import refresh_prain as rpn
 import refresh_wildfire as rw
@@ -98,8 +99,9 @@ CONSTR_FACTOR = {"frame": 1.3, "masonry": 1.0, "engineered": 0.75}
 MAX_SNAP_KM = 200.0                          # the app's nearest-cell limit
 SNAP_TOL_KM = 10.0                           # cell-scale slack for water layers
 
-DISCOUNT_RATE = 0.03                         # BCR appraisal settings
-HORIZON_YEARS = 25                           # (recorded in the pack)
+# BCR appraisal settings (recorded in the pack): the ONE convention shared
+# with the app's slider defaults, from the single sourced registry
+DISCOUNT_RATE, HORIZON_YEARS = assumptions.appraisal_defaults()
 
 # the app's hazard-touching measures at their default slider settings
 MEASURES = [
@@ -907,16 +909,38 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         out["wind"] = {"freq": np.asarray(haz.frequency, float),
                        "int": site_intensity(haz, idx)}
         if surge_enabled:
+            # Surge is REGIONAL: each site's depth comes from a bathtub run
+            # over its own coastline's wind cells at that coastline's SLR
+            # table (Gulf subsidence most of all); sites outside every region
+            # box read the global-mean run, which equals the legacy table.
+            site_regions = rh.slr_region_partition(lat, lon)
+            boxes = {n: (la0, la1, lo0, lo1)
+                     for n, la0, la1, lo0, lo1 in rh.SLR_REGION_BOXES}
+            subs = {region: (haz if region == "global_mean" else
+                             rh.subset_hazard_extent(haz, boxes[region]))
+                    for region, _m in site_regions}
+            n_ev = out["wind"]["int"].shape[0]
             for app_key, recipe in rh.APP_SCENARIOS.items():
                 if not any(rh.source_key(s) == skey for _w, s in recipe):
                     continue
                 try:
-                    surge = rh.compute_surge(haz, rh.SLR_M[app_key])
-                    s_idx, s_dist = nearest_centroids(
-                        lat, lon, surge.centroids.lat, surge.centroids.lon)
-                    out["surge"][app_key] = {"int": site_intensity(surge, s_idx),
-                                             "dist": s_dist}
-                    del surge
+                    s_int = np.zeros((n_ev, len(lat)))
+                    s_dist = np.full(len(lat), np.inf)
+                    for region, m in site_regions:
+                        sub = subs[region]
+                        if sub is None:
+                            continue    # no wind cells in this region: its
+                                        # sites stay zero at infinite distance
+                                        # (they are outside wind coverage too)
+                        surge = rh.compute_surge(sub,
+                                                 rh.slr_of(app_key, region))
+                        idx_r, dist_r = nearest_centroids(
+                            lat[m], lon[m], surge.centroids.lat,
+                            surge.centroids.lon)
+                        s_int[:, m] = site_intensity(surge, idx_r)
+                        s_dist[m] = dist_r
+                        del surge
+                    out["surge"][app_key] = {"int": s_int, "dist": s_dist}
                 except Exception as exc:
                     out["surge_skipped"].append(
                         {"country": iso3, "source": skey, "scenario": app_key,

@@ -74,6 +74,7 @@ echo "ok  regenerated v1.12 is byte-identical to the committed v1.12"
 python3 app/patch_frontend_p10.py "$TMP/v112.html" "$TMP/v113.html"
 cmp "$TMP/v113.html" app/TNL_Resort_Climate_Risk_Explorer_v113.html
 echo "ok  regenerated v1.13 is byte-identical to the committed v1.13"
+python3 pipeline/assumptions.py --check
 python3 app/assemble_app.py --check
 
 echo

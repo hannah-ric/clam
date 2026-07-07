@@ -170,7 +170,8 @@ function exportBrokerPack(){
 function exportActionList(){
   if(!sites.length){toast("Load a portfolio first.");return;}
   const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
-  const csv=actionListCsv(scenario,hv===""?20:+hv,dv===""?2:+dv);
+  const csv=actionListCsv(scenario,hv===""?APPRAISAL_DEFAULTS.horizonYears:+hv,
+                          dv===""?APPRAISAL_DEFAULTS.discountPct:+dv);
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_action_list_"+scenario+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

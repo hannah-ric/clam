@@ -195,7 +195,8 @@ function perilZeroNote(hz){
    toleranceFlags over the parity-pinned finPortfolio. */
 function tolAf(){
   const hv=document.getElementById("horizon").value, dv=document.getElementById("disc").value;
-  return annuity(hv===""?20:+hv,(dv===""?2:+dv)/100);
+  return annuity(hv===""?APPRAISAL_DEFAULTS.horizonYears:+hv,
+                 (dv===""?APPRAISAL_DEFAULTS.discountPct:+dv)/100);
 }
 function renderTolerance(){
   const host=document.getElementById("tolBody"); if(!host)return;

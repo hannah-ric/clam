@@ -50,11 +50,15 @@ class FakeWind:
 
 
 class FakeSurge:
-    """SLOSH-ish: linear in wind minus 1 m elevation, coastal cells only."""
+    """SLOSH-ish: linear in wind minus 1 m elevation, coastal cells only.
+    Works on WHATEVER centroid subset the wind hazard carries (per-region
+    SLR subsets it), so 'inland' is geographic (lon < -94.9), not
+    positional."""
     def __init__(self, wind, slr):
-        self.centroids = FakeCentroids()
+        self.centroids = wind.centroids
         self.intensity = np.maximum(0.12 * (wind.intensity - 26.0) - 1.0 + slr, 0.0)
-        self.intensity[:, 3:] = 0.0                      # inland cells dry
+        inland = np.asarray(wind.centroids.lon, float) < -94.9
+        self.intensity[:, inland] = 0.0                  # inland cells dry
         self.frequency = wind.frequency
 
 

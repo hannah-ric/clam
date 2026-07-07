@@ -58,6 +58,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import portfolio_regions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
@@ -82,17 +83,11 @@ THRESH_HOT = 32.0        # C, drives the app's heat band (daysOver32)
 THRESH_DANGER = 35.0     # C, drives heat revenue at risk (daysOver35)
 CDD_BASE = 18.0          # C, cooling degree days base, matches the app
 
-# Warming (deg C above present) per app scenario. MIRRORS the WARMING table in
-# TNL_Resort_Climate_Risk_Explorer.html; if you change one, change both.
-WARMING = {
-    "present": 0.0,
-    "ssp126_2030": 0.6, "ssp126_2050": 1.0, "ssp126_2080": 1.3,
-    "ssp245_2030": 0.7, "ssp245_2050": 1.4, "ssp245_2080": 2.3,
-    "ssp585_2030": 0.8, "ssp585_2050": 2.0, "ssp585_2080": 3.6,
-}
-# Land warms faster than the global mean the WARMING table expresses; 1.25 is
-# an AR6-consistent central land-amplification for these latitudes.
-LAND_AMPLIFICATION = 1.25
+# Warming (deg C above present) per app scenario, and the land-amplification
+# factor: both read from the single sourced registry (assumptions.py), where
+# every value carries units, baseline period, and citation.
+WARMING = assumptions.WARMING_TABLE
+LAND_AMPLIFICATION = assumptions.scalar("heat_land_amplification")
 
 
 # ---------------------------------------------------------------------------

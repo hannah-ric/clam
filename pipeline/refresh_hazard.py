@@ -108,6 +108,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_hazard")
 
@@ -234,14 +236,80 @@ TOPO_PATH = Path(os.environ.get("RTV_TOPO_PATH", "SRTM15+V2.0.tiff"))
 # Surge decay moving inland, m per km (Petals default, Pielke & Pielke 1997).
 INLAND_DECAY_M_PER_KM = 0.2
 
-# Sea-level rise (m) per app scenario. MIRRORS the SLR table inside
-# TNL_Resort_Climate_Risk_Explorer.html; if you change one, change both.
-SLR_M = {
-    "present": 0.0,
-    "ssp126_2030": 0.09, "ssp126_2050": 0.19, "ssp126_2080": 0.34,
-    "ssp245_2030": 0.10, "ssp245_2050": 0.22, "ssp245_2080": 0.44,
-    "ssp585_2030": 0.11, "ssp585_2050": 0.27, "ssp585_2080": 0.62,
-}
+# Sea-level rise (m) per app scenario, from the single sourced registry
+# (assumptions.py: AR6 GMSL central + explicit conservative delta, with
+# units, baseline period, and citation per entry). SLR is REGIONAL: surge is
+# computed per coastline region with that region's table; SLR_M keeps the
+# global-mean table for points outside every region box (and for callers
+# that predate regionalization).
+SLR_M = assumptions.SLR_TABLES["global_mean"]
+SLR_REGIONS = assumptions.SLR_TABLES
+SLR_REGION_BOXES = assumptions.SLR_REGION_BOXES
+
+
+def slr_of(app_key, region="global_mean"):
+    """Effective SLR (m) for a scenario and coastline region."""
+    return assumptions.slr_m(app_key, region)
+
+
+def subset_hazard_extent(haz, box):
+    """The hazard restricted to centroids inside (lat0, lat1, lon0, lon1);
+    None when no centroid falls inside, the hazard itself when all do.
+
+    Real CLIMADA hazards go through Hazard.select(extent=...); the manual
+    fallback masks intensity columns and rebuilds the centroid holder, which
+    also serves any release without extent selection and the test fakes."""
+    la0, la1, lo0, lo1 = box
+    lat = np.asarray(haz.centroids.lat, float)
+    lon = np.asarray(haz.centroids.lon, float)
+    m = (lat >= la0) & (lat <= la1) & (lon >= lo0) & (lon <= lo1)
+    if not m.any():
+        return None
+    if m.all():
+        return haz
+    try:
+        sub = haz.select(extent=(lo0, lo1, la0, la1))
+        if sub is not None:
+            return sub
+    except Exception:
+        pass
+    import copy
+    import types
+    sub = copy.copy(haz)
+    sub.intensity = haz.intensity[:, m]
+    frac = getattr(haz, "fraction", None)
+    if frac is not None:
+        try:
+            sub.fraction = frac[:, m]
+        except Exception:
+            pass
+    try:
+        from climada.hazard import Centroids
+        try:
+            sub.centroids = Centroids(lat=lat[m], lon=lon[m], crs="EPSG:4326")
+        except TypeError:
+            sub.centroids = Centroids.from_lat_lon(lat[m], lon[m])
+    except Exception:
+        sub.centroids = types.SimpleNamespace(lat=lat[m], lon=lon[m])
+    return sub
+
+
+def slr_region_partition(lat, lon):
+    """[(region, bool mask)] partitioning points by SLR region (first box
+    wins, 'global_mean' takes the remainder); only non-empty members."""
+    lat = np.asarray(lat, float)
+    lon = np.asarray(lon, float)
+    taken = np.zeros(lat.shape, bool)
+    out = []
+    for name, la0, la1, lo0, lo1 in SLR_REGION_BOXES:
+        m = (~taken) & (lat >= la0) & (lat <= la1) \
+            & (lon >= lo0) & (lon <= lo1)
+        if m.any():
+            out.append((name, m))
+            taken |= m
+    if (~taken).any():
+        out.append(("global_mean", ~taken))
+    return out
 
 # --- Scenario recipes -------------------------------------------------------
 # The app's pathways are CMIP6 SSP labels; the Data API's TC sets are tagged
@@ -651,23 +719,52 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
         out["wgrid"] = thin_to_grid(
             lat, lon, {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)})
         if surge_enabled:
-            # Surge is computed per (source, app scenario) because SLR enters
-            # BEFORE the elevation subtraction: post-hoc addition would miss
-            # newly-flooded ground and mis-handle cell averaging.
+            # Surge is computed per (source, app scenario, SLR REGION): SLR
+            # enters BEFORE the elevation subtraction, and relative SLR
+            # differs by coastline (Gulf subsidence most of all), so each
+            # region's centroids get their own bathtub run at their own SLR
+            # table. Centroids outside every region box run once on the full
+            # hazard at the global-mean SLR and are trimmed to those cells.
+            cen_lat = np.asarray(haz.centroids.lat, dtype=float)
+            cen_lon = np.asarray(haz.centroids.lon, dtype=float)
+            region_parts = slr_region_partition(cen_lat, cen_lon)
+            boxes = {n: (la0, la1, lo0, lo1)
+                     for n, la0, la1, lo0, lo1 in SLR_REGION_BOXES}
             for app_key, recipe in APP_SCENARIOS.items():
                 if not any(source_key(s) == skey for _w, s in recipe):
                     continue
                 try:
-                    surge = compute_surge(haz, SLR_M[app_key])
-                    s_lat = np.asarray(surge.centroids.lat, dtype=float)
-                    s_lon = np.asarray(surge.centroids.lon, dtype=float)
-                    s_int = local_rp_intensity(surge, RETURN_PERIODS)
-                    sgrid = thin_to_grid(s_lat, s_lon,
-                                         {rp: s_int[i] for i, rp in enumerate(RETURN_PERIODS)})
+                    pt_lat, pt_lon = [], []
+                    pt_v = {rp: [] for rp in RETURN_PERIODS}
+                    for region, _mask in region_parts:
+                        sub = haz if region == "global_mean" else \
+                            subset_hazard_extent(haz, boxes[region])
+                        if sub is None:
+                            continue
+                        surge = compute_surge(sub, slr_of(app_key, region))
+                        s_lat = np.asarray(surge.centroids.lat, dtype=float)
+                        s_lon = np.asarray(surge.centroids.lon, dtype=float)
+                        s_int = local_rp_intensity(surge, RETURN_PERIODS)
+                        keep = np.ones(len(s_lat), bool)
+                        if region == "global_mean":
+                            for _n, la0, la1, lo0, lo1 in SLR_REGION_BOXES:
+                                keep &= ~((s_lat >= la0) & (s_lat <= la1)
+                                          & (s_lon >= lo0) & (s_lon <= lo1))
+                        del surge
+                        if not keep.any():
+                            continue
+                        pt_lat.append(s_lat[keep])
+                        pt_lon.append(s_lon[keep])
+                        for i, rp in enumerate(RETURN_PERIODS):
+                            pt_v[rp].append(s_int[i][keep])
+                    if not pt_lat:
+                        raise RuntimeError("surge produced no centroids")
+                    sgrid = thin_to_grid(
+                        np.concatenate(pt_lat), np.concatenate(pt_lon),
+                        {rp: np.concatenate(pt_v[rp]) for rp in RETURN_PERIODS})
                     # Petals may subset centroids to the coastal band: restore
                     # full coverage with explicit zeros inland (see docstring).
                     out["surge"][app_key] = align_to_cells(sgrid, out["wgrid"])
-                    del surge
                 except Exception as exc:
                     out["surge_skipped"].append(
                         {"country": iso3, "source": skey, "scenario": app_key,
@@ -691,7 +788,8 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
         LOG.info("  wind %s / %s -> %d cells", iso3, skey, len(out["wgrid"]))
         for app_key, sgrid in out["surge"].items():
             surge_by_pair[(skey, app_key)] = sgrid
-            LOG.info("  surge %s / %s @ %s (SLR %.2f m) -> %d wet cells",
+            LOG.info("  surge %s / %s @ %s (SLR %.2f m global-mean, regional "
+                     "tables per box) -> %d wet cells",
                      iso3, skey, app_key, SLR_M[app_key],
                      int((sgrid["v100"] > 0).sum()))
         for sk in out["surge_skipped"]:
@@ -724,6 +822,9 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
             meta["layers"].append({"hazard": "cflood", "scenario": app_key,
                                    "country": iso3, "cells": len(g),
                                    "slr_m": SLR_M[app_key],
+                                   "slr_m_by_region": {
+                                       r: slr_of(app_key, r)
+                                       for r in assumptions.SLR_TABLES},
                                    "wet_cells_v100": int((g["v100"] > 0).sum())})
 
     # --- Phase 2: riverine flood, one discovery-driven fetch per app scenario.
@@ -802,7 +903,13 @@ def main(argv=None) -> int:
                   "dem_path": str(TOPO_PATH),
                   "dem_size_bytes": TOPO_PATH.stat().st_size if TOPO_PATH.exists() else None,
                   "inland_decay_m_per_km": INLAND_DECAY_M_PER_KM,
-                  "slr_m": SLR_M},
+                  "slr_m": SLR_M,
+                  "slr_regional": {"tables_m": assumptions.SLR_TABLES,
+                                   "factors": {r: f for r, (f, _w)
+                                               in assumptions.SLR_REGION_FACTOR.items()},
+                                   "boxes": assumptions.SLR_REGION_BOXES,
+                                   "source": "assumptions.py v"
+                                             + assumptions.ASSUMPTIONS_VERSION}},
         "layers": [], "skipped": [], "wind_sources": {},
     }
     try:
