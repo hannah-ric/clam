@@ -129,6 +129,23 @@ def main(path: str, meta_path: str | None = None) -> int:
     else:
         ok("portfolio AAL reconciles with per-site and by-peril sums")
 
+    # D1b. per-site return-period losses (Task 5): when present, they must be
+    # finite, non-negative, and non-decreasing with rarity
+    rp_bad = 0
+    for k, s in scen.items():
+        for x in s["per_site"]:
+            if "loss_rp100_usd" not in x:
+                continue
+            a, b = float(x["loss_rp100_usd"]), float(x["loss_rp250_usd"])
+            if a < 0 or b < 0 or a != a or b != b or b < a - 0.01:
+                rp_bad += 1
+    if rp_bad:
+        hard |= fail(f"{rp_bad} per-site return-period record(s) negative, "
+                     f"non-finite, or decreasing with rarity")
+    elif any("loss_rp100_usd" in x for s in scen.values()
+             for x in s["per_site"]):
+        ok("per-site 1-in-100 / 1-in-250 losses present and monotone")
+
     # D2. wildfire share sanity: this portfolio is not wildfire-led (coastal
     # SE US / Gulf / Caribbean / Hawaii), so a large wildfire share of the
     # acute AAL is the signature of the retired cell-occupancy inflation

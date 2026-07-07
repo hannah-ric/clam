@@ -158,6 +158,10 @@ def run():
         "defensible_space_m": [None, None, 10, None],
         # exercise the archetype layer through the real producer path
         "archetype": [None, "beachfront_lowrise", None, None],
+        # Task 4: Reef Bay carries both elevation fields (relief +1.0 m ->
+        # depth read at the structure); the rest stay cell-average (flagged)
+        "ground_elev_m": [2.6, None, None, None],
+        "cell_ground_elev_m": [1.6, None, None, None],
         # Dune Point's renovation sits EXACTLY PLAN_YEARS out: the boundary
         # that used to crash the budgeted plan with KeyError (year 4)
         "renovation_year": [None, ri.ROOF_AGE_REF_YEAR + mc.PLAN_YEARS, None,
@@ -194,6 +198,28 @@ def run():
             f"Kona Shore must be recorded as outside {layer} coverage"
     print("ok  per-site coverage: Hawaii site flagged on every peril, "
           "CONUS sites covered")
+
+    # 1c. Task 4: flood depth basis per site, flagged in pack and meta
+    basis = {x["name"]: x["flood_depth_basis"]
+             for x in pack["scenarios"]["present"]["per_site"]}
+    assert basis["Reef Bay"] == "structure", \
+        "both elevation fields present: depth read at the structure"
+    assert basis["Dune Point"] == "cell" and basis["Kona Shore"] == "cell", \
+        "missing elevation falls back to the cell value, flagged not silent"
+    assert meta["flood_depth_basis"]["at_structure_sites"] == 1
+    assert meta["flood_depth_basis"]["cell_average_sites"] == 3
+    print("ok  flood depth basis: at-structure vs cell-average flagged "
+          "per site and counted in meta")
+
+    # 1d. Task 5: per-site return-period losses beside the EAD
+    ps0 = {x["name"]: x for x in pack["scenarios"]["present"]["per_site"]}
+    for x in ps0.values():
+        assert x["loss_rp250_usd"] >= x["loss_rp100_usd"] >= 0
+    assert ps0["Reef Bay"]["loss_rp100_usd"] > 0, \
+        "an exposed coastal site carries a 1-in-100 loss figure"
+    assert ps0["Kona Shore"]["loss_rp100_usd"] == 0, \
+        "a site outside every hazard's coverage carries zero (and is flagged)"
+    print("ok  per-site 1-in-100 / 1-in-250 losses in the pack, monotone")
 
     # 2. failed wind source degrades gracefully and is recorded
     assert any(s.get("source") == "rcp26_2060" for s in meta["skipped"])

@@ -32,6 +32,37 @@ const SCEN_LABEL=(()=>{const o={present:"Present day"};
 const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
 function emanuelMdd(v,vHalf){vHalf=vHalf||V_HALF;const vt=Math.max((v-V_THRESH)/(vHalf-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+/* Task 5: the EAD integral used to START at 1-in-10, silently assuming zero
+   loss from anything more frequent. subTenPts extends the curve to 1-in-5
+   and 1-in-2 by log-linear extrapolation of the intensity/depth vector
+   below its most frequent point (slope floored at 0 so the extension can
+   never EXCEED the 1-in-10 value, clamped at 0 below). Frequent events then
+   enter the integral through the same damage curve, which zeroes them
+   naturally below the damage threshold or freeboard: calm sites are
+   unchanged, chronically-wet ones stop hiding their frequent losses. */
+const SUB10_RPS=[5,2];
+function subTenPts(vec){
+  const v10=Math.max(vec[10]||0,0), v25=Math.max(vec[25]||0,0);
+  const b=Math.max((v25-v10)/(Math.log(25)-Math.log(10)),0);
+  return SUB10_RPS.map(rp=>({rp,v:Math.max(v10-b*(Math.log(10)-Math.log(rp)),0)}));
+}
+/* Task 4: flood/surge depth read AT THE STRUCTURE. Relief = site ground
+   minus the hazard cell's mean land ground (both from survey or
+   enrich_sites.py). Wet cells shift by the relief; DRY CELLS STAY DRY (a
+   low-spot site cannot conjure water the model did not put in the cell).
+   Without both fields the cell value stands and the site reads
+   MODELED-COARSE on the trust surface. */
+const RELIEF_CLAMP_M=10;
+function siteRelief(site){
+  const g=+site.ground_elev_m, c=+site.cell_ground_elev_m;
+  if(!isFinite(g)||!isFinite(c))return null;
+  return Math.max(-RELIEF_CLAMP_M,Math.min(g-c,RELIEF_CLAMP_M));
+}
+function reliefVec(vec,relief){
+  if(relief==null)return vec;
+  const o={};RPS.forEach(rp=>{const v=vec[rp]||0;o[rp]=v>0?Math.max(v-relief,0):0;});
+  return o;
+}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
@@ -77,12 +108,13 @@ function makeGridProvider(rows){
 }
 function siteEad(vec,value,opts){
   opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
-  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const v=Math.max(p.v-windRed,0);return {rp:p.rp,v,f:1/p.rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
   if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
   const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
   for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   eadFrac+=s[s.length-1].frac*s[s.length-1].f;
-  const curve=pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
+  const curve=pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
   return {eadUsd:eadFrac*value,eadFrac,curve};
 }
 function bandOf(pct){if(pct>=1.5)return"Severe";if(pct>=0.75)return"High";if(pct>=0.25)return"Moderate";if(pct>0.001)return"Low";return"Minimal";}
@@ -248,14 +280,17 @@ function heatIndicators(la,lo,sc){
   const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
   return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
 }
-// flood EAD, same frequency integration as siteEad (f descending, tail closed)
+// flood EAD, same frequency integration as siteEad (f descending, tail
+// closed, and Task 5's sub-1-in-10 extension included)
 function floodEad(vec,value,fb,dmgScale,cap){
   const k=dmgScale==null?1:dmgScale;
-  const pts=RPS.map(rp=>{const d=Math.max(vec[rp]||0,0);return {rp,v:d,f:1/rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const d=Math.max(p.v,0);return {rp:p.rp,v:d,f:1/p.rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
   const s=pts.slice().sort((x,y)=>y.f-x.f);let ef=0;
   for(let i=0;i<s.length-1;i++)ef+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   ef+=s[s.length-1].frac*s[s.length-1].f;
-  return {eadUsd:ef*value,eadFrac:ef,curve:pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
+  return {eadUsd:ef*value,eadFrac:ef,
+    curve:pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
 }
 function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate","High","Severe"];let i=0;while(i<t.length&&days32>t[i])i++;return n[i];}
 
@@ -378,6 +413,15 @@ function siteTrust(site,hz,sc){
          flame-length (CFL) value reaches this site (v25>0) */
       if(hz==="wfire"&&!(+r.vec[25]>0))
         t.note="conditional damage interim (flat "+FIRE_COND_INTERIM+", capped) until a flame-length layer is supplied";
+      /* Task 4: flood/surge depth basis - at the structure when the site
+         carries both elevation fields, else MODELED-COARSE (cell average) */
+      if(hz==="cflood"||hz==="rflood"){
+        const rel=siteRelief(site);
+        t.coarse=rel==null;
+        t.note=rel==null
+          ?"modeled-coarse: cell-average depth; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
+          :"depth at the structure (site sits "+(rel>=0?rel.toFixed(1)+" m above":Math.abs(rel).toFixed(1)+" m below")+" the cell's land ground)";
+      }
       return t;
     }
     const fb=trustFallback(site,hz);
@@ -441,7 +485,7 @@ function hzSite(site,hz,sc){
     const {eadUsd,eadFrac,curve}=floodEad(dvec,val,Math.max(PRAIN_FB+vuln.fbBonus,0),null,vuln.floodCap);
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec:dvec};
   }
-  const vec=hzVector(hz,la,lo,sc);
+  const vec=reliefVec(hzVector(hz,la,lo,sc),siteRelief(site));
   const {eadUsd,eadFrac,curve}=floodEad(vec,val,Math.max((hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,0),null,vuln.floodCap);
   return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
 }
@@ -594,6 +638,10 @@ function explainPeril(site,hz,sc){
   out.inputs={kind:"vec",vec:r.vec};
   out.factors=[{name:hz==="cflood"?"coastal freeboard baseline":"riverine freeboard baseline",add:hz==="cflood"?FB_COAST:fbRiver()}]
     .concat(fbBonusTrail(site,vuln));
+  /* Task 4: state the depth basis - structure-adjusted or modeled-coarse */
+  const _rel=siteRelief(site);
+  if(_rel!=null)out.factors.unshift({name:"depth read at the structure (site ground vs cell land mean)",add:-_rel});
+  else out.notes.push("modeled-coarse: depth is the cell average; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read it at the structure");
   if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
   out.notes.push("concave stage-damage above freeboard, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
   return out;

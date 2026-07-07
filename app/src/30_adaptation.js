@@ -80,11 +80,12 @@ function adaptedFinSite(s,sc,mods){
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
     {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK,vHalf:vuln.vHalf});
   directEad+=w.eadUsd; biEad+=gop*reopenShare*w.eadFrac;
-  let cvec=scaleVec(hzVector("cflood",s.latitude,s.longitude,sc));
+  const relief=siteRelief(s);
+  let cvec=scaleVec(reliefVec(hzVector("cflood",s.latitude,s.longitude,sc),relief));
   if(mods.cfDepthRed){const nv={};RPS.forEach(rp=>nv[rp]=Math.max(0,(cvec[rp]||0)-mods.cfDepthRed));cvec=nv;}
   const cf=floodEad(cvec,value,Math.max(FB_COAST+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=cf.eadUsd; biEad+=gop*reopenShare*cf.eadFrac;
-  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const rf=floodEad(scaleVec(reliefVec(hzVector("rflood",s.latitude,s.longitude,sc),relief)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=rf.eadUsd; biEad+=gop*reopenShare*rf.eadFrac;
   const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,Math.max(PRAIN_FB+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=pv.eadUsd; biEad+=gop*reopenShare*pv.eadFrac;
@@ -155,7 +156,11 @@ function layerStatsCalc(varByRp,acuteAal){
 function toleranceFlags(sitesArr,sc,af){
   const f=finPortfolio(sitesArr,sc);
   const portPct=f.value?f.totalAal/f.value*100:0;
-  const varPct=f.value?f.var100/f.value*100:0;
+  /* Task 5: the tail breach reads the CANONICAL tail (the pack's joint
+     event curve) when one is loaded; else the live blend, labeled */
+  const varRef=f.jointTail?f.jointTail.var100:f.var100;
+  const varPct=f.value?varRef/f.value*100:0;
+  const tailBasis=f.jointTail?"joint event tail (results pack)":"live blend approximation";
   const siteBreaches=[];
   f.rows.forEach(r=>{
     const bps=r.value?r.totalAal/r.value*1e4:0;
@@ -179,7 +184,7 @@ function toleranceFlags(sitesArr,sc,af){
   });
   siteBreaches.sort((a,b)=>b.bps-a.bps);
   const portBreach=portPct>tolerance.portAalPct, varBreach=varPct>tolerance.varPctValue;
-  return {portPct,varPct,portBreach,varBreach,siteBreaches,
+  return {portPct,varPct,tailBasis,portBreach,varBreach,siteBreaches,
     anyBreach:portBreach||varBreach||siteBreaches.length>0};
 }
 

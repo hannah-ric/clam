@@ -45,7 +45,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(me
 LOG = logging.getLogger("enrich_sites")
 
 # context columns this script may ADD (never required by the pipeline)
-CONTEXT_COLS = ["ground_elev_m", "coast_km"]
+CONTEXT_COLS = ["ground_elev_m", "cell_ground_elev_m", "coast_km"]
 # v2 profile columns it may DRAFT when blank
 DRAFT_COLS = ["fema_zone", "buildings"]
 
@@ -93,12 +93,52 @@ def sample_dem(lats, lons):
     if not rh.TOPO_PATH.exists():
         return None, f"DEM not found at {rh.TOPO_PATH}"
     try:
-        import rasterio
-        with rasterio.open(rh.TOPO_PATH) as src:
-            vals = [v[0] for v in src.sample(zip(lons, lats))]
-        return [round(float(v), 1) for v in vals], None
+        import refresh_wildfire as rw
+        vals, valid = rw.sample_raster_points(str(rh.TOPO_PATH), lats, lons)
+        return [round(float(v), 1) if ok else None
+                for v, ok in zip(vals, valid)], None
     except Exception as exc:
         return None, f"DEM sampling failed: {str(exc)[:200]}"
+
+
+def cell_mean_ground(samples_2d):
+    """Mean LAND ground per cell from a [n_sites x k] DEM sample matrix.
+    Bathymetry (below 0 m) is excluded: the structure's relief is read
+    against the cell's land surface, not the sea floor the topo-bathymetry
+    DEM also carries. None where a cell has no land sample (pure; tested)."""
+    out = []
+    for row in np.asarray(samples_2d, float):
+        m = np.isfinite(row) & (row >= 0.0)
+        out.append(round(float(row[m].mean()), 1) if m.any() else None)
+    return out
+
+
+def sample_dem_cell(lats, lons, grid_deg=None):
+    """Mean land ground (m) over each site's HAZARD CELL, from a 5x5 point
+    sample across the GRID_DEG cell containing the site. Together with the
+    point sample this makes flood depth readable AT THE STRUCTURE:
+    depth_structure = depth_cell - (ground_elev_m - cell_ground_elev_m)."""
+    import refresh_hazard as rh
+    if grid_deg is None:
+        grid_deg = rh.GRID_DEG
+    if not rh.TOPO_PATH.exists():
+        return None, f"DEM not found at {rh.TOPO_PATH}"
+    try:
+        import refresh_wildfire as rw
+        la = np.asarray(lats, float)
+        lo = np.asarray(lons, float)
+        cla = np.round(la / grid_deg) * grid_deg
+        clo = np.round(lo / grid_deg) * grid_deg
+        offs = (np.arange(5) - 2.0) / 5.0 * grid_deg
+        pts_la = (cla[:, None, None] + offs[None, :, None]
+                  + np.zeros((1, 1, 5))).ravel()
+        pts_lo = (clo[:, None, None] + np.zeros((1, 5, 1))
+                  + offs[None, None, :]).ravel()
+        vals, valid = rw.sample_raster_points(str(rh.TOPO_PATH), pts_la, pts_lo)
+        vals = np.where(valid, vals, np.nan).reshape(len(la), 25)
+        return cell_mean_ground(vals), None
+    except Exception as exc:
+        return None, f"cell DEM sampling failed: {str(exc)[:200]}"
 
 
 def coast_distance_km(lats, lons):
@@ -196,9 +236,22 @@ def main(argv=None) -> int:
         LOG.warning("DEM: %s", why)
     else:
         for i in df.index:
-            merge_field(df, i, "ground_elev_m", elev[i],
-                        "SRTM15+ DEM sample (topo-bathymetry; verify on site)",
-                        prov)
+            if elev[i] is not None:
+                merge_field(df, i, "ground_elev_m", elev[i],
+                            "SRTM15+ DEM sample (topo-bathymetry; verify on "
+                            "site)", prov)
+
+    cell_elev, why = sample_dem_cell(lats, lons)
+    if cell_elev is None:
+        prov["skipped"].append({"source": "dem_cell", "reason": why})
+        LOG.warning("DEM cell mean: %s", why)
+    else:
+        for i in df.index:
+            if cell_elev[i] is not None:
+                merge_field(df, i, "cell_ground_elev_m", cell_elev[i],
+                            "SRTM15+ mean land ground over the site's hazard "
+                            "cell (bathymetry excluded); with ground_elev_m "
+                            "this reads flood depth at the structure", prov)
 
     dist, why = coast_distance_km(lats, lons)
     if dist is None:

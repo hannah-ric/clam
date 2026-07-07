@@ -35,12 +35,34 @@ function finSite(s,sc){
   return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
 }
+/* Task 5: the canonical portfolio tail. The results pack computes its curve
+   from per-EVENT losses summed across sites FIRST (wind+surge truly joint),
+   which is the honest joint tail; the app's live construction blends
+   per-site return-period losses through a correlation assumption, which is
+   an approximation of co-occurrence, not event math. When a loaded pack
+   covers the scenario, the pack's joint curve is canonical and every tail
+   display says so; without one the live blend stands, EXPLICITLY LABELED.
+   The two are never presented as equivalent: the pack curve is DIRECT
+   damage, the live blend carries direct + business interruption, and each
+   surface states its basis. */
+const TAIL_JOINT_LABEL="joint event tail (results pack, direct damage)";
+const TAIL_BOUND_LABEL="live correlation blend (direct + BI): a co-occurrence approximation, not the joint event tail";
+function canonicalTail(sc){
+  const pk=resultsPack&&resultsPack.data;
+  if(!pk||!pk.scenarios||!pk.scenarios[sc])return null;
+  const p=pk.scenarios[sc].portfolio||{};
+  const byRp={};RPS.forEach(rp=>byRp[rp]=+((p.ep_usd||{})[String(rp)])||0);
+  return {byRp,var100:byRp[100],var250:byRp[250],
+          aal:+p.direct_aal_usd||0,label:TAIL_JOINT_LABEL};
+}
 function finPortfolio(sites,sc){
   const rows=sites.map(s=>Object.assign({name:s.name,brand:s.brand,id:s.id},finSite(s,sc)));
   const sum=k=>rows.reduce((a,r)=>a+r[k],0);
   const value=sum("value"),revenue=sum("revenue");
   // diversified tail: sites rarely share one event, so blend fully-correlated
   // (sum) and independent (root-sum-square) via the correlation assumption.
+  // This is the LIVE approximation; f.jointTail carries the canonical pack
+  // curve when one is loaded (see canonicalTail above).
   const rho=finAssume.corr;
   const varByRp={};RPS.forEach(rp=>{
     let sv=0,sq=0;rows.forEach(r=>{const v=r.directByRp[rp]+r.biByRp[rp];sv+=v;sq+=v*v;});
@@ -50,15 +72,18 @@ function finPortfolio(sites,sc){
   return {rows,value,revenue,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,
     aalPctValue:value?totalAal/value*100:0,aalPctRev:revenue?totalAal/revenue*100:0,
-    var100:varByRp[100],var250:varByRp[250],varByRp};
+    var100:varByRp[100],var250:varByRp[250],varByRp,
+    jointTail:canonicalTail(sc)};
 }
 // TCFD/ISSB-style disclosure rows: present plus the selected pathway at 2050 and 2080
 function finDisclosure(sites,pathway){
   const pw=(pathway&&pathway!=="present")?pathway:"ssp245";
   const scens=[["Present day","present"],[PATHWAY_LABEL[pw]+" \u00b7 2050",pw+"_2050"],[PATHWAY_LABEL[pw]+" \u00b7 2080",pw+"_2080"]];
   return scens.map(([label,sc])=>{const f=finPortfolio(sites,sc);
+    const v100=f.jointTail?f.jointTail.var100:f.var100;      // canonical tail
     return {label,acutePct:f.value?f.acuteAal/f.value*100:0,chronicPct:f.value?f.chronicAal/f.value*100:0,
-      totalPct:f.aalPctValue,var100Pct:f.value?f.var100/f.value*100:0};});
+      totalPct:f.aalPctValue,var100Pct:f.value?v100/f.value*100:0,
+      tailBasis:f.jointTail?"joint event tail":"blend approximation"};});
 }
 /* Aggregate across every risk: one expected-annual-cost total, decomposed two
    consistent ways (by peril and by cost type), plus the portfolio band mix.

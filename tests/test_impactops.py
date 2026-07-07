@@ -390,6 +390,79 @@ def test_archetype_differentiation():
     ok("archetypes: same-cell differentiation, neutral default, cap rules")
 
 
+def test_depth_at_structure():
+    """Task 4: flood/surge depth read at the structure, not the cell."""
+    relief, has = ri.site_relief([2.6, None, -1.0, 25.0],
+                                 [1.6, 1.0, 0.0, 0.0])
+    assert has.tolist() == [True, False, True, True]
+    assert relief[0] == 1.0 and relief[1] == 0.0, \
+        "missing elevation means relief 0 (cell value), flagged not silent"
+    assert relief[2] == -1.0
+    assert relief[3] == ri.RELIEF_CLAMP_M, "relief is sanity-clamped"
+
+    d = np.array([[2.0, 2.0, 2.0, 0.0]])
+    got = ri.depth_at_structure(d, np.array([1.0, 0.0, -1.0, -1.0]))
+    assert got[0, 0] == 1.0, "a site above the cell mean reads shallower"
+    assert got[0, 1] == 2.0, "no elevation data: the cell value stands"
+    assert got[0, 2] == 3.0, "a low-spot site reads deeper"
+    assert got[0, 3] == 0.0, \
+        "DRY CELLS STAY DRY: relief cannot conjure water the model omitted"
+
+    # two sites in the same wet cell diverge on surge loss by elevation
+    prep = {"wind": {"present": {"freq": np.array([0.02]),
+                                 "int": np.array([[60.0, 60.0]])}},
+            "surge": {("present", "present"):
+                      {"int": ri.depth_at_structure(
+                          np.array([[2.5, 2.5]]), np.array([1.2, 0.0]))}},
+            "rflood": {}}
+    vals = np.array([50e6, 50e6])
+    r = ri.eval_scenario(prep, "present", vals, np.ones(2),
+                         np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER))
+    assert 0 < r["cflood"]["ead"][0] < r["cflood"]["ead"][1], \
+        "same cell: the elevated site must lose less surge than the coarse one"
+    ok("depth at structure: relief shifts wet cells, dry stays dry, "
+       "same-cell divergence")
+
+
+def test_site_rp_losses():
+    """Task 5: per-site return-period losses beside the EAD."""
+    # two events, two sites: site 0 sees a 1-in-50 loss of 10 and a 1-in-20
+    # of 4; site 1 only the rarer event
+    losses = np.array([[10.0, 8.0], [4.0, 0.0]])
+    freq = np.array([0.02, 0.05])
+    rp = ri.site_rp_losses(losses, freq, rps=(100, 250))
+    # cumulative: site0 events sorted desc -> 10 @0.02, 4 @0.07; 1/100=0.01
+    # is rarer than the first event's 0.02, so the 1-in-100 loss is 10
+    assert rp[100][0] == 10.0 and rp[250][0] == 10.0
+    assert rp[100][1] == 8.0 and rp[250][1] == 8.0
+    # a site whose events never reach the frequency reads zero
+    rp2 = ri.site_rp_losses(np.array([[5.0]]), np.array([0.001]), rps=(100,))
+    assert rp2[100][0] == 0.0, "no exceedance at 1-in-100: zero, not the tail"
+    # monotone with rarity by construction
+    losses3 = np.array([[10.0], [4.0], [1.0]])
+    freq3 = np.array([0.005, 0.02, 0.2])
+    rp3 = ri.site_rp_losses(losses3, freq3, rps=(10, 100, 250))
+    assert rp3[10][0] <= rp3[100][0] <= rp3[250][0]
+
+    # through eval_scenario: acute site_rp present, monotone, and zero-safe
+    prep = {"wind": {"present": {"freq": np.array([0.01, 0.02]),
+                                 "int": np.array([[70.0, 40.0],
+                                                  [45.0, 30.0]])}},
+            "surge": {}, "rflood": {}}
+    vals = np.array([2e6, 2e6])
+    r = ri.eval_scenario(prep, "present", vals, np.ones(2),
+                         np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER),
+                         site_rp=True)
+    srp = r["acute"]["site_rp"]
+    assert set(srp) == set(ri.SITE_RPS)
+    assert (srp[250] >= srp[100]).all() and (srp[100] >= 0).all()
+    assert srp[100][0] > 0, "an exposed site carries a 1-in-100 loss figure"
+    r0 = ri.eval_scenario(prep, "present", vals, np.ones(2),
+                          np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER))
+    assert "site_rp" not in r0["acute"], "opt-in: the hot paths skip it"
+    ok("site_rp_losses: step exceedance per site, monotone, opt-in")
+
+
 def test_annuity():
     # 25 years at 3%: standard annuity factor ~17.413
     assert abs(ri.annuity(25, 0.03) - 17.4131) < 5e-4
@@ -454,6 +527,8 @@ if __name__ == "__main__":
     test_capital_plan()
     test_vhalf_calibration_roundtrip()
     test_archetype_differentiation()
+    test_depth_at_structure()
+    test_site_rp_losses()
     test_annuity()
     test_named_insured_rollup()
     print("\nALL IMPACT-OP TESTS PASSED")

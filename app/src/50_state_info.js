@@ -91,14 +91,14 @@ const INFO={
     "<p>Sample values are illustrative and are not actual Travel + Leisure Co. figures.</p>"},
   ead:{t:"Expected annual damage (EAD)",b:
     "<p>The <b>average</b> loss per year from this peril, blending frequent-small and rare-large events into one number.</p>"+
-    "<p>We compute the damage at six return periods (1-in-10 up to 1-in-500 years) and take the area under the loss-versus-frequency curve. Shown as dollars per year and as a share of value.</p>",
+    "<p>We compute the damage at the six tabulated return periods (1-in-10 up to 1-in-500) and take the area under the loss-versus-frequency curve, <b>extended below 1-in-10</b>: the intensity curve is extrapolated to 1-in-5 and 1-in-2 and run through the same damage curve, so frequent events count instead of being silently floored at zero. Calm sites are unchanged (the damage threshold or freeboard zeroes the extension); chronically-exposed ones stop hiding their frequent losses. The results pack's event math never had the floor.</p>",
     s:"Vulnerability: Emanuel (2011) for wind; stage-damage curve for flood."},
   eadPct:{t:"EAD as a share of value",b:
     "<p>Expected annual damage divided by the site's insured value. A site at <code>0.50%</code> loses, on average, half a percent of its value to this peril each year.</p>"+
     "<p>It puts sites of very different sizes on the same footing.</p>"},
-  rp100:{t:"1-in-100 portfolio loss",b:
-    "<p>The loss the whole portfolio would take from a 1-in-100-year event. We add each site's 1-in-100 loss, which assumes the peril strikes every site at once.</p>"+
-    "<p>Real events rarely hit the whole portfolio together, so treat this as an <b>upper bound</b>. A CLIMADA event set gives the exact combined curve.</p>"},
+  rp100:{t:"1-in-100 loss",b:
+    "<p>Per site, this is that site's own loss at the 1-in-100-year intensity, straight from its damage curve: a physical-units figure to read beside the expected annual damage.</p>"+
+    "<p>At portfolio level we add each site's 1-in-100 loss, which assumes the peril strikes every site at once. Real events rarely hit the whole portfolio together, so the portfolio figure is an <b>upper bound, never the joint tail</b>: the results pack's per-event math carries the canonical joint curve, and every surface states which one it shows.</p>"},
   bands:{t:"Risk bands",b:
     "<p>Five plain-language bands from the annual loss ratio, so you can sort and communicate without reading every number:</p>"+
     "<p><b>Minimal</b> &middot; <b>Low</b> to 0.25% &middot; <b>Moderate</b> to 0.75% &middot; <b>High</b> to 1.5% &middot; <b>Severe</b> above 1.5%.</p>"},
@@ -205,8 +205,8 @@ const INFO={
     "<p>The part of the annual cost that is not physical damage: business interruption while a site is closed, plus heat's drag on revenue.</p>"+
     "<p>Indirect losses are often overlooked and can rival the damage bill for a hospitality portfolio.</p>"},
   var100:{t:"1-in-100 Value at Risk",b:
-    "<p>The total loss (direct damage plus business interruption) the portfolio would face from a 1-in-100-year year, the standard tail-risk yardstick.</p>"+
-    "<p>It is diversified across sites using the hazard-correlation assumption, so it is not a naive sum. A CLIMADA event set gives the exact combined tail.</p>"},
+    "<p>The tail-risk yardstick: what a 1-in-100-year year would cost the portfolio.</p>"+
+    "<p><b>Which curve you are seeing is stated on every surface.</b> When a results pack is loaded, the CANONICAL figure is its <b>joint event tail</b>: per-event losses summed across sites first (wind and surge share events), direct damage only. Without a pack, the app shows its live construction: per-site return-period losses blended through a correlation assumption (direct + business interruption) - a co-occurrence <b>approximation, never presented as the joint tail</b>.</p>"},
   var250:{t:"1-in-250 Value at Risk",b:
     "<p>The same tail measure at a rarer 1-in-250-year severity, a common capital and stress-test threshold.</p>"+
     "<p>Diversified across sites; treat as a screening estimate until a CLIMADA event set is loaded.</p>"},

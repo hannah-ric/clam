@@ -242,6 +242,32 @@ def vuln_v2(construction=None, year_built=None, defended=False,
     return wind_mult, fb_bonus, cap
 
 
+RELIEF_CLAMP_M = 10.0     # sanity clamp on site-vs-cell ground relief (m)
+
+
+def site_relief(ground_elev_m, cell_ground_elev_m):
+    """(relief m, has_elevation mask) per site. Relief = site ground minus
+    the hazard cell's mean ground: the number that converts depth AT THE
+    CELL into depth AT THE STRUCTURE. Both fields must be present (survey or
+    enrich_sites.py --dem); otherwise relief is 0 and the site is flagged
+    modeled-coarse rather than silently treated as refined."""
+    ge = pd.to_numeric(pd.Series(ground_elev_m), errors="coerce").to_numpy(float)
+    ce = pd.to_numeric(pd.Series(cell_ground_elev_m), errors="coerce").to_numpy(float)
+    has = np.isfinite(ge) & np.isfinite(ce)
+    relief = np.where(has, np.clip(ge - ce, -RELIEF_CLAMP_M, RELIEF_CLAMP_M), 0.0)
+    return relief, has
+
+
+def depth_at_structure(depth, relief):
+    """Adjust cell water depth to the structure's ground: wet cells shift by
+    the site's relief (positive = site sits above the cell mean = shallower;
+    negative = a low spot = deeper). DRY CELLS STAY DRY: a below-cell-mean
+    site cannot conjure water the flood model did not put in the cell."""
+    d = np.asarray(depth, float)
+    r = np.asarray(relief, float)
+    return np.where(d > 0, np.maximum(d - r, 0.0), 0.0)
+
+
 def archetype_arrays(rows):
     """(v_half, fb_add_m, cap_override) per-site arrays from the archetype
     field (profile schema v2). The archetype acts on the CURVES: v_half
@@ -374,6 +400,46 @@ def site_ead(losses, freq):
     return (np.asarray(losses, float) * np.asarray(freq, float)[:, None]).sum(axis=0)
 
 
+SITE_RPS = (100, 250)      # per-site return periods surfaced beside the EAD
+
+
+def site_rp_losses(losses, freq, rps=SITE_RPS):
+    """{rp: per-site loss} at the requested return periods: each site's OWN
+    exceedance over the catalog's events. Step lookup (the loss of the
+    least-severe event at which the site's cumulative event frequency
+    reaches 1/RP; zero when it never does), vectorized across sites; the
+    step convention is recorded in the pack meta."""
+    L = np.asarray(losses, float)
+    f = np.asarray(freq, float)
+    keep = f > 0
+    L, f = L[keep], f[keep]
+    n = L.shape[1] if L.ndim == 2 else 0
+    if not L.size:
+        return {rp: np.zeros(n) for rp in rps}
+    order = np.argsort(-L, axis=0, kind="stable")
+    l_desc = np.take_along_axis(L, order, axis=0)
+    cum = np.cumsum(f[order], axis=0)
+    out = {}
+    for rp in rps:
+        hit = cum >= (1.0 / rp) - 1e-12
+        first = hit.argmax(axis=0)
+        vals = np.take_along_axis(l_desc, first[None, :], axis=0)[0]
+        out[rp] = np.where(hit.any(axis=0), vals, 0.0)
+    return out
+
+
+def _rp_zero(n, rps=SITE_RPS):
+    return {rp: np.zeros(n) for rp in rps}
+
+
+def _rp_add(a, b):
+    return {rp: a[rp] + b[rp] for rp in a}
+
+
+def _rp_scale(a, k):
+    return {rp: a[rp] * k for rp in a}
+
+
 def blend_results(parts):
     """Weighted mean of per-source result dicts {aal, ep{rp}, ead[site]},
     with weight renormalisation over the members present (the same graceful
@@ -438,7 +504,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   dmg_scale=1.0, haz_mult=1.0, exp_mult=1.0,
                   wind_dmg_mult=1.0, fb_bonus=0.0, cf_depth_red=0.0,
                   flood_cap=None, fb_prain=None, fire_vuln=None,
-                  fire_mult=1.0, v_half=None):
+                  fire_mult=1.0, v_half=None, site_rp=False):
     """One scenario's portfolio result from prepared intensities.
 
     `prep` is the pure data structure build_country_prep() returns:
@@ -451,7 +517,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
     vals = values * exp_mult
     recipe = rh.APP_SCENARIOS[app_key]
 
-    ws_parts, w_parts, s_parts = [], [], []
+    ws_parts, w_parts, s_parts, ws_rp_parts = [], [], [], []
     for w, src in recipe:
         skey = rh.source_key(src)
         if skey not in prep["wind"]:
@@ -484,12 +550,21 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         ws_parts.append((w, {"aal": float(site_ead(combined, wnd["freq"]).sum()),
                              "ep": ep_curve(combined.sum(axis=1), wnd["freq"]),
                              "ead": site_ead(combined, wnd["freq"])}))
+        if site_rp:
+            ws_rp_parts.append((w, site_rp_losses(combined, wnd["freq"])))
 
     wind = blend_results(w_parts)
     surge = blend_results(s_parts)
     joint = blend_results(ws_parts)
+    joint_rp = None
+    if site_rp and ws_rp_parts:
+        wsum = sum(w for w, _ in ws_rp_parts)
+        joint_rp = _rp_zero(len(vals))
+        for w, r_ in ws_rp_parts:
+            joint_rp = _rp_add(joint_rp, _rp_scale(r_, w / wsum))
 
     river = None
+    river_rp = None
     members = prep["rflood"].get(app_key) or []
     if members:
         mparts = []
@@ -500,11 +575,16 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                            {"aal": float(site_ead(rl, m["freq"]).sum()),
                             "ep": ep_curve(rl.sum(axis=1), m["freq"]),
                             "ead": site_ead(rl, m["freq"])}))
+            if site_rp:
+                mr = _rp_scale(site_rp_losses(rl, m["freq"]),
+                               1.0 / len(members))
+                river_rp = mr if river_rp is None else _rp_add(river_rp, mr)
         river = blend_results(mparts)
 
     warm = rw.WARMING.get(app_key, 0.0)
 
     rain = None
+    rain_rp = None
     pw = prep.get("prain")
     if pw is not None:
         # one member per basin domain (a lone dict is the legacy one-domain
@@ -514,6 +594,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         rain_members = [pw] if isinstance(pw, dict) else pw
         rain = {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
                 "ead": np.zeros_like(vals)}
+        rain_rp = _rp_zero(len(vals)) if site_rp else None
         for pm in rain_members:
             # scenario scaling by Clausius-Clapeyron on the rain field itself,
             # then the documented drainage conversion (mirrors the app exactly)
@@ -524,6 +605,8 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
             rain["aal"] += float(site_ead(pl, pm["freq"]).sum())
             rain["ep"] = add_ep(rain["ep"], ep_curve(pl.sum(axis=1), pm["freq"]))
             rain["ead"] = rain["ead"] + site_ead(pl, pm["freq"])
+            if site_rp:
+                rain_rp = _rp_add(rain_rp, site_rp_losses(pl, pm["freq"]))
 
     fire = None
     fw = prep.get("wfire")
@@ -543,18 +626,22 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         fire = {"aal": float((p * loss_given_fire).sum()),
                 "ep": ep_curve(loss_given_fire, p),
                 "ead": p * loss_given_fire}
+        if site_rp:
+            fire["_site_rp"] = {rp: np.where(p >= 1.0 / rp, loss_given_fire,
+                                             0.0) for rp in SITE_RPS}
 
     if joint is None and river is None and rain is None and fire is None:
         return None
     zero = lambda: {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
                     "ead": np.zeros_like(vals)}
+    fire_rp = (fire or {}).pop("_site_rp", None) if fire else None
     joint = joint or zero()
     river = river or zero()
     rain = rain or zero()
     fire = fire or zero()
     acute_ep = add_ep(add_ep(add_ep(joint["ep"], river["ep"]),
                              rain["ep"]), fire["ep"])
-    return {
+    out = {
         "tc": wind or zero(),
         "cflood": surge or zero(),
         "rflood": river,
@@ -565,6 +652,15 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   "ead": np.asarray(joint["ead"]) + np.asarray(river["ead"])
                        + np.asarray(rain["ead"]) + np.asarray(fire["ead"])},
     }
+    if site_rp:
+        # Task 5: per-site return-period losses beside the EAD. Catalogs add
+        # comonotonically per site, the same rule the portfolio curve uses.
+        acute_rp = _rp_zero(len(vals))
+        for part_rp in (joint_rp, river_rp, rain_rp, fire_rp):
+            if part_rp is not None:
+                acute_rp = _rp_add(acute_rp, part_rp)
+        out["acute"]["site_rp"] = acute_rp
+    return out
 
 
 def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
@@ -924,7 +1020,13 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
     order the fetches complete in."""
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
+    # Task 4: per-site ground relief converts flood/surge depth at the CELL
+    # into depth at the STRUCTURE. Sites without both elevation fields keep
+    # the cell value and are flagged modeled-coarse (prep["_flood_basis"]).
+    relief, has_elev = site_relief(sites_c["ground_elev_m"],
+                                   sites_c["cell_ground_elev_m"])
     prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set(),
+            "_flood_basis": has_elev,     # True = depth read at the structure
             # per-site structural coverage per peril (bool arrays): did this
             # peril's model speak for the site's location at all? False means
             # the site is FLAGGED as outside coverage, never silently zeroed.
@@ -1027,6 +1129,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         for app_key, sg in out["surge"].items():
             sint = np.asarray(sg["int"], float).copy()
             sint[:, ~(sg["dist"] <= limit)] = 0.0
+            # Task 4: depth at the structure where site elevation is known
+            sint = depth_at_structure(sint, relief[None, :])
             prep["surge"][(skey, app_key)] = {"int": sint}
         for sk in out["surge_skipped"]:
             LOG.warning("Surge failed %s / %s @ %s: %s",
@@ -1050,7 +1154,10 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                 midx = water_snap(lat, lon, mhaz.centroids.lat,
                                   mhaz.centroids.lon, wind_dist)
                 packed.append({"freq": np.asarray(mhaz.frequency, float),
-                               "int": site_intensity(mhaz, midx)})
+                               # Task 4: depth at the structure where known
+                               "int": depth_at_structure(
+                                   site_intensity(mhaz, midx),
+                                   relief[None, :])})
             if packed:
                 prep["rflood"][app_key] = packed
             elif not fetch_failed:      # empty result; failure already recorded
@@ -1167,12 +1274,15 @@ def combine_countries(results, site_counts, countries=None, meta=None):
         combined = {}
         for peril in ("tc", "cflood", "rflood", "prain", "wfire", "acute"):
             aal, ep, eads = 0.0, {rp: 0.0 for rp in RPS}, []
+            rp_parts = {rp: [] for rp in SITE_RPS}
             for r, n, iso3 in zip(results, site_counts, countries):
                 p = r.get(app_key)
                 if p is not None and peril not in p:      # legacy 3-peril dict
                     p = None if peril in ("prain", "wfire") else p
                 if p is None:
                     eads.append(np.zeros(n))
+                    for rp in SITE_RPS:
+                        rp_parts[rp].append(np.zeros(n))
                     if meta is not None and peril == "acute":
                         meta["skipped"].append(
                             {"country": iso3, "scenario": app_key,
@@ -1183,8 +1293,15 @@ def combine_countries(results, site_counts, countries=None, meta=None):
                 aal += p[peril]["aal"]
                 ep = add_ep(ep, p[peril]["ep"])
                 eads.append(np.asarray(p[peril]["ead"], float))
+                srp = p[peril].get("site_rp")
+                for rp in SITE_RPS:
+                    rp_parts[rp].append(np.asarray(srp[rp], float)
+                                        if srp is not None else np.zeros(n))
             combined[peril] = {"aal": aal, "ep": ep,
                                "ead": np.concatenate(eads)}
+            if peril == "acute":
+                combined[peril]["site_rp"] = {
+                    rp: np.concatenate(rp_parts[rp]) for rp in SITE_RPS}
         out[app_key] = combined
     return out
 
@@ -1213,21 +1330,33 @@ def named_insured_rollup(acute_ead, named_insured):
 
 def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
                sites_file, site_named_insured=None, site_ids=None,
-               site_coverage=None):
+               site_coverage=None, site_flood_basis=None):
     n = len(site_names)
     site_named_insured = (list(site_named_insured)
                           if site_named_insured is not None else [None] * n)
     site_ids = list(site_ids) if site_ids is not None else [None] * n
     scenarios = {}
     for app_key, r in scen_results.items():
+        site_rp = r["acute"].get("site_rp")
         per_site = [{"name": n_,
                      "named_insured": _norm_insured(site_named_insured[i]),
                      "site_id": (_txt(site_ids[i]) and str(site_ids[i]).strip())
                                 or None,
                      "direct_ead_usd": round(float(r["acute"]["ead"][i]), 2),
+                     # Task 5: per-site return-period losses beside the EAD
+                     **({"loss_rp100_usd": round(float(site_rp[100][i]), 2),
+                         "loss_rp250_usd": round(float(site_rp[250][i]), 2)}
+                        if site_rp is not None else {}),
                      "by_peril": {p: round(float(r[p]["ead"][i]), 2)
                                   for p in ("tc", "cflood", "rflood",
                                             "prain", "wfire") if p in r},
+                     # Task 4: whether flood/surge depth was read at the
+                     # structure (site + cell ground known) or is the cell
+                     # average (modeled-coarse, flagged on the trust surface)
+                     **({"flood_depth_basis": ("structure"
+                                               if site_flood_basis[i]
+                                               else "cell")}
+                        if site_flood_basis is not None else {}),
                      # per-site-per-peril coverage: false = this peril's model
                      # did not speak for this site (flagged, not zeroed)
                      **({"coverage": {p: bool(site_coverage[p][i])
@@ -1294,6 +1423,14 @@ def pack_meta(pack, args, meta):
                         "scales the arrival probability, not the loss)",
             "countries": "comonotonic (exceedance losses add at equal RP)",
             "ep_tail": "flat beyond the largest simulated return period"},
+        "per_site_return_periods": {
+            "rps": list(SITE_RPS),
+            "basis": "step exceedance over each site's own events (the loss "
+                     "of the least-severe event whose cumulative frequency "
+                     "reaches 1/RP); catalogs add comonotonically per site"},
+        "ead_basis": "full event-frequency range: the event math never had a "
+                     "1-in-10 floor, and the app's interim integral now "
+                     "extends below 1-in-10 to match",
         "layers": [{"scenario": k,
                     "sites": len(v["per_site"]),
                     "direct_aal_usd": v["portfolio"]["direct_aal_usd"]}
@@ -1329,6 +1466,7 @@ def load_sites(path):
               "opening_protection", "first_floor_elev_m", "stories", "keys",
               "buildings", "fema_zone", "backup_power", "renovation_year",
               "wui_class", "defensible_space_m", "archetype",
+              "ground_elev_m", "cell_ground_elev_m",
               "named_insured", "site_id", "site_name"):
         if c not in df.columns:
             df[c] = None
@@ -1452,7 +1590,7 @@ def main(argv=None) -> int:
         for app_key in rh.APP_SCENARIOS:
             r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river,
                               flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln,
-                              v_half=vh)
+                              v_half=vh, site_rp=True)
             if r is not None:
                 scen[app_key] = r
         base_keys = {"present"} | set(UNCERTAINTY_SCENARIOS)
@@ -1492,7 +1630,8 @@ def main(argv=None) -> int:
                             "names": list(sites_c["name"]), "values": values,
                             "named_insured": list(sites_c["named_insured"]),
                             "site_id": list(sites_c["site_id"]),
-                            "coverage": prep["_cov"]})
+                            "coverage": prep["_cov"],
+                            "flood_basis": prep["_flood_basis"]})
         order.extend(sites_c["name"])
 
     if not per_country or not any(c["scen"] for c in per_country):
@@ -1516,6 +1655,13 @@ def main(argv=None) -> int:
             "expansion is a step-2 item")
     coverage = {p: np.concatenate([c["coverage"][p] for c in per_country])
                 for p in ("tc", "cflood", "rflood", "prain", "wfire")}
+    flood_basis = np.concatenate([c["flood_basis"] for c in per_country])
+    meta["flood_depth_basis"] = {
+        "at_structure_sites": int(flood_basis.sum()),
+        "cell_average_sites": int((~flood_basis).sum()),
+        "note": "at-structure sites carry ground_elev_m + cell_ground_elev_m "
+                "(survey or enrich_sites.py); cell-average sites are flagged "
+                "modeled-coarse on the app's trust surface"}
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites,
@@ -1523,7 +1669,7 @@ def main(argv=None) -> int:
                                           for ni in c["named_insured"]],
                       site_ids=[sid for c in per_country
                                 for sid in c["site_id"]],
-                      site_coverage=coverage)
+                      site_coverage=coverage, site_flood_basis=flood_basis)
     if lead.get("catalog"):
         pack["measures_catalog"] = lead["catalog"]
     plan = build_capital_plan_v2(lead.get("cat_projects") or [],

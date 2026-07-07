@@ -48,16 +48,18 @@ function renderSummary(){
   host.innerHTML=
     card("Insured value",fmt$(f.value),sites.length+" site"+(sites.length>1?"s":""),"")+
     card("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high),"totalAal")+
-    card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value","var100")+
+    (f.jointTail
+      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),(f.value?f.jointTail.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_JOINT_LABEL+" · live blend incl. BI: "+fmt$(f.var100),"var100")
+      :card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_BOUND_LABEL,"var100"))+
     card("Climate premium","+"+fmt$(premium)+"/yr","by "+esc(futLabel)+", "+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"% vs today","premium");
   const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat",wfire:"Wildfire",prain:"TC rainfall"};
   const perilArr=Object.keys(agg.byPeril).map(k=>[k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
   const dom=perilArr[0], domShare=agg.total?dom[1]/agg.total*100:0;
   const highSevere=(agg.bands.High||0)+(agg.bands.Severe||0);
   document.getElementById("sumReadout").innerHTML=
-    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.var100)+"</b> ("+(f.value?f.var100/f.value*100:0).toFixed(0)+"% of value). "+
+    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.jointTail?f.jointTail.var100:f.var100)+"</b> ("+(f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(0)+"% of value; "+(f.jointTail?"joint event tail":"blend approximation, not the joint tail")+"). "+
     "<b>"+perilName[dom[0]]+"</b> is the largest driver at "+domShare.toFixed(0)+"% of the annual cost. "+
-    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.var100)+"</b>. "+
+    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.jointTail?ff.jointTail.var100:ff.var100)+"</b>. "+
     (highSevere?("<b>"+highSevere+"</b> of "+sites.length+" sites sit in High or Severe combined physical risk."):("No sites sit in High or Severe combined physical risk at this scenario."));
   document.getElementById("sumByPeril").innerHTML=barsSvg(perilArr.map(([k,v])=>({label:perilName[k],ead:v})),"ead","label","#0F3A4B");
   document.getElementById("sumByType").innerHTML=barsSvg([
@@ -214,7 +216,7 @@ function renderTolerance(){
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+
     line("Portfolio expected cost",t.portPct.toFixed(2)+"%",tolerance.portAalPct+"%",t.portBreach)+
-    line("1-in-100 Value at Risk",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
+    line("1-in-100 Value at Risk ("+t.tailBasis+")",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
     '<span class="k">Sites above threshold</span><span class="v mono">'+t.siteBreaches.length+' of '+sites.length+'</span>'+
     '</div>';
   if(t.siteBreaches.length){
@@ -265,7 +267,7 @@ function renderOverview(scored){
     cards=[
       ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
       ["Expected annual damage",fmt$(scored.ead)+"/yr",scored.eadPct.toFixed(2)+"% of value","ead"],
-      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"co-occurrence bound","rp100"],
+      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"sum across sites at equal RP: an upper bound, not the joint tail","rp100"],
       ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
     ];
   }
@@ -281,7 +283,7 @@ function renderOverview(scored){
     document.getElementById("epCurve").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
   }else{
     document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
-    document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+".";
+    document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+" (site losses summed at equal RP: an upper bound; the results pack carries the joint event tail).";
     /* an all-zero curve is a data-availability story, not a chart: say why and
        what to do, instead of drawing an empty axis */
     const zero=scored.ead===0&&RPS.every(rp=>!(scored.rpLoss[rp]>0));
@@ -339,9 +341,12 @@ function renderOverview(scored){
 function renderSites(){
   const heat=activeHazard==="heat";
   const scored=scoreHazard(sites,activeHazard,scenario);
-  // attach all-peril ratings and a sortable severity for heat
+  // attach all-peril ratings, a sortable severity for heat, and the per-site
+  // 1-in-100 loss for this peril (Task 5: RP losses beside the EAD)
   scored.rows.forEach(r=>{ r.ratings=siteRatings(r,scenario);
-    r.sev=heat?(r.indicators?r.indicators.daysOver32:0):r.ead; });
+    r.sev=heat?(r.indicators?r.indicators.daysOver32:0):r.ead;
+    const c100=(r.curve||[]).find(x=>x.rp===100);
+    r.rp100=heat?0:(c100?c100.loss:0); });
   const key=(heat&&(sortKey==="ead"||sortKey==="eadPct"))?"sev":sortKey;
   const rows=scored.rows.slice().sort((a,b)=>{
     let va=a[key],vb=b[key];if(typeof va==="string"){return sortDir*va.localeCompare(vb);}return sortDir*((va||0)-(vb||0));
@@ -355,8 +360,9 @@ function renderSites(){
     '<td class="num mono">'+fmt$(r.asset_value_usd)+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.ead))+'</td>'+
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
+    '<td class="num mono">'+(heat?"&mdash;":fmt$(r.rp100))+'</td>'+
     '<td>'+ratingCell(r)+'</td></tr>').join("")
-    || '<tr><td colspan="6" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+    || '<tr><td colspan="7" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
@@ -508,35 +514,36 @@ function renderAdaptation(){
   const wf=waterfallData(sites,futureSc);
   document.getElementById("wfHint").textContent="Present to "+(SCEN_LABEL[futureSc]||futureSc)+", exposure growth "+adapt.growth.toFixed(1)+"%/yr over "+wf.years+" years, minus the selected measure portfolio.";
   document.getElementById("waterfallChart").innerHTML=waterfallSvg(wf);
-  // risk layering
+  // risk layering: the canonical joint curve prices the layer when a pack
+  // is loaded; without one the live blend stands, explicitly labeled (Task 5)
   const f=finPortfolio(sites,scenario);
-  const ls=layerStatsCalc(f.varByRp,f.acuteAal);
+  const tailCurve=f.jointTail?f.jointTail.byRp:f.varByRp;
+  const tailBase=f.jointTail?f.jointTail.aal:f.acuteAal;
+  const ls=layerStatsCalc(tailCurve,tailBase);
   document.getElementById("layerStats").innerHTML=
+    '<span class="k">Priced on</span><span class="v">'+(f.jointTail?TAIL_JOINT_LABEL:TAIL_BOUND_LABEL)+'</span>'+
     '<span class="k">Attachment (1-in-'+adapt.attach+')</span><span class="v mono">'+fmt$(ls.A)+'</span>'+
     '<span class="k">Limit</span><span class="v mono">'+fmt$(ls.limit)+'</span>'+
-    '<span class="k">Transferred</span><span class="v mono">'+fmt$(ls.transferred)+'/yr ('+(ls.frac*100).toFixed(0)+'% of acute)</span>'+
+    '<span class="k">Transferred</span><span class="v mono">'+fmt$(ls.transferred)+'/yr ('+(ls.frac*100).toFixed(0)+'% of '+(f.jointTail?'direct AAL':'acute')+')</span>'+
     '<span class="k">Retained</span><span class="v mono">'+fmt$(ls.retained)+'/yr</span>'+
     '<span class="k">Indicative premium</span><span class="v mono">'+fmt$(ls.premium)+'/yr</span>'+
     '<span class="k">Cost of certainty</span><span class="v mono">'+fmt$(ls.premium-ls.transferred)+'/yr</span>'+
-    (function(){const ps=packLayerStats(scenario);return (ps&&ps.limit>0)?
-      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})()+
+    (function(){if(!f.jointTail)return '';const bs=layerStatsCalc(f.varByRp,f.acuteAal);
+      return '<span class="k">Live blend (for reference)</span><span class="v mono">'+fmt$(bs.transferred)+'/yr to layer \u00b7 premium '+fmt$(bs.premium)+'/yr <small>'+TAIL_BOUND_LABEL+'</small></span>';})()+
     (function(){ // Wave 1 R2: quoted premium vs the modeled benchmark
       if(!(adapt.quote>0))return '';
       const gapM=quoteGapPct(adapt.quote,ls.premium);
-      const psq=packLayerStats(scenario);
-      const gapP=(psq&&psq.limit>0)?quoteGapPct(adapt.quote,psq.premium):null;
       const wd=g=>Math.abs(g)<=15?"broadly in line with":(g>0?g.toFixed(0)+"% above":Math.abs(g).toFixed(0)+"% below");
       const hint=gapM==null?"No modeled premium to compare at this layer.":
         gapM>15?"Grounds to negotiate, or to raise the attachment (see the retention table below).":
         gapM<-15?"Below the technical benchmark: attractive if terms and exclusions are equivalent.":
         "Within the range a benchmark can resolve.";
       return '<span class="k">Broker quote'+infoBtn("quote")+'</span><span class="v mono">'+fmt$(adapt.quote)+'/yr'+
-        (gapM!=null?': '+wd(gapM)+' the modeled technical premium':'')+
-        (gapP!=null?'; '+wd(gapP)+' the event-set benchmark':'')+
+        (gapM!=null?': '+wd(gapM)+' the '+(f.jointTail?'joint-tail':'blend')+' technical premium':'')+
         '. <small>'+hint+' The '+adapt.load.toFixed(1)+'x loading assumption is yours to set.</small></span>';
     })();
-  document.getElementById("layerChart").innerHTML=layerSvg(f.varByRp,ls);
-  document.getElementById("sweepHost").innerHTML=sweepTable(f.varByRp,f.acuteAal);
+  document.getElementById("layerChart").innerHTML=layerSvg(tailCurve,ls);
+  document.getElementById("sweepHost").innerHTML=sweepTable(tailCurve,tailBase);
   // per-site recommendations: best measure by site BCR
   const rec=sites.map(s=>{
     const sBase=adaptedFinSite(s,scenario,{}).totalAal;
@@ -767,8 +774,11 @@ function renderFinance(){
   kpis.innerHTML=
     card("Expected annual cost",fmt$(f.totalAal)+"/yr","range "+fmt$(u.low)+" to "+fmt$(u.high)+" \u00b7 "+f.aalPctValue.toFixed(2)+"% of value","totalAal")+
     card("Indirect share",(f.totalAal?indirect/f.totalAal*100:0).toFixed(0)+"%",fmt$(f.biEad)+" BI + "+fmt$(f.heatCost)+" heat","indirect")+
-    card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult),"var100")+
-    card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value","var250");
+    (f.jointTail
+      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var100),"var100")+
+       card("1-in-250 Value at Risk",fmt$(f.jointTail.var250),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var250),"var250")
+      :card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult)+" \u00b7 "+TAIL_BOUND_LABEL,"var100")+
+       card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value \u00b7 "+TAIL_BOUND_LABEL,"var250"));
   document.getElementById("finBreakdown").innerHTML=barsSvg([
     {label:"Direct damage",ead:f.directEad},
     {label:"Business interruption",ead:f.biEad},
@@ -793,7 +803,10 @@ function renderFinance(){
     '<tr><td>'+esc(r.label)+'</td><td class="num mono">'+r.acutePct.toFixed(2)+'%</td><td class="num mono">'+r.chronicPct.toFixed(2)+'%</td>'+
     '<td class="num mono">'+r.totalPct.toFixed(2)+'%</td><td class="num mono">'+r.var100Pct.toFixed(1)+'%</td></tr>').join("");
   document.getElementById("finDiscNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim model and are for exploration, not disclosure. ")+
-    "Value at Risk is diversified across sites at correlation "+finAssume.corr.toFixed(2)+"; a CLIMADA event set gives the exact combined tail. Total AAL today: central "+fmt$(u.central)+", plausible range "+fmt$(u.low)+" to "+fmt$(u.high)+".";
+    (f.jointTail
+      ?"The 1-in-100 column is the results pack's JOINT EVENT TAIL (direct damage), the canonical figure; the live correlation blend (corr "+finAssume.corr.toFixed(2)+", incl. BI) is shown only where labeled. "
+      :"Value at Risk here is the live correlation blend (corr "+finAssume.corr.toFixed(2)+"): a co-occurrence approximation, NOT the joint event tail. Load the results pack for the canonical joint figure. ")+
+    "Total AAL today: central "+fmt$(u.central)+", plausible range "+fmt$(u.low)+" to "+fmt$(u.high)+".";
   const rows=f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal);
   document.getElementById("finSiteBody").innerHTML=rows.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td><td class="num mono">'+fmt$(r.value)+'</td><td class="num mono">'+fmt$(r.revenue)+'</td>'+
@@ -869,7 +882,7 @@ function renderScorecard(s){
     '</div>'+
     '<div class="grid2">'+
       '<div class="panel" style="margin-bottom:14px"><h3>Trajectory</h3><div class="hint">Climate cost under '+esc(PATHWAY_LABEL[pathway])+'.</div>'+barsSvg(traj,"ead","label","#2C7DA0")+'</div>'+
-      '<div class="panel" style="margin-bottom:14px"><h3>Return-period losses</h3><div class="hint">Combined physical damage plus interruption.</div>'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Return-period losses</h3><div class="hint">Combined physical damage plus interruption; peril losses added at equal return period (an upper bound, not a joint event figure).</div>'+
         '<table class="tbl"><thead><tr><th>Return period</th><th class="num">Damage</th><th class="num">Interruption</th><th class="num">Total</th></tr></thead><tbody>'+
         RPS.map(rp=>{const d=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===rp);return a+(c?c.loss:0);},0);
           const bi=dailyGop*maxDown*(s.asset_value_usd?d/s.asset_value_usd:0);
@@ -1011,6 +1024,11 @@ function renderHazProv(){
     let kv=
       '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario or site coverage; green needs every scenario AND every site inside coverage</small>':'')+'</span>'+
       (uncovered.length?'<span class="k">Site coverage</span><span class="v">'+uncovered.map(a=>a.label.toLowerCase()+": "+a.sitesModeled+" of "+a.nSites+" sites within coverage").join(" \u00b7 ")+' <small>sites outside a peril\u2019s coverage show degraded on that peril, never a silent zero</small></span>':'')+
+      /* Task 4: flood depth basis at a glance */
+      ((sites.length&&(gridByHazard.cflood||gridByHazard.rflood))?(function(){
+        const n=sites.filter(s=>siteRelief(s)!=null).length;
+        return '<span class="k">Flood depth basis</span><span class="v">at the structure for '+n+' of '+sites.length+' sites'+(n<sites.length?'; the rest read the cell average (modeled-coarse, flagged per site)':'')+'</span>';
+      })():'')+
       '<span class="k">File</span><span class="v mono">'+esc(hazardGrid.meta.name)+'</span>'+
       '<span class="k">Grid cells</span><span class="v mono">'+hazardGrid.meta.cells+'</span>'+
       '<span class="k">Scenarios</span><span class="v mono">'+hazardGrid.meta.scenarios.length+' keys</span>'+
@@ -1214,7 +1232,9 @@ function briefHtml(){
     '<div class="bkpis">'+
       kpi("Insured value",fmt$(f.value),"")+
       kpi("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high))+
-      kpi("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value")+
+      kpi("1-in-100 Value at Risk",fmt$(f.jointTail?f.jointTail.var100:f.var100),
+          (f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(1)+"% of value · "+
+          (f.jointTail?"joint event tail (results pack, direct damage)":"blend approximation, not the joint tail"))+
       kpi("Climate premium","+"+fmt$(ff.totalAal-pf.totalAal)+"/yr","by "+esc(SCEN_LABEL[futureSc]||futureSc))+
     '</div>'+
     '<div class="bcols"><div>'+

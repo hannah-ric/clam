@@ -115,8 +115,21 @@ def test_merge_never_overwrites():
     ok("merge_field: fills blanks only, provenance both ways, needs_review")
 
 
+def test_cell_mean_ground():
+    """Task 4: the cell reference excludes bathymetry, so a beachfront cell's
+    ground is read against its LAND surface, not the sea floor."""
+    got = es.cell_mean_ground([[2.0, 4.0, -30.0, float("nan")],
+                               [-5.0, -12.0, float("nan"), -1.0],
+                               [0.0, 1.0, 2.0, 3.0]])
+    assert got[0] == 3.0, "underwater and missing samples stay out of the mean"
+    assert got[1] is None, "an all-water cell has no land reference"
+    assert got[2] == 1.5
+    ok("cell_mean_ground: land-only mean, honest None for all-water cells")
+
+
 def test_enrich_end_to_end_mocked():
     es.sample_dem = lambda lats, lons: ([3.2, 41.0], None)
+    es.sample_dem_cell = lambda lats, lons, grid_deg=None: ([1.2, 40.0], None)
     es.coast_distance_km = lambda lats, lons: ([0.4, 55.2], None)
     es.fetch_fema_zone = lambda lat, lon: (("VE", None) if lat < 26
                                            else ("AE", None))
@@ -134,6 +147,8 @@ def test_enrich_end_to_end_mocked():
         assert df.at[0, "fema_zone"] == "VE"          # drafted
         assert df.at[1, "fema_zone"] == "X"           # fetched AE, operator kept
         assert df.at[0, "ground_elev_m"] == 3.2
+        assert df.at[0, "cell_ground_elev_m"] == 1.2, \
+            "the cell land-ground reference is drafted beside the point sample"
         assert df.at[0, "buildings"] == 12
         assert any(s["source"] == "osm" for s in meta["skipped"])
         assert all(f["needs_review"] for f in meta["filled"])
@@ -147,6 +162,7 @@ def test_enrich_end_to_end_mocked():
 
 def test_enrich_degrades_gracefully():
     es.sample_dem = lambda lats, lons: (None, "DEM not found")
+    es.sample_dem_cell = lambda lats, lons, grid_deg=None: (None, "DEM not found")
     es.coast_distance_km = lambda lats, lons: (None, "offline")
     src, out = Path("_tmp_sites2.csv"), Path("_tmp_enriched2.csv")
     src.write_text("name,latitude,longitude\nA,25.0,-80.0\n")
@@ -154,7 +170,7 @@ def test_enrich_degrades_gracefully():
         rc = es.main([str(src), "-o", str(out), "--no-network"])
         assert rc == 0                                 # skips, never crashes
         meta = json.loads(out.with_name(out.stem + "_meta.json").read_text())
-        assert len(meta["skipped"]) == 2 and not meta["filled"]
+        assert len(meta["skipped"]) == 3 and not meta["filled"]
     finally:
         for f in (src, out, out.with_name(out.stem + "_meta.json")):
             if f.exists():
@@ -169,6 +185,7 @@ if __name__ == "__main__":
     test_flood_cap_in_losses()
     test_load_sites_v2_columns()
     test_merge_never_overwrites()
+    test_cell_mean_ground()
     test_enrich_end_to_end_mocked()
     test_enrich_degrades_gracefully()
     print("\nALL PROFILE-OP TESTS PASSED")
