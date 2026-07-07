@@ -213,13 +213,20 @@ function hasNamedInsured(rows){ return rows.some(s=>insuredOf(s)!=="Unspecified"
    an extended CLIMADA grid (with a `hazard` column) supersedes any peril
    per-hazard, exactly as the wind grid already supersedes the wind field.
    ============================================================ */
+/* Peril identity colours (v2.3.0): the old set carried four near-identical
+   blues that blurred under colour-vision deficiency (worst adjacent pair
+   delta-E 7). This set keeps the semantic anchors (floods cool, heat and
+   fire warm) and passes the full categorical check on a light surface:
+   lightness band, chroma floor, adjacent-pair CVD separation >= 12, and
+   3:1 contrast. Identity still never rides on colour alone: every surface
+   pairs the colour with the peril's name or letter. */
 const HAZARDS=[
-  {key:"tc",     label:"Tropical cyclone", short:"W", color:"#12586F", type:"damage",    unit:"m/s"},
-  {key:"cflood", label:"Coastal flood",    short:"F", color:"#2C7DA0", type:"damage",    unit:"m"},
-  {key:"rflood", label:"Riverine flood",   short:"R", color:"#6A8CAF", type:"damage",    unit:"m"},
-  {key:"heat",   label:"Extreme heat",     short:"H", color:"#C06B2E", type:"indicator", unit:"days"},
-  {key:"wfire",  label:"Wildfire",         short:"B", color:"#A6432E", type:"damage",    unit:"%/yr"},
-  {key:"prain",  label:"TC rainfall",      short:"P", color:"#4E7B8C", type:"damage",    unit:"m ponding"},
+  {key:"tc",     label:"Tropical cyclone", short:"W", color:"#0A8CA8", type:"damage",    unit:"m/s"},
+  {key:"cflood", label:"Coastal flood",    short:"F", color:"#2F5EC4", type:"damage",    unit:"m"},
+  {key:"rflood", label:"Riverine flood",   short:"R", color:"#0E9F6E", type:"damage",    unit:"m"},
+  {key:"heat",   label:"Extreme heat",     short:"H", color:"#C2410C", type:"indicator", unit:"days"},
+  {key:"wfire",  label:"Wildfire",         short:"B", color:"#9F1239", type:"damage",    unit:"%/yr"},
+  {key:"prain",  label:"TC rainfall",      short:"P", color:"#7C55D4", type:"damage",    unit:"m ponding"},
 ];
 const HAZARD_LABEL={};HAZARDS.forEach(h=>HAZARD_LABEL[h.key]=h.label);
 const HAZARD_BY={};HAZARDS.forEach(h=>HAZARD_BY[h.key]=h);

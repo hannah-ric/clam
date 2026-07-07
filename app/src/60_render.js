@@ -21,6 +21,7 @@ function render(){
   renderBacktest();
   renderHazProv();
   renderResultsPack();
+  renderExecHome();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
@@ -1196,15 +1197,19 @@ function scrubTo(i){
 function stopScrub(){
   if(scrubTimer){clearInterval(scrubTimer);scrubTimer=null;}
   const b=document.getElementById("scrubPlay"); if(b)b.textContent="Play";
+  const eb=document.getElementById("execPlay"); if(eb)eb.textContent="▶ Play";   // exec timeline pill stays in sync
 }
 function playScrub(){
   if(scrubTimer){stopScrub();return;}
   const b=document.getElementById("scrubPlay"); if(b)b.textContent="Stop";
-  let i=0; scrubTo(0);
+  /* start the timer before the first step so the exec timeline pill (rebuilt
+     by the render inside scrubTo) labels itself Stop from the first frame */
+  let i=0;
   scrubTimer=setInterval(()=>{i++;
     if(i>=scrubSteps().length){stopScrub();return;}
     scrubTo(i);
   },1500);
+  scrubTo(0);
 }
 function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;

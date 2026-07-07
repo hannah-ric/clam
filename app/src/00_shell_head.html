@@ -15,7 +15,10 @@
     --ink:#15202B; --ink-2:#43535F; --muted:#7A8893;
     --line:#E4E7E2; --line-2:#EEF0EC;
     --primary:#0F3A4B; --primary-2:#12586F; --focus:#1E7FA6;
-    --r-min:#8AA0AC; --r-low:#2E8B6F; --r-mod:#E0A43B; --r-high:#D9772F; --r-sev:#B23A32;
+    /* Risk-band scale, darkened so white pill/cell text clears WCAG 3:1 on
+       every band (the old amber sat at 2.2:1). Bands never ride on colour
+       alone: the band name or value always accompanies the fill. */
+    --r-min:#6E8494; --r-low:#2E8B6F; --r-mod:#B07B10; --r-high:#C05F17; --r-sev:#B23A32;
     --shadow:0 1px 2px rgba(21,32,43,.05), 0 8px 24px rgba(21,32,43,.06);
     --radius:10px;
   }
@@ -83,6 +86,7 @@
   .haz-badge.authoritative .dot{background:#7FD0C4}
 
   /* map */
+  #mapwrap{position:relative;flex:none}
   #map{height:42vh;min-height:320px;width:100%;flex:none;z-index:1;background:#dfe6e2}
   .leaflet-popup-content{font-family:Inter,sans-serif;margin:12px 14px}
   .leaflet-popup-content b{font-family:Fraunces,serif}
@@ -153,7 +157,8 @@
   .driverwrap{display:flex;flex-direction:column;gap:2px}
   .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
     border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;font-weight:700;
-    line-height:1;margin-left:5px;padding:0;cursor:pointer;vertical-align:middle;font-style:italic;font-family:Georgia,serif}
+    line-height:1;margin-left:5px;padding:0;cursor:pointer;vertical-align:middle;font-style:italic;font-family:Georgia,serif;
+    text-transform:none;letter-spacing:0}
   .info:hover,.info[aria-expanded="true"]{background:var(--primary);color:#fff;border-color:var(--primary)}
   .info.on-dark{border-color:#2a6076;background:#0c3242;color:#9fc3cd}
   .info.on-dark:hover,.info.on-dark[aria-expanded="true"]{background:#7FD0C4;color:#08323c;border-color:#7FD0C4}
@@ -247,6 +252,119 @@
   .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
   /* ---- SVP review: executive / simple view hides the specialist panels ---- */
   body.execview .pro-only{display:none!important}
+  /* ============================================================
+     Executive home (v2.3.0): a full-bleed map with floating panels,
+     Google-Maps-style. Pure presentation: body.execmode re-lays-out
+     the SAME app (the analyst tabs stay in the DOM, every ID keeps
+     its contract) and the overlays render figures the engine already
+     computed. Nothing here changes a number.
+     ============================================================ */
+  .modeswitch{display:inline-flex;border:1px solid #2a6076;border-radius:9px;overflow:hidden}
+  .modeswitch button{border:0;background:#0c3242;color:#cfe3e7;padding:8px 13px;font:inherit;font-size:13px;font-weight:500}
+  .modeswitch button:hover{background:#0f4256}
+  .modeswitch button[aria-pressed="true"]{background:#7FD0C4;color:#08323c;font-weight:600}
+  .exportwrap{position:relative}
+  .exportmenu{position:absolute;right:0;top:44px;z-index:1600;background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:308px;padding:6px;display:none}
+  .exportmenu.open{display:block;animation:fade .12s ease}
+  @media(prefers-reduced-motion:reduce){.exportmenu.open{animation:none}}
+  .exportmenu .mi{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;
+    border:0;background:none;border-radius:8px;padding:9px 11px;font:inherit}
+  .exportmenu .mi:hover{background:var(--surface-2)}
+  .exportmenu .mi b{font-size:13px;color:var(--primary);font-weight:600}
+  .exportmenu .mi small{font-size:11.5px;color:var(--muted)}
+
+  body.execmode{height:100vh;overflow:hidden}
+  body.execmode #mapwrap{flex:1;min-height:0}
+  body.execmode #map{height:100%;min-height:0}
+  body.execmode nav.tabs,body.execmode main,body.execmode .foot-legal{display:none}
+  body.execmode .analyst-only{display:none!important}
+  body:not(.execmode) .execui{display:none!important}
+  .execui{position:absolute;z-index:1050;font-size:13px}
+
+  #execPanel{top:16px;left:16px;bottom:88px;width:min(410px,calc(100vw - 32px));display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 16px 40px rgba(21,32,43,.16);overflow:hidden}
+  #execPanel .scrollbody{overflow-y:auto;padding:14px 18px 16px;flex:1;min-height:0}
+  .execkicker{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .exechero{font-family:Fraunces,serif;font-size:37px;font-weight:560;color:var(--primary);line-height:1.05;margin:2px 0 1px}
+  .exechero .unit{font-size:19px;color:var(--ink-2)}
+  .execsub{font-size:12.5px;color:var(--ink-2)}
+  .execdelta{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:4px 11px;border-radius:999px;
+    font-size:12px;font-weight:600;background:#F7EFE2;color:#7A4A08;border:1px solid #E7D4B2}
+  .execdelta.easing{background:#E9F4EF;color:#175E46;border-color:#BFDFD2}
+  .execbasis{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:10.5px;
+    font-weight:600;letter-spacing:.02em;text-transform:none;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2)}
+  .execbasis .dot{width:7px;height:7px;border-radius:50%;background:var(--r-mod)}
+  .execbasis.authoritative .dot{background:var(--r-low)}
+  .exectiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .exectile{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0}
+  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .exectile .v{font-family:Fraunces,serif;font-size:17.5px;font-weight:560;color:var(--primary);line-height:1.1}
+  .exectile .f{font-size:10.5px;color:var(--ink-2);margin-top:1px}
+  .exectile.alert{border-color:#E4B7B2;background:#FBF2F1}
+  .exectile.alert .v{color:var(--r-sev)}
+  .execsec{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    margin:16px 0 7px;display:flex;align-items:center;gap:6px}
+  .execnote{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .prio{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;counter-reset:prio}
+  .prio li{position:relative}
+  .priobtn{width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:12px;
+    padding:9px 38px 9px 40px;font:inherit;position:relative;display:block;transition:border-color .12s,background .12s}
+  .priobtn:hover{border-color:var(--focus);background:#F4F9FB}
+  .priobtn::before{counter-increment:prio;content:counter(prio);position:absolute;left:11px;top:11px;
+    width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  .priotop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .priotop .nm{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .priotop .cost{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--primary);white-space:nowrap}
+  .priometa{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;font-size:11.5px;color:var(--ink-2)}
+  .perildot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:4px}
+  .prioact{margin-top:4px;font-size:11.5px;color:var(--ink-2)}
+  .prioact b{color:#175E46;font-weight:600}
+  .priolocate{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:13px;line-height:1;padding:0}
+  .priolocate:hover{border-color:var(--focus);color:var(--primary)}
+  .execactions{display:flex;gap:8px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--line-2);background:var(--surface-2)}
+
+  #execTimebar{bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 12px 30px rgba(21,32,43,.14);
+    padding:7px 10px;max-width:calc(100vw - 32px);flex-wrap:wrap;justify-content:center}
+  .timelabel{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding-left:6px;white-space:nowrap}
+  .timestep{border:0;background:transparent;border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;color:var(--ink-2)}
+  .timestep:hover{background:var(--surface-2);color:var(--ink)}
+  .timestep.cur{background:var(--primary);color:#fff;font-weight:600}
+  select.execsel{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+    color:var(--ink);font:inherit;font-size:12px;max-width:170px}
+  .timeplay{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 13px;
+    font:inherit;font-size:12px;font-weight:600;color:var(--primary)}
+  .timeplay:hover{background:var(--surface-2)}
+
+  #execLayerbar{top:16px;right:16px;display:flex;gap:4px;align-items:center;background:var(--surface);
+    border:1px solid var(--line);border-radius:999px;padding:5px 7px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 12px 30px rgba(21,32,43,.14);max-width:calc(100vw - 32px);flex-wrap:wrap}
+  .layerchip{border:0;border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;color:var(--ink-2);background:transparent;white-space:nowrap}
+  .layerchip:hover{background:var(--surface-2);color:var(--ink)}
+  .layerchip[aria-pressed="true"]{background:var(--primary);color:#fff;font-weight:600}
+
+  #execEmpty{inset:0;display:flex;align-items:center;justify-content:center;background:rgba(245,246,243,.6);padding:16px}
+  .execempty-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 16px 40px rgba(21,32,43,.16);padding:28px 32px;max-width:520px;text-align:center}
+  .execempty-card h3{font-family:Fraunces,serif;font-weight:560;color:var(--primary);margin:0 0 8px;font-size:20px}
+  .execempty-card p{color:var(--ink-2);font-size:13.5px;line-height:1.55;margin:0 0 16px}
+  .execempty-card .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+  @media(max-width:760px){
+    #execPanel{top:auto;bottom:104px;left:10px;width:calc(100vw - 20px);max-height:44vh}
+    #execLayerbar{top:10px;right:10px;left:10px;justify-content:center;border-radius:14px}
+    #execTimebar{bottom:10px;left:10px;right:10px;transform:none;border-radius:14px}
+    #execTimebar .timelabel,#execLayerbar .timelabel{display:none}
+    .timestep{padding:6px 10px}
+    .exectile .l{white-space:normal}
+  }
+
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -268,6 +386,8 @@
   @media print{
     body.printbrief>*:not(#briefHost){display:none !important}
     body.printbrief #briefHost{display:block}
+    /* the executive layout pins the body to one viewport; printing needs flow */
+    body.printbrief{height:auto !important;overflow:visible !important}
   }
 </style>
 </head>
@@ -287,7 +407,7 @@
   <div class="toolbar">
     <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
     <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
-    <div class="hazgroup">
+    <div class="hazgroup analyst-only">
       <div class="seg"><label class="mini-l">Peril</label>
         <select class="scen" id="hazSel" title="Hazard" aria-label="Hazard">
           <option value="tc">Tropical cyclone</option>
@@ -327,17 +447,44 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost analyst-only" id="simpleBtn" title="Toggle a cleaner analyst view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
+    <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
-    <button class="btn ghost" id="simpleBtn" title="Toggle a cleaner executive view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
-    <button class="btn ghost" id="sampleBtn">Load sample</button>
-    <button class="btn" id="exportBtn">Export CSV</button>
-    <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
-    <button class="btn" id="briefBtn">Board brief</button>
-    <button type="button" class="info on-dark" data-info="brief" aria-label="What the board brief is" aria-expanded="false">i</button>
+    <div class="modeswitch" role="group" aria-label="Choose how much detail the app shows">
+      <button type="button" id="modeExec" aria-pressed="true" title="The one-minute view: map, headline cost, and ranked priorities">Executive</button>
+      <button type="button" id="modeAnalyst" aria-pressed="false" title="The full workspace: every tab, model control, and specialist panel">Analyst</button>
+    </div>
+    <div class="exportwrap">
+      <button class="btn solid" id="exportMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export &amp; brief &#9662;</button>
+      <div class="exportmenu" id="exportMenu" role="menu" aria-label="Exports and briefings">
+        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>Print-ready portfolio one-pager with its data basis stated</small></button>
+        <button class="mi" role="menuitem" id="exportBtn"><b>Portfolio CSV</b><small>Full multi-hazard schema, feeds Power BI (frozen contract)</small></button>
+        <button class="mi" role="menuitem" id="menuBrokerBtn"><b>Broker evidence pack (CSV)</b><small>Secondary modifiers plus the modeled view, for the renewal submission</small></button>
+        <button class="mi" role="menuitem" id="menuActionBtn"><b>Adaptation action list (CSV)</b><small>Every ranked site-and-measure pair with the funding cutline</small></button>
+        <button class="mi" role="menuitem" id="menuTmplBtn"><b>Site CSV template</b><small>The columns for loading your own portfolio</small></button>
+      </div>
+    </div>
   </div>
 </header>
 
-<div id="map"></div>
+<div id="mapwrap">
+  <div id="map"></div>
+  <!-- Executive home overlays: floating panels over the full-bleed map.
+       Painted by renderExecHome(); visible only under body.execmode. -->
+  <section class="execui" id="execPanel" role="region" aria-label="Portfolio priorities at a glance"></section>
+  <div class="execui" id="execLayerbar" role="group" aria-label="What the map markers are coloured by"></div>
+  <div class="execui" id="execTimebar" role="group" aria-label="Climate timeline"></div>
+  <div class="execui" id="execEmpty" style="display:none">
+    <div class="execempty-card">
+      <h3>Your portfolio's climate priorities, in one minute</h3>
+      <p>Load the sample portfolio to explore, search a place in the top bar to add a site, or open the analyst workspace to drop in your own site list. Everything runs in your browser; nothing you load ever leaves the machine.</p>
+      <div class="row">
+        <button class="lightbtn primary" id="execSampleBtn">Load sample portfolio</button>
+        <button class="lightbtn" id="execAnalystBtn">Open analyst workspace</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <nav class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-tab="summary">Summary</button>
@@ -842,7 +989,7 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.2.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.3.0 assembled from source &middot; executive home (map-first priorities, timeline, consolidated exports) &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>

@@ -31,7 +31,7 @@ with Petals 6.2.0 is the current intended pairing: same major, Petals minor ahea
   |      hazard_grid.csv  +  hazard_grid_meta.json
   |  gated by validate_grid.py (ship only on exit 0)
   v
-  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v200.html, the deployable)
+  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v210.html, the deployable)
   |  Opened by double-click, runs entirely offline. Holds all
   |  vulnerability, financial, adaptation, and insurance logic.
   |  The CSV + JSON pair dropped on its Method tab is the only bridge.
@@ -202,13 +202,28 @@ silently lapses (it skips itself if the previous quarter's issue is still open).
 
 Run the gates after any code change; `test_frontend.py` after any app edit.
 
+## The executive home (v2.3.0)
+
+The app lands on a map-first executive view: a full-bleed map with a floating
+priorities panel (headline expected annual climate cost, the 1-in-100 tail,
+the tolerance position, the largest driver, a Present-to-2080 cost trajectory,
+the peril mix, and the top five sites ranked by all-in annual cost, each with
+its best value action), a timeline pill that walks every figure through the
+SSP horizons, and a colour bar for what the markers encode. Everything is a
+display lens over the same engine the analyst tabs run, so the two views can
+never disagree; a priority click opens the site scorecard with its
+why-these-numbers trace, and the top-bar Export menu consolidates the board
+brief, the Power BI CSV, the broker evidence pack, the action list, and the
+site template. The Analyst switch restores the full tab workspace, and the
+choice persists per machine like every other view preference.
+
 ## App source and lineage
 
-The app's source of truth is `app/src/`: a shell head, eight readable JS domain
+The app's source of truth is `app/src/`: a shell head, nine readable JS domain
 modules (hazard engine, finance, adaptation, uncertainty, state and INFO copy,
-render, intake, persist and wiring), and a shell tail, concatenated in MANIFEST
+render, executive home, intake, persist and wiring), and a shell tail, concatenated in MANIFEST
 order. `python3 app/assemble_app.py` joins them into the deployable
-(`TNL_Resort_Climate_Risk_Explorer_v200.html`), still a single self-contained
+(`TNL_Resort_Climate_Risk_Explorer_v210.html`), still a single self-contained
 file that opens from file:// with nothing to install. To change the app: edit
 the module, reassemble, run the gates. `assemble_app.py --check` (a CI gate)
 fails if the committed deployable ever drifts from the source, and
