@@ -1,47 +1,69 @@
 """
-refresh_wildfire.py  (adaptation-first increment 3: the fifth peril)
-=====================================================================
+refresh_wildfire.py  (v3: the structural fix - point burn probability)
+=======================================================================
 
-Produces the wildfire layer (hazard="wfire") of the hazard grid from CLIMADA
-Petals' WildFire module (NASA FIRMS fire history, probabilistic fire seasons).
+Produces the wildfire layer (hazard="wfire") of the hazard grid from the
+USFS Wildfire Risk to Communities (WRC) burn-probability product, sampled
+AT THE SITE POINT (30 m native), with the conditional damage side driven by
+the WRC Conditional Flame Length layer where supplied.
+
+Why the rework (the structural defect it fixes)
+-----------------------------------------------
+The previous producer derived "burn probability" from NASA FIRMS active-fire
+detections clustered by CLIMADA Petals into ~20 km centroid cells. A 400 km2
+cell in fire-active terrain lights up almost every year, so the quantity
+labeled "annual probability this resort burns" was actually "annual
+probability a fire of ANY kind (agricultural and prescribed burning
+included; the Southeast is the prescribed-burn capital of the country)
+occurs within ~10 km of the resort": ~13-18%/yr at many sites, 8-18x the
+0.1-2%/yr that real burn-probability products assign even to high-risk WUI.
+A flat 60% conditional damage ratio was stacked on top, compounding in the
+same direction. The result (a ~$731M/yr portfolio wildfire AAL for a
+coastal, not-wildfire-led portfolio) contradicted the original design
+judgment, which was the signal the PIPELINE, not the tuning, was wrong.
+
+The fix: burn probability is now the WRC BP value at the site point, which
+already means "fire reaches this location" (no spatial buffer may ever be
+reapplied on top), and the damage given fire is conditioned on modeled
+flame length at the point (FIRE_CFL_DAMAGE in the assumptions registry)
+instead of the retired flat FIRE_MDD=0.6. Where the CFL raster is not
+supplied, an INTERIM flat conditional ratio applies (fire_cond_interim in
+the registry, capped, and labeled interim on the app's trust surface).
 
 Encoding (indicator style, like heat's Option A):
-    v10  = annual burn probability, PERCENT (0..100)
-    v25..v500 = 0
-The app computes wildfire expected damage as value x burn probability x a
-documented conditional damage ratio, modified by the site's wildfire profile
-fields (roof_class_a, defensible_space_m). Fire loss is near-binary per
-structure, so a burn probability is the honest screening quantity; return
-period depth/speed columns would suggest precision the science lacks.
+    v10  = annual probability fire reaches the site point, PERCENT (0..100)
+    v25  = conditional structure damage ratio given fire, PERCENT (0..100)
+    v50..v500 = 0
+Rows are written AT THE SITE COORDINATES (point semantics travel through
+the existing grid contract: each site's nearest cell is itself). Sites the
+rasters do not cover (check WRC coverage for Hawaii and the territories per
+release) are FLAGGED in the meta sidecar, never silently zeroed; the app
+shows them degraded on wildfire per the per-site trust rules.
 
 Scenarios by a documented uplift: burn probability scales with warming at
-FIRE_WARMING_UPLIFT per degree C (fire-weather-day scaling, screening grade),
-using the app's own WARMING table so grid and app never disagree.
+FIRE_WARMING_UPLIFT per degree C (fire-weather-day scaling, screening
+grade), from the shared assumptions registry.
 
-Honest limits: FIRMS observes fire, not structure loss; the probabilistic
-event set is research grade; the uplift is a scalar on a complex system.
-This layer flags WHERE wildfire belongs on the agenda, not parcel risk.
+Input: the WRC GeoTIFFs, downloaded ONCE from wildfirerisk.org / USFS
+Research Data Archive (RDS-2020-0016, public domain) - exactly like the
+one-time DEM. The source path is CONFIGURATION (--wrc-bp/--wrc-cfl flags,
+CLAM_WRC_BP/CLAM_WRC_CFL env vars, or a ./wrc/ folder), so a pre-downloaded
+local file always works and corporate-network SSL can never block a
+rebuild. Without the BP raster the app keeps wildfire on its wui_class
+interim model, by design.
 
-Input: a NASA FIRMS archive CSV of active-fire detections (MODIS and/or VIIRS),
-downloaded once from https://firms.modaps.eosdis.nasa.gov/download/. Petals'
-WildFire builds its hazard FROM that DataFrame; it has no download-by-country
-constructor (the prior code passed a "USA" string where a DataFrame was
-expected, hence "'str' object has no attribute 'columns'"). The operator
-supplies the file, exactly like the one-time DEM. Without it the app keeps
-wildfire on its wui_class interim model, by design.
+FIRMS historical context (optional, NEVER feeds burn probability)
+------------------------------------------------------------------
+The NASA FIRMS utilities remain for one purpose: an optional historical
+fire-activity CONTEXT export (--firms-context), clearly separated from the
+loss calculation. FIRMS observes thermal anomalies of any kind, not
+structure-threatening wildfire, and is no longer wired into any hazard or
+impact quantity.
 
-FIRMS is trimmed before clustering: low-confidence detections are dropped
-(--min-confidence), then it is kept only within a buffer around the portfolio
-sites (auto-uses ./sites.csv, or --sites PATH; --buffer-km). Burn probability is
-only read at the sites, so this gives the same answer there while keeping Petals'
-fire-season clustering fast and dropping far-away fire regimes (for example
-Southeast agricultural burning). Without a sites file it falls back to broad
-region boxes.
-
-Usage (both the FIRMS CSVs and sites.csv are auto-discovered):
-    python refresh_wildfire.py                          # uses ./firms/ + ./sites.csv
-    python refresh_wildfire.py --firms firms_us.csv --sites sites.csv
-    python refresh_wildfire.py --firms firms/           # a folder of FIRMS CSVs
+Usage (sites.csv and ./wrc/ are auto-discovered):
+    python refresh_wildfire.py                          # ./wrc/ + ./sites.csv
+    python refresh_wildfire.py --wrc-bp wrc/BP_CONUS.tif --wrc-cfl wrc/CFL_CONUS.tif
+    python refresh_wildfire.py --firms-context firms/   # context CSV only
     python merge_grids.py hazard_grid.csv wfire_grid.csv -o hazard_grid.csv
     python validate_grid.py hazard_grid.csv hazard_grid_meta.json
 """
@@ -60,35 +82,41 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import portfolio_regions
 import refresh_hazard as rh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_wildfire")
 
-# MIRRORS the WARMING table in the app and refresh_heat.py; change all three.
-WARMING = {
-    "present": 0.0,
-    "ssp126_2030": 0.6, "ssp126_2050": 1.0, "ssp126_2080": 1.3,
-    "ssp245_2030": 0.7, "ssp245_2050": 1.4, "ssp245_2080": 2.3,
-    "ssp585_2030": 0.8, "ssp585_2050": 2.0, "ssp585_2080": 3.6,
-}
-FIRE_WARMING_UPLIFT = 0.14      # fractional burn-probability increase per deg C
+# Both scenario constants read from the single sourced registry
+# (assumptions.py: units, baseline period, and citation per entry).
+WARMING = assumptions.WARMING_TABLE
+FIRE_WARMING_UPLIFT = assumptions.scalar("fire_warming_uplift_per_c")
 
 # The resort footprint. A nationwide FIRMS download is trimmed to these boxes so
 # Petals builds centroids over cells that can actually host a site. The boxes
 # live in portfolio_regions.py (one source of truth, shared with refresh_heat
 # and the coverage audit). Wildfire is portfolio-wide, not only the desert SW.
 FIRE_REGIONS = portfolio_regions.REGIONS
+# --- WRC burn-probability input (the loss-driving source) -------------------
+# Local pre-downloaded GeoTIFFs; the path is configuration so corporate SSL
+# never blocks a rebuild. wildfirerisk.org data downloads / USFS RDS-2020-0016.
+WRC_BP_ENV = "CLAM_WRC_BP"      # burn probability raster (annual, 0..1, 30 m)
+WRC_CFL_ENV = "CLAM_WRC_CFL"    # conditional flame length raster (ft, 30 m)
+DEFAULT_WRC_DIR = "wrc"         # ./wrc/*bp*.tif and ./wrc/*cfl*.tif discovery
+FIRE_COND_INTERIM = assumptions.scalar("fire_cond_interim")
+
+# --- FIRMS historical-context input (NEVER feeds burn probability) ----------
 # Columns climada_petals' WildFire._clean_firms_df reads. MODIS carries
 # 'brightness' with a numeric 'confidence'; VIIRS carries 'bright_ti4' with l/n/h.
 FIRMS_REQUIRED = ["latitude", "longitude", "acq_date", "instrument", "confidence"]
-# Auto-discovered when --firms is not passed: the FIRMS_CSV env var, then a
-# ./firms/ folder of CSVs, then a single firms_us.csv, in the working directory.
+# Auto-discovered: the FIRMS_CSV env var, then a ./firms/ folder of CSVs,
+# then a single firms_us.csv, in the working directory.
 DEFAULT_FIRMS = ["firms", "firms_us.csv"]
-DEFAULT_SITES = "sites.csv"     # auto-used to trim FIRMS near the portfolio
-BUFFER_KM = 75.0                # keep fire history within this radius of a site
-MIN_CONFIDENCE = 50             # MODIS numeric-confidence floor (drops ag-burn noise)
+DEFAULT_SITES = "sites.csv"     # the portfolio the BP raster is sampled at
+BUFFER_KM = 75.0                # context export: fire history near a site
+MIN_CONFIDENCE = 50             # context export: MODIS confidence floor
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +125,10 @@ MIN_CONFIDENCE = 50             # MODIS numeric-confidence floor (drops ag-burn 
 
 def burn_probability(freq, hits):
     """Annual burn probability per centroid from a probabilistic fire event
-    set: the Poisson rate of fire arrivals at the centroid, converted to a
-    probability. `hits` is the boolean [events x centroids] burned matrix."""
+    set (Poisson rate of arrivals, converted to a probability). CONTEXT
+    ONLY: this cell-occupancy quantity is exactly what the structural fix
+    retired from the loss path; it survives for the FIRMS historical-context
+    export and its unit tests, and must never feed the wfire layer."""
     lam = (np.asarray(freq, float)[:, None] * np.asarray(hits, bool)).sum(axis=0)
     return 1.0 - np.exp(-lam)
 
@@ -109,23 +139,98 @@ def scenario_pburn(p_present, warming_c, uplift=FIRE_WARMING_UPLIFT):
                       1.0)
 
 
-def wfire_rows(lat, lon, p_present, grid_deg=rh.GRID_DEG):
-    """Grid rows for every app scenario. Thinning happens on the PRESENT
-    probability, then scenarios scale the thinned field, so all ten
-    scenarios share exactly one cell set (coverage never varies by horizon)."""
-    thinned = rh.thin_to_grid(lat, lon, {10: np.asarray(p_present, float)},
-                              grid_deg=grid_deg)
+def wfire_rows(lat, lon, p_present, cond):
+    """Per-SITE wfire rows for every app scenario: v10 = point burn
+    probability (percent), v25 = conditional damage ratio given fire
+    (percent). Rows sit AT the site coordinates - point semantics through
+    the existing grid contract (each site's nearest cell is itself); there
+    is deliberately NO thinning and NO buffering, because the point value
+    already means fire reaches the location. Co-located records dedupe."""
+    base = pd.DataFrame({
+        "lat": np.round(np.asarray(lat, float), 4),
+        "lon": np.round(np.asarray(lon, float), 4),
+        "p": np.asarray(p_present, float),
+        "cond": np.asarray(cond, float),
+    }).drop_duplicates(subset=["lat", "lon"], keep="first")
     frames = []
     for sc, w in WARMING.items():
-        df = thinned.copy()
-        df["v10"] = np.round(scenario_pburn(df["v10"].to_numpy(), w) * 100.0, 3)
-        for c in ("v25", "v50", "v100", "v250", "v500"):
+        df = pd.DataFrame({"lat": base["lat"], "lon": base["lon"]})
+        df["v10"] = np.round(scenario_pburn(base["p"].to_numpy(), w) * 100.0, 4)
+        df["v25"] = np.round(base["cond"].to_numpy() * 100.0, 1)
+        for c in ("v50", "v100", "v250", "v500"):
             df[c] = 0.0
         df["scenario"], df["hazard"] = sc, "wfire"
         frames.append(df)
     out = pd.concat(frames, ignore_index=True)
     cols = ["lat", "lon", "scenario", "hazard"] + [f"v{rp}" for rp in rh.RETURN_PERIODS]
     return out[cols]
+
+
+# ---------------------------------------------------------------------------
+# WRC input: point sampling of the burn-probability / flame-length rasters
+# ---------------------------------------------------------------------------
+
+def resolve_wrc(bp_arg=None, cfl_arg=None):
+    """(bp_path, cfl_path) from explicit flags, else the env vars, else a
+    ./wrc/ folder (filenames containing 'bp' / 'cfl'). Either may be None:
+    no BP means the layer is skipped with guidance; no CFL means the interim
+    conditional ratio applies (capped, labeled interim)."""
+    def _find(needle):
+        d = Path(DEFAULT_WRC_DIR)
+        if not d.is_dir():
+            return None
+        hits = sorted(p for p in d.iterdir()
+                      if p.suffix.lower() in (".tif", ".tiff")
+                      and needle in p.name.lower())
+        return str(hits[0]) if hits else None
+    bp = bp_arg or os.environ.get(WRC_BP_ENV) or _find("bp")
+    cfl = cfl_arg or os.environ.get(WRC_CFL_ENV) or _find("cfl")
+    return bp, cfl
+
+
+def sample_raster_points(path, lat, lon):
+    """(values, valid_mask) sampled at points from a GeoTIFF (rasterio seam,
+    mocked in tests). Valid = finite and not the raster's nodata."""
+    import rasterio
+    lat = np.asarray(lat, float)
+    lon = np.asarray(lon, float)
+    with rasterio.open(path) as src:
+        vals = np.array([float(v[0]) for v in src.sample(zip(lon, lat))])
+        nodata = src.nodata
+    valid = np.isfinite(vals)
+    if nodata is not None:
+        valid &= ~np.isclose(vals, float(nodata))
+    return vals, valid
+
+
+def wrc_at_points(lat, lon, bp_path, cfl_path=None):
+    """Point-sampled WRC values for the sites:
+      bp           annual probability fire reaches the point (0..1)
+      cond         conditional damage ratio given fire (CFL-mapped, or the
+                   interim flat ratio where no CFL value exists)
+      covered      BP raster has a valid value at the point (False = FLAG
+                   the site, never silently zero it)
+      cond_interim True where the conditional side is the interim ratio
+    Raises ValueError when the BP raster does not look like a probability
+    (values above 1), rather than guessing a rescale."""
+    bp, cov = sample_raster_points(bp_path, lat, lon)
+    if cov.any() and np.nanmax(np.abs(bp[cov])) > 1.0 + 1e-6:
+        raise ValueError(
+            f"{bp_path}: values exceed 1; expected annual burn probability "
+            f"in 0..1 (check the WRC layer; do not rescale blindly)")
+    bp = np.where(cov, np.clip(bp, 0.0, 1.0), 0.0)
+    n = len(bp)
+    if cfl_path:
+        cfl, cfl_ok = sample_raster_points(cfl_path, lat, lon)
+        cond = np.where(cfl_ok & (cfl >= 0),
+                        assumptions.cfl_to_damage(np.maximum(cfl, 0.0)),
+                        FIRE_COND_INTERIM)
+        cond_interim = ~(cfl_ok & (cfl >= 0))
+    else:
+        cond = np.full(n, FIRE_COND_INTERIM)
+        cond_interim = np.ones(n, dtype=bool)
+    return {"bp": bp, "cond": cond, "covered": cov,
+            "cond_interim": cond_interim}
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +348,20 @@ def load_site_points(path):
     return la[m].to_numpy(), lo[m].to_numpy()
 
 
+def load_sites_min(path):
+    """(names, lat, lon) from a sites CSV; names fall back to row numbers."""
+    s = pd.read_csv(path)
+    s.columns = [str(c).strip().lower() for c in s.columns]
+    if "latitude" not in s.columns or "longitude" not in s.columns:
+        raise ValueError(f"{path}: needs latitude, longitude columns")
+    la = pd.to_numeric(s["latitude"], errors="coerce")
+    lo = pd.to_numeric(s["longitude"], errors="coerce")
+    m = (la.notna() & lo.notna()).to_numpy()
+    names = (s["name"].astype(str).to_numpy() if "name" in s.columns
+             else np.array([f"row {i}" for i in range(len(s))]))
+    return names[m], la.to_numpy()[m], lo.to_numpy()[m]
+
+
 def resolve_sites(path):
     """Explicit --sites if given, else ./sites.csv when present, else None."""
     if path:
@@ -336,123 +455,176 @@ def _write_meta(out_path, meta):
     return mp
 
 
+def write_firms_context(paths, out_csv, sites_path=None,
+                        buffer_km=BUFFER_KM, min_confidence=MIN_CONFIDENCE):
+    """The OPTIONAL historical fire-activity context export: FIRMS detection
+    counts per 0.25-degree cell near the portfolio. Clearly separated from
+    the loss calculation (its own file, its own columns, no hazard
+    vocabulary) and never merged into the hazard grid."""
+    df = filter_firms_confidence(load_firms(paths), min_confidence)
+    scope = "within the portfolio region boxes"
+    if sites_path:
+        try:
+            slat, slon = load_site_points(sites_path)
+            df = filter_firms_near_sites(df, slat, slon, buffer_km)
+            scope = "within %g km of %d site(s)" % (buffer_km, len(slat))
+        except Exception as exc:
+            LOG.warning("Context: could not use sites (%s); region boxes.", exc)
+            df = filter_firms_to_regions(df)
+    else:
+        df = filter_firms_to_regions(df)
+    g = pd.DataFrame({
+        "cell_lat": np.round(df["latitude"].to_numpy(float) / rh.GRID_DEG)
+        * rh.GRID_DEG,
+        "cell_lon": np.round(df["longitude"].to_numpy(float) / rh.GRID_DEG)
+        * rh.GRID_DEG,
+        "year": pd.to_datetime(df["acq_date"], errors="coerce").dt.year,
+    })
+    out = (g.groupby(["cell_lat", "cell_lon"])
+           .agg(detections=("year", "size"), first_year=("year", "min"),
+                last_year=("year", "max")).reset_index())
+    out.insert(0, "kind", "firms_historical_context")
+    out.to_csv(out_csv, index=False)
+    LOG.info("Context: %d detections -> %d cells (%s) -> %s. This layer is "
+             "historical CONTEXT only and never feeds burn probability.",
+             len(df), len(out), scope, out_csv)
+    return out
+
+
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Build the wildfire layer of the "
-                                             "hazard grid (burn probability) from "
-                                             "a NASA FIRMS archive CSV.")
-    ap.add_argument("--firms", nargs="+", default=None,
-                    help="FIRMS archive CSV file(s) or a directory of them "
-                         "(https://firms.modaps.eosdis.nasa.gov/download/)")
-    ap.add_argument("--out", default="wfire_grid.csv")
+    ap = argparse.ArgumentParser(
+        description="Build the wildfire layer of the hazard grid: USFS WRC "
+                    "burn probability point-sampled at the portfolio sites, "
+                    "with flame-length-conditioned damage.")
+    ap.add_argument("--wrc-bp", default=None, metavar="TIF",
+                    help=f"WRC annual burn-probability GeoTIFF (or "
+                         f"{WRC_BP_ENV}, or ./{DEFAULT_WRC_DIR}/*bp*.tif); "
+                         "wildfirerisk.org / USFS RDS-2020-0016, downloaded "
+                         "once like the DEM")
+    ap.add_argument("--wrc-cfl", default=None, metavar="TIF",
+                    help=f"WRC conditional flame length GeoTIFF (or "
+                         f"{WRC_CFL_ENV}, or ./{DEFAULT_WRC_DIR}/*cfl*.tif); "
+                         "absent -> the interim flat conditional ratio, "
+                         "capped and labeled interim")
     ap.add_argument("--sites", default=None,
-                    help="sites CSV; FIRMS is trimmed to --buffer-km around these "
-                         "resorts (auto-uses ./sites.csv; falls back to region boxes)")
+                    help="sites CSV to sample at (auto-uses ./sites.csv)")
+    ap.add_argument("--out", default="wfire_grid.csv")
+    ap.add_argument("--firms-context", nargs="+", default=None, metavar="CSV",
+                    help="OPTIONAL: also write a historical fire-activity "
+                         "context CSV from NASA FIRMS archives (never feeds "
+                         "burn probability)")
+    ap.add_argument("--context-out", default="firms_context.csv")
     ap.add_argument("--buffer-km", type=float, default=BUFFER_KM,
-                    help="radius around each site to keep fire history (default %(default)s)")
+                    help="context export: keep fire history within this "
+                         "radius of a site (default %(default)s)")
     ap.add_argument("--min-confidence", type=int, default=MIN_CONFIDENCE,
-                    help="MODIS confidence floor before clustering (default %(default)s)")
-    ap.add_argument("--centr-res-factor", type=float, default=0.05,
-                    help="Petals centroid resolution factor (~0.05 -> ~20 km)")
-    ap.add_argument("--year-start", type=int, default=None)
-    ap.add_argument("--year-end", type=int, default=None)
-    ap.add_argument("--proba-seasons", type=int, default=0,
-                    help="augment historic seasons with N probabilistic ones "
-                         "(0 = historic only, the robust screening default)")
+                    help="context export: MODIS confidence floor "
+                         "(default %(default)s)")
     ap.add_argument("--country", default="USA", help="provenance label only")
     args = ap.parse_args(argv)
 
     meta = {"generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "script": "refresh_wildfire.py v2 (FIRMS DataFrame input)",
-            "method": "Petals WildFire from a FIRMS archive CSV; burn probability "
-                      "per cell, scenarios scale by WARMING x FIRE_WARMING_UPLIFT",
+            "script": "refresh_wildfire.py v3 (WRC point burn probability)",
+            "method": "USFS Wildfire Risk to Communities burn probability "
+                      "sampled at the site point; conditional damage from "
+                      "the WRC flame-length layer (FIRE_CFL_DAMAGE bands) "
+                      "or the interim flat ratio; scenarios scale by "
+                      "WARMING x FIRE_WARMING_UPLIFT",
             "fire_warming_uplift_per_c": FIRE_WARMING_UPLIFT,
-            "encoding": {"v10": "annual burn probability, percent",
-                         "v25": 0, "v50": 0, "v100": 0, "v250": 0, "v500": 0},
+            "fire_cond_interim": FIRE_COND_INTERIM,
+            "encoding": {"v10": "annual probability fire reaches the site "
+                                "point, percent",
+                         "v25": "conditional structure damage ratio given "
+                                "fire, percent",
+                         "v50": 0, "v100": 0, "v250": 0, "v500": 0},
             "units": {"wfire": "indicator encoding, see 'encoding'"},
             "layers": [], "skipped": []}
 
-    firms = resolve_firms(args.firms)
-    if not firms:
-        LOG.error("No FIRMS data found. Petals' WildFire builds its hazard from a "
-                  "FIRMS DataFrame, not a country code, and cannot download it. "
-                  "Put the MODIS and/or VIIRS archive CSV(s) from "
-                  "https://firms.modaps.eosdis.nasa.gov/download/ in ./firms/ (or "
-                  "pass --firms PATH, or set FIRMS_CSV). The app keeps wildfire on "
-                  "its wui_class interim model until then.")
-        meta["skipped"].append({"country": args.country, "layer": "wfire",
-                                "reason": "no FIRMS CSV found (--firms / FIRMS_CSV "
-                                          "/ ./firms/)"})
-        _write_meta(args.out, meta)
-        return 1
-
-    try:
-        df = load_firms(firms)
-    except Exception as exc:
-        LOG.error("Could not read FIRMS data: %s", exc)
-        meta["skipped"].append({"country": args.country, "layer": "wfire",
-                                "reason": str(exc)[:300]})
-        _write_meta(args.out, meta)
-        return 1
-    n_all = len(df)
-    df = filter_firms_confidence(df, args.min_confidence)
-    sites_path = resolve_sites(args.sites)
-    if sites_path:
+    if args.firms_context:
         try:
-            slat, slon = load_site_points(sites_path)
-            df = filter_firms_near_sites(df, slat, slon, args.buffer_km)
-            scope = "within %g km of %d site(s) from %s" % (
-                args.buffer_km, len(slat), Path(sites_path).name)
+            write_firms_context(args.firms_context, args.context_out,
+                                resolve_sites(args.sites),
+                                args.buffer_km, args.min_confidence)
         except Exception as exc:
-            LOG.warning("Could not use sites (%s); falling back to region boxes.", exc)
-            df = filter_firms_to_regions(df)
-            sites_path, scope = None, "within the portfolio region boxes"
-    else:
-        df = filter_firms_to_regions(df)
-        scope = "within the portfolio region boxes"
-    LOG.info("FIRMS: %d detections total, %d kept (%s)", n_all, len(df), scope)
-    if df.empty:
-        LOG.error("No FIRMS detections survive the filter (%s). Widen --buffer-km, "
-                  "lower --min-confidence, or check the download area.", scope)
+            LOG.warning("FIRMS context export failed (%s); continuing to "
+                        "the hazard layer.", exc)
+
+    sites_path = resolve_sites(args.sites)
+    if not sites_path:
+        LOG.error("No sites CSV found (--sites or ./sites.csv). The wfire "
+                  "layer is point-sampled AT the portfolio sites, so it "
+                  "needs them.")
         meta["skipped"].append({"country": args.country, "layer": "wfire",
-                                "reason": "no FIRMS detections after filtering"})
+                                "reason": "no sites CSV (--sites / ./sites.csv)"})
+        _write_meta(args.out, meta)
+        return 1
+    bp_path, cfl_path = resolve_wrc(args.wrc_bp, args.wrc_cfl)
+    if not bp_path:
+        LOG.error("No WRC burn-probability raster found. Download the "
+                  "public-domain Burn Probability (and ideally Conditional "
+                  "Flame Length) GeoTIFFs ONCE from wildfirerisk.org (USFS "
+                  "RDS-2020-0016) and pass --wrc-bp/--wrc-cfl, set "
+                  f"{WRC_BP_ENV}/{WRC_CFL_ENV}, or drop them in "
+                  f"./{DEFAULT_WRC_DIR}/. The path is configuration, so a "
+                  "pre-downloaded local file always works (corporate SSL "
+                  "never blocks a rebuild). The app keeps wildfire on its "
+                  "wui_class interim model until then.")
+        meta["skipped"].append({"country": args.country, "layer": "wfire",
+                                "reason": f"no WRC BP raster (--wrc-bp / "
+                                          f"{WRC_BP_ENV} / ./{DEFAULT_WRC_DIR}/)"})
         _write_meta(args.out, meta)
         return 1
 
     try:
-        haz = build_wildfire_hazard(df, centr_res_factor=args.centr_res_factor,
-                                    year_start=args.year_start,
-                                    year_end=args.year_end,
-                                    n_proba_seasons=args.proba_seasons)
+        names, slat, slon = load_sites_min(sites_path)
+        w = wrc_at_points(slat, slon, bp_path, cfl_path)
     except Exception as exc:
-        LOG.warning("Skipping %s: %s", args.country, exc)
+        LOG.error("WRC sampling failed: %s", exc)
         meta["skipped"].append({"country": args.country, "layer": "wfire",
                                 "reason": str(exc)[:300]})
         _write_meta(args.out, meta)
-        LOG.error("No wildfire layer produced.")
         return 1
 
-    inten = haz.intensity
-    hits = (inten.toarray() if hasattr(inten, "toarray")
-            else np.asarray(inten)) > 0
-    p = burn_probability(haz.frequency, hits)
-    rows = wfire_rows(np.asarray(haz.centroids.lat, float),
-                      np.asarray(haz.centroids.lon, float), p)
+    cov = w["covered"]
+    for j in np.where(~cov)[0]:
+        # flagged, never silently zeroed: WRC coverage must be confirmed
+        # for Hawaii and the territories per release
+        meta["skipped"].append({"country": args.country, "layer": "wfire",
+                                "site": str(names[j]),
+                                "reason": "outside WRC burn-probability "
+                                          "raster coverage (no valid value "
+                                          "at the site point)"})
+    if not cov.any():
+        LOG.error("No site has a valid WRC value; check the raster extent.")
+        _write_meta(args.out, meta)
+        return 1
+
+    rows = wfire_rows(slat[cov], slon[cov], w["bp"][cov], w["cond"][cov])
+    n_sites = int(len(rows) / len(WARMING))
     for sc in WARMING:
         meta["layers"].append({"hazard": "wfire", "scenario": sc,
-                               "country": args.country,
-                               "cells": int(len(rows) / len(WARMING))})
-    meta["firms"] = {"files": [Path(x).name for x in firms],
-                     "detections_total": int(n_all),
-                     "detections_kept": int(len(df)),
-                     "scope": scope,
-                     "min_confidence": args.min_confidence,
-                     "buffer_km": (args.buffer_km if sites_path else None),
-                     "sites_file": (Path(sites_path).name if sites_path else None),
-                     "centr_res_factor": args.centr_res_factor,
-                     "proba_seasons": int(args.proba_seasons)}
-    LOG.info("  wfire %s -> %d cells x %d scenarios (max p %.2f%%)",
-             args.country, len(rows) // len(WARMING), len(WARMING),
-             float(rows["v10"].max()))
+                               "country": args.country, "cells": n_sites})
+    meta["wrc"] = {"bp_raster": Path(bp_path).name,
+                   "cfl_raster": Path(cfl_path).name if cfl_path else None,
+                   "sites_file": Path(sites_path).name,
+                   "sites_sampled": int(cov.sum()),
+                   "sites_outside_coverage": int((~cov).sum()),
+                   "cond_interim_sites": int(w["cond_interim"][cov].sum()),
+                   "source": "USFS Wildfire Risk to Communities "
+                             "(wildfirerisk.org; RDS-2020-0016), public "
+                             "domain; local pre-downloaded file"}
+    if cfl_path is None:
+        LOG.warning("No CFL raster: the conditional damage side uses the "
+                    "INTERIM flat ratio %.2f (capped); the app labels it "
+                    "interim on the trust surface.", FIRE_COND_INTERIM)
+    p_now = w["bp"][cov]
+    if p_now.size and float(p_now.max()) > 0.05:
+        LOG.warning("Max point burn probability %.1f%%/yr: plausible only "
+                    "in extreme WUI; inspect the raster and the site "
+                    "coordinates before shipping.", p_now.max() * 100)
+    LOG.info("  wfire %s -> %d site-point cells x %d scenarios "
+             "(mean p %.3f%%, max p %.3f%%)", args.country, n_sites,
+             len(WARMING), float(p_now.mean()) * 100, float(p_now.max()) * 100)
     rows.to_csv(args.out, index=False)
     meta_path = _write_meta(args.out, meta)
     LOG.info("Wrote %d rows to %s and provenance to %s",

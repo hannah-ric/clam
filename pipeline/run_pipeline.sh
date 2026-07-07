@@ -116,18 +116,20 @@ fi
 
 # --- 2b. optional fifth and sixth perils (opt-in: --fire, --rain) --------------
 if [ "$FIRE" -eq 1 ]; then
-  echo; echo "== STEP 2b  Wildfire layer (Petals WildFire burn probability) ======="
-  # Petals builds the fire hazard from a NASA FIRMS archive CSV, not a country
-  # code. refresh_wildfire auto-discovers the source (FIRMS_CSV env, ./firms/, or
-  # firms_us.csv) and exits cleanly with guidance when none is present, so guard
-  # the exit status: a graceful skip must not abort the whole run under set -e.
+  echo; echo "== STEP 2b  Wildfire layer (WRC point burn probability) ============="
+  # The wfire layer point-samples the USFS Wildfire Risk to Communities
+  # rasters at the portfolio sites. refresh_wildfire auto-discovers the local
+  # pre-downloaded files (./wrc/, or CLAM_WRC_BP/CLAM_WRC_CFL) and sites.csv,
+  # and exits cleanly with guidance when either is absent, so guard the exit
+  # status: a graceful skip must not abort the whole run under set -e.
   if run python refresh_wildfire.py; then
     MERGE_IN="$MERGE_IN wfire_grid.csv"
   else
-    echo "  wildfire skipped: no FIRMS data found. Put MODIS/VIIRS CSVs from"
-    echo "  https://firms.modaps.eosdis.nasa.gov/download/ in pipeline/firms/ (or"
-    echo "  set FIRMS_CSV=...), then re-run. The app keeps wildfire on its"
-    echo "  wui_class interim model until then."
+    echo "  wildfire skipped: no WRC burn-probability raster (or no sites.csv)."
+    echo "  Download the public-domain BP and CFL GeoTIFFs once from"
+    echo "  wildfirerisk.org (USFS RDS-2020-0016) into pipeline/wrc/ (or set"
+    echo "  CLAM_WRC_BP/CLAM_WRC_CFL), then re-run. The app keeps wildfire on"
+    echo "  its wui_class interim model until then."
   fi
 fi
 if [ "$RAIN" -eq 1 ]; then

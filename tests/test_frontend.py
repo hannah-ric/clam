@@ -267,6 +267,119 @@ assert(vulnOf({equipment_elevated:true}).floodCap===0.5,"vulnOf v2: elevated equ
 assert(Math.abs(floodMdd(6.0,1.1)-0.75)<1e-12&&floodMdd(6.0,1.1,0.5)===0.5,
   "floodMdd: cap parameter binds in deep water, default unchanged");
 
+/* ---------------- Task 3: structural archetypes ---------------- */
+/* two sites in the SAME hazard cell with different archetypes must produce
+   different loss; absent or unknown archetypes reproduce today's numbers. */
+gridByHazard={};clearHazCache();
+const archRows=[];
+for(const sc of SCEN_KEYS){
+  archRows.push({lat:25.0,lon:-80.0,scenario:sc,hazard:"tc",v10:20,v25:28,v50:36,v100:48,v250:60,v500:66});
+  archRows.push({lat:25.0,lon:-80.0,scenario:sc,hazard:"cflood",v10:0.3,v25:0.7,v50:1.2,v100:1.8,v250:2.4,v500:2.9});
+}
+buildGridsFromRows(archRows);
+const aTimber={id:31,name:"T",latitude:25.0,longitude:-80.0,asset_value_usd:5e7};
+const aTower=Object.assign({},aTimber,{id:32,archetype:"tower_concrete"});
+const aBeach=Object.assign({},aTimber,{id:33,archetype:"beachfront_lowrise"});
+const aExplicit=Object.assign({},aTimber,{id:34,archetype:"lowrise_timber"});
+const aBad=Object.assign({},aTimber,{id:35,archetype:"spaceship"});
+assert(vulnOf(aTimber).vHalf===V_HALF&&vulnOf(aTower).vHalf===V_HALF*1.3,
+  "vulnOf: archetype shifts the wind half-damage speed, default stays put");
+assert(hzSite(aTower,"tc","present").ead<hzSite(aTimber,"tc","present").ead,
+  "same cell, different archetype: the tower loses less wind than timber");
+assert(hzSite(aBeach,"cflood","present").ead>hzSite(aTimber,"cflood","present").ead,
+  "same cell: beachfront siting floods worse than the default");
+assert(hzSite(aExplicit,"tc","present").ead===hzSite(aTimber,"tc","present").ead
+  &&hzSite(aExplicit,"cflood","present").ead===hzSite(aTimber,"cflood","present").ead,
+  "the explicit timber default is bit-identical to no archetype at all");
+assert(hzSite(aBad,"tc","present").ead===hzSite(aTimber,"tc","present").ead,
+  "an unknown archetype value falls back to current behavior, never breaks");
+assert(vulnOf(Object.assign({},aTimber,{archetype:"mep_basement",equipment_elevated:true})).floodCap===EQUIP_ELEV_FLOOD_CAP,
+  "site-measured elevated plant still caps DOWNWARD over the basement archetype");
+
+/* ---------------- Task 4: flood/surge depth at the structure ---------------- */
+const eUp=Object.assign({},aTimber,{id:41,ground_elev_m:2.6,cell_ground_elev_m:1.6});   // +1.0 m relief
+const eDown=Object.assign({},aTimber,{id:42,ground_elev_m:1.0,cell_ground_elev_m:1.6}); // -0.6 m: a low spot
+assert(Math.abs(siteRelief(eUp)-1.0)<1e-9&&Math.abs(siteRelief(eDown)+0.6)<1e-9&&siteRelief(aTimber)===null,
+  "siteRelief needs BOTH fields; sign follows site minus cell ground");
+assert(siteRelief({ground_elev_m:100,cell_ground_elev_m:0})===RELIEF_CLAMP_M,
+  "relief is sanity-clamped");
+const cCoarse=hzSite(aTimber,"cflood","present"),cUp=hzSite(eUp,"cflood","present"),cDn=hzSite(eDown,"cflood","present");
+assert(cUp.ead<cCoarse.ead&&cDn.ead>cCoarse.ead&&cCoarse.ead>0,
+  "same cell: an elevated site floods less, a low-spot site more, than the cell average");
+assert(reliefVec({10:0,25:0,50:0,100:0,250:0,500:0},-2)[100]===0,
+  "DRY CELLS STAY DRY: negative relief cannot conjure water");
+assert(siteTrust(aTimber,"cflood","present").coarse===true
+  &&siteTrust(aTimber,"cflood","present").note.indexOf("modeled-coarse")>=0,
+  "missing elevation reads MODELED-COARSE on the trust surface");
+assert(siteTrust(eUp,"cflood","present").coarse===false
+  &&siteTrust(eUp,"cflood","present").note.indexOf("at the structure")>=0,
+  "with both fields the trust note states depth at the structure");
+const exRel=explainPeril(eUp,"cflood","present");
+assert(exRel.factors[0].name.indexOf("at the structure")>=0&&exRel.factors[0].add===-1.0,
+  "the trace shows the structure adjustment as a named factor");
+assert(explainPeril(aTimber,"cflood","present").notes.join(" ").indexOf("modeled-coarse")>=0,
+  "the trace flags the cell-average fallback");
+loadSiteCsv("name,latitude,longitude,asset_value_usd,ground_elev_m,cell_ground_elev_m\\n"+
+            "E,25.0,-80.0,50000000,2.6,1.6","x.csv");
+assert(sites[0].ground_elev_m===2.6&&sites[0].cell_ground_elev_m===1.6,
+  "site CSV ingests the two elevation fields");
+
+/* ---------------- Task 5: sub-1-in-10 band + per-site RP + joint tail ------- */
+/* a chronically wet vector (frac at 1-in-10 well above zero) must gain EAD
+   from the sub-1-in-10 extension; the old integral ignored that band */
+const wetVec={10:2.0,25:2.4,50:2.8,100:3.2,250:3.8,500:4.2};
+const fNew=floodEad(wetVec,1e6,0.5,null,null).eadFrac;
+let fOld=0;(function(){const pts=RPS.map(rp=>({f:1/rp,frac:Math.min(floodMdd(wetVec[rp],0.5),1)})).sort((a,b)=>b.f-a.f);
+  for(let i=0;i<pts.length-1;i++)fOld+=0.5*(pts[i].frac+pts[i+1].frac)*(pts[i].f-pts[i+1].f);
+  fOld+=pts[pts.length-1].frac*pts[pts.length-1].f;})();
+assert(fNew>fOld*1.5,
+  "the EAD integral now counts losses more frequent than 1-in-10");
+const dryVec={10:0.2,25:0.6,50:1.0,100:1.4,250:2.0,500:2.4};
+const dNew=floodEad(dryVec,1e6,1.1,null,null).eadFrac;
+let dOld=0;(function(){const pts=RPS.map(rp=>({f:1/rp,frac:Math.min(floodMdd(dryVec[rp],1.1),1)})).sort((a,b)=>b.f-a.f);
+  for(let i=0;i<pts.length-1;i++)dOld+=0.5*(pts[i].frac+pts[i+1].frac)*(pts[i].f-pts[i+1].f);
+  dOld+=pts[pts.length-1].frac*pts[pts.length-1].f;})();
+assert(Math.abs(dNew-dOld)<1e-12,
+  "a site dry at 1-in-10 is bit-identical: the extension adds nothing below the freeboard");
+assert(subTenPts({10:5,25:3})[0].v<=5&&subTenPts({10:5,25:3})[1].v<=5,
+  "a non-monotone vector cannot extrapolate ABOVE its 1-in-10 value");
+/* per-site RP loss beside the EAD (drives the sites-table column) */
+const rpRow=hzSite(eDown,"cflood","present");
+assert(rpRow.curve.find(c=>c.rp===100).loss>0&&rpRow.curve.find(c=>c.rp===250).loss>=rpRow.curve.find(c=>c.rp===100).loss,
+  "per-site 1-in-100 and 1-in-250 losses are available and monotone");
+/* canonical joint tail: the pack's event curve replaces the blend, labeled */
+sites=[aTimber];
+resultsPack={data:{pack_version:1,kind:"results_pack",scenarios:{present:{portfolio:{
+  direct_aal_usd:1200000,by_peril_aal_usd:{tc:800000,cflood:400000},
+  ep_usd:{"10":1000000,"25":2000000,"50":4000000,"100":7000000,"250":12000000,"500":16000000}},per_site:[]}},
+  adaptation:{},uncertainty:{}},name:"p.json",loaded:"x"};
+const fJoint=finPortfolio(sites,"present");
+assert(fJoint.jointTail&&fJoint.jointTail.var100===7000000&&fJoint.jointTail.label.indexOf("joint event tail")>=0,
+  "with a pack loaded the canonical tail is the pack's joint event curve");
+assert(fJoint.var100!==fJoint.jointTail.var100||fJoint.var100===7000000,
+  "the live blend stays available separately, never silently overwritten");
+const tJoint=toleranceFlags(sites,"present",annuity(25,0.03));
+assert(tJoint.tailBasis.indexOf("joint event tail")>=0
+  &&Math.abs(tJoint.varPct-7000000/aTimber.asset_value_usd*100)<1e-9,
+  "the tolerance tail breach reads the canonical joint tail when present");
+assert(finDisclosure(sites,"ssp245")[0].tailBasis==="joint event tail",
+  "the disclosure table states the joint-tail basis");
+resultsPack=null;
+const fNoPack=finPortfolio(sites,"present");
+assert(fNoPack.jointTail===null,
+  "no pack: the live blend stands and every surface labels it an approximation");
+assert(toleranceFlags(sites,"present",annuity(25,0.03)).tailBasis.indexOf("blend")>=0,
+  "without a pack the tolerance line says blend approximation");
+sites=[];
+const exArch=explainPeril(aTower,"tc","present");
+assert(exArch.notes.join(" ").indexOf("archetype-shifted")>=0,
+  "the tc trace states the archetype-shifted half-damage speed");
+loadSiteCsv("name,latitude,longitude,asset_value_usd,archetype\\n"+
+            "A,25.0,-80.0,50000000,tower_concrete\\nB,25.0,-80.0,50000000,not_a_thing","x.csv");
+assert(sites.length===2&&sites[0].archetype==="tower_concrete"&&sites[1].archetype===undefined,
+  "site CSV ingests a valid archetype and drops an invalid one");
+gridByHazard={};clearHazCache();
+
 /* ---------------- v1.12: six perils, migration safety first ---------------- */
 gridByHazard={};clearHazCache();
 const plain={id:9,name:"Plain",latitude:29.5,longitude:-98.5,asset_value_usd:50000000};
@@ -276,8 +389,9 @@ assert(hzSite(plain,"prain","present").ead===0,
   "MIGRATION SAFETY: rainfall scores zero without a grid (no interim model)");
 const wui={id:10,name:"Ridge",latitude:34.0,longitude:-116.5,asset_value_usd:50000000,wui_class:"intermix"};
 const wf0=hzSite(wui,"wfire","present");
-assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_MDD)<1e-6,
-  "wildfire interim: WUI class drives burn probability (0.6%/yr intermix)");
+assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_COND_INTERIM)<1e-6,
+  "wildfire interim: WUI point probability x the capped INTERIM conditional ratio (flat 0.6 retired)");
+assert(wf0.fireCondSource==="interim","the interim conditional side is labeled");
 const wf85=hzSite(wui,"wfire","ssp585_2080");
 assert(Math.abs(wf85.ead-wf0.ead*(1+FIRE_WARMING_UPLIFT*3.6))<1e-3,
   "wildfire interim scales with warming per scenario");
@@ -289,6 +403,8 @@ const sixRows=[];
 for(const sc of SCEN_KEYS){
   sixRows.push({lat:34.0,lon:-116.5,scenario:sc,hazard:"wfire",
     v10:+(1.2*(1+FIRE_WARMING_UPLIFT*(WARMING[sc]||0))).toFixed(3),v25:0,v50:0,v100:0,v250:0,v500:0});
+  sixRows.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"wfire",
+    v10:0.8,v25:30,v50:0,v100:0,v250:0,v500:0});
   sixRows.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"prain",
     v10:200,v25:350,v50:550,v100:800,v250:1200,v500:1600});
 }
@@ -296,6 +412,13 @@ buildGridsFromRows(sixRows);
 const wfg=hzSite(wui,"wfire","present");
 assert(wfg.fireSource==="grid"&&Math.abs(wfg.burnPct-1.2)<1e-9,
   "wildfire grid supersedes the WUI interim (grid-first)");
+assert(wfg.fireCondSource==="interim"&&Math.abs(wfg.ead-50000000*0.012*FIRE_COND_INTERIM)<1e-3,
+  "a grid without v25 keeps the capped interim conditional ratio, labeled");
+assert(siteTrust(wui,"wfire","present").note.indexOf("interim")>=0,
+  "the per-site trust chip carries the interim-conditional label");
+const wfc=hzSite(plain,"wfire","present");
+assert(wfc.fireCondSource==="grid"&&Math.abs(wfc.ead-50000000*0.008*0.30)<1e-3,
+  "a grid v25 drives flame-length-conditioned damage: p x cond x value");
 const prg=hzSite(plain,"prain","present");
 assert(prg.ead>0,"rainfall grid lights the peril up");
 const d100=Math.max(0,800-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF;

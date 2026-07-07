@@ -496,6 +496,7 @@
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="rp100">1-in-100 loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -518,12 +519,12 @@
         <h3>Appraisal settings<button type="button" class="info" data-info="levers" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
         <div class="hint">Shared by every measure. Everything recomputes live.</div>
         <div class="field">
-          <label>Appraisal horizon (years) <span class="mono" id="horizonVal">20</span></label>
-          <input type="range" id="horizon" min="5" max="40" step="5" value="20">
+          <label>Appraisal horizon (years) <span class="mono" id="horizonVal">25</span></label>
+          <input type="range" id="horizon" min="5" max="40" step="5" value="25">
         </div>
         <div class="field">
-          <label>Discount rate <span class="mono" id="discVal">2.0%</span></label>
-          <input type="range" id="disc" min="0" max="6" step="0.5" value="2">
+          <label>Discount rate <span class="mono" id="discVal">3.0%</span></label>
+          <input type="range" id="disc" min="0" max="6" step="0.5" value="3">
         </div>
         <div class="field">
           <label>Exposure growth (value &amp; revenue, %/yr) <span class="mono" id="growthVal">2.0%</span><button type="button" class="info" data-info="growth" aria-label="How this is used" aria-expanded="false">i</button></label>
@@ -907,6 +908,15 @@
           <select id="mWui"><option value="">Not specified</option><option value="none">None</option><option value="interface">Interface</option><option value="intermix">Intermix</option></select>
         </div>
         <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Ground elevation (m above MSL)</label><input type="number" id="mGround" step="0.1" placeholder="e.g. 2.6"></div>
+        <div class="field"><label>Hazard-cell mean ground (m)</label><input type="number" id="mCellGround" step="0.1" placeholder="from enrich_sites.py"></div>
+      </div>
+      <span class="hint">Both together read flood and surge depth at the structure instead of the cell average; leave blank to stay on the (flagged) cell value.</span>
+      <div class="field"><label>Structural archetype</label>
+        <select id="mArch"><option value="">Not specified (published curve)</option><option value="lowrise_timber">Low-rise timber frame</option><option value="lowrise_masonry">Low-rise masonry</option><option value="midrise_concrete">Mid-rise concrete frame</option><option value="tower_concrete">High-rise concrete tower</option><option value="beachfront_lowrise">Beachfront low-rise</option><option value="setback_elevated">Set-back / elevated siting</option><option value="mep_basement">Critical plant in basement</option><option value="mep_elevated_plant">Critical plant elevated</option></select>
+        <span class="hint">Shifts the damage curves by structural form and siting; the fields above keep refining envelope condition on top.</span>
       </div>
     </details>
     <div class="row">

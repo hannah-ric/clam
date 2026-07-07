@@ -24,7 +24,10 @@ import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent / "src"
-OUT = Path(__file__).resolve().parent / "TNL_Resort_Climate_Risk_Explorer_v200.html"
+# v2.1.0: the wildfire structural fix (WRC point burn probability) changes a
+# headline loss figure, so the deployable version steps; v200 stays committed
+# as frozen lineage, exactly like v1.5 through v1.13 before it.
+OUT = Path(__file__).resolve().parent / "TNL_Resort_Climate_Risk_Explorer_v210.html"
 
 
 def assemble() -> str:

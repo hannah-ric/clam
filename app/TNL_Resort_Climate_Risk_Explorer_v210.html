@@ -496,6 +496,7 @@
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="rp100">1-in-100 loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -908,6 +909,11 @@
         </div>
         <div class="field"><label>Defensible space (m)</label><input type="number" id="mDefSpace" step="5" placeholder="e.g. 30"></div>
       </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Ground elevation (m above MSL)</label><input type="number" id="mGround" step="0.1" placeholder="e.g. 2.6"></div>
+        <div class="field"><label>Hazard-cell mean ground (m)</label><input type="number" id="mCellGround" step="0.1" placeholder="from enrich_sites.py"></div>
+      </div>
+      <span class="hint">Both together read flood and surge depth at the structure instead of the cell average; leave blank to stay on the (flagged) cell value.</span>
       <div class="field"><label>Structural archetype</label>
         <select id="mArch"><option value="">Not specified (published curve)</option><option value="lowrise_timber">Low-rise timber frame</option><option value="lowrise_masonry">Low-rise masonry</option><option value="midrise_concrete">Mid-rise concrete frame</option><option value="tower_concrete">High-rise concrete tower</option><option value="beachfront_lowrise">Beachfront low-rise</option><option value="setback_elevated">Set-back / elevated siting</option><option value="mep_basement">Critical plant in basement</option><option value="mep_elevated_plant">Critical plant elevated</option></select>
         <span class="hint">Shifts the damage curves by structural form and siting; the fields above keep refining envelope condition on top.</span>
@@ -964,6 +970,10 @@ const ARCHETYPES={"lowrise_timber":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap"
 const DEFAULT_ARCHETYPE="lowrise_timber";
 const FIRE_WARMING_UPLIFT=0.14;   // burn-probability uplift per deg C
 const TC_UPLIFT_PER_C=0.02;     // interim TC field intensity uplift per deg C
+// interim flat conditional damage ratio given fire reaches the
+// site (capped; LABELED interim); a grid carrying flame-length-
+// conditioned ratios in v25 supersedes it per site
+const FIRE_COND_INTERIM=0.35;
 
 /* ============================================================
    RtV risk engine (validated; mirrors CLIMADA emanuel_usa)
@@ -998,6 +1008,37 @@ const SCEN_LABEL=(()=>{const o={present:"Present day"};
 const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
 function emanuelMdd(v,vHalf){vHalf=vHalf||V_HALF;const vt=Math.max((v-V_THRESH)/(vHalf-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+/* Task 5: the EAD integral used to START at 1-in-10, silently assuming zero
+   loss from anything more frequent. subTenPts extends the curve to 1-in-5
+   and 1-in-2 by log-linear extrapolation of the intensity/depth vector
+   below its most frequent point (slope floored at 0 so the extension can
+   never EXCEED the 1-in-10 value, clamped at 0 below). Frequent events then
+   enter the integral through the same damage curve, which zeroes them
+   naturally below the damage threshold or freeboard: calm sites are
+   unchanged, chronically-wet ones stop hiding their frequent losses. */
+const SUB10_RPS=[5,2];
+function subTenPts(vec){
+  const v10=Math.max(vec[10]||0,0), v25=Math.max(vec[25]||0,0);
+  const b=Math.max((v25-v10)/(Math.log(25)-Math.log(10)),0);
+  return SUB10_RPS.map(rp=>({rp,v:Math.max(v10-b*(Math.log(10)-Math.log(rp)),0)}));
+}
+/* Task 4: flood/surge depth read AT THE STRUCTURE. Relief = site ground
+   minus the hazard cell's mean land ground (both from survey or
+   enrich_sites.py). Wet cells shift by the relief; DRY CELLS STAY DRY (a
+   low-spot site cannot conjure water the model did not put in the cell).
+   Without both fields the cell value stands and the site reads
+   MODELED-COARSE on the trust surface. */
+const RELIEF_CLAMP_M=10;
+function siteRelief(site){
+  const g=+site.ground_elev_m, c=+site.cell_ground_elev_m;
+  if(!isFinite(g)||!isFinite(c))return null;
+  return Math.max(-RELIEF_CLAMP_M,Math.min(g-c,RELIEF_CLAMP_M));
+}
+function reliefVec(vec,relief){
+  if(relief==null)return vec;
+  const o={};RPS.forEach(rp=>{const v=vec[rp]||0;o[rp]=v>0?Math.max(v-relief,0):0;});
+  return o;
+}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
@@ -1043,12 +1084,13 @@ function makeGridProvider(rows){
 }
 function siteEad(vec,value,opts){
   opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
-  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const v=Math.max(p.v-windRed,0);return {rp:p.rp,v,f:1/p.rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
   if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
   const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
   for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   eadFrac+=s[s.length-1].frac*s[s.length-1].f;
-  const curve=pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
+  const curve=pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
   return {eadUsd:eadFrac*value,eadFrac,curve};
 }
 function bandOf(pct){if(pct>=1.5)return"Severe";if(pct>=0.75)return"High";if(pct>=0.25)return"Moderate";if(pct>0.001)return"Low";return"Minimal";}
@@ -1214,32 +1256,46 @@ function heatIndicators(la,lo,sc){
   const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
   return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
 }
-// flood EAD, same frequency integration as siteEad (f descending, tail closed)
+// flood EAD, same frequency integration as siteEad (f descending, tail
+// closed, and Task 5's sub-1-in-10 extension included)
 function floodEad(vec,value,fb,dmgScale,cap){
   const k=dmgScale==null?1:dmgScale;
-  const pts=RPS.map(rp=>{const d=Math.max(vec[rp]||0,0);return {rp,v:d,f:1/rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const d=Math.max(p.v,0);return {rp:p.rp,v:d,f:1/p.rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
   const s=pts.slice().sort((x,y)=>y.f-x.f);let ef=0;
   for(let i=0;i<s.length-1;i++)ef+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   ef+=s[s.length-1].frac*s[s.length-1].f;
-  return {eadUsd:ef*value,eadFrac:ef,curve:pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
+  return {eadUsd:ef*value,eadFrac:ef,
+    curve:pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
 }
 function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate","High","Severe"];let i=0;while(i<t.length&&days32>t[i])i++;return n[i];}
 
-/* Increment 3: wildfire and TC-rainfall perils. MIRRORS the pipeline's
-   constants; change both sides. Migration safety: with no wfire grid and no
-   wui_class, burn probability is ZERO; rainfall has NO interim model at all
-   (a grid is required), so loading nothing reproduces the five-peril math. */
-const FIRE_MDD=0.6;                              // conditional damage ratio when a site burns
-const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual burn %, by WUI class
-/* FIRE_WARMING_UPLIFT lives in the generated 05_assumptions.js registry */
+/* Increment 3 / Task 3.5: wildfire and TC-rainfall perils. MIRRORS the
+   pipeline's constants; change both sides. Migration safety: with no wfire
+   grid and no wui_class, burn probability is ZERO; rainfall has NO interim
+   model at all (a grid is required).
+   Wildfire semantics after the structural fix: v10 is the annual
+   probability fire REACHES THE SITE POINT (USFS WRC burn probability,
+   point-sampled by the pipeline - never cell occupancy, never buffered),
+   and v25 is the conditional damage ratio given fire at the modeled flame
+   length. The retired flat FIRE_MDD=0.6 is replaced: where v25 is absent
+   (an older grid, or no CFL raster supplied) the capped INTERIM ratio
+   FIRE_COND_INTERIM applies and is LABELED interim on the trust surface. */
+const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual point-burn %, by WUI class
+/* FIRE_WARMING_UPLIFT and FIRE_COND_INTERIM live in 05_assumptions.js */
 const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;
   if(g){const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),source:"grid"};}
+    if(!(r.meta&&r.meta.outside)){
+      const v25=+r.vec[25]||0;
+      return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),
+              cond:v25>0?Math.min(v25/100,1):FIRE_COND_INTERIM,
+              source:"grid",condSource:v25>0?"grid":"interim"};}}
   const wui=String(site.wui_class||"").toLowerCase();
   const base=FIRE_WUI_PBURN[wui]||0;
-  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),source:base?"interim":"none"};
+  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),cond:FIRE_COND_INTERIM,
+          source:base?"interim":"none",condSource:"interim"};
 }
 function fireVulnMult(site){
   let m=1;
@@ -1327,8 +1383,23 @@ function siteTrust(site,hz,sc){
   const g=gridByHazard[hz];
   if(g){
     const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))
-      return {state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+    if(!(r.meta&&r.meta.outside)){
+      const t={state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+      /* the wildfire conditional-damage side stays LABELED interim until a
+         flame-length (CFL) value reaches this site (v25>0) */
+      if(hz==="wfire"&&!(+r.vec[25]>0))
+        t.note="conditional damage interim (flat "+FIRE_COND_INTERIM+", capped) until a flame-length layer is supplied";
+      /* Task 4: flood/surge depth basis - at the structure when the site
+         carries both elevation fields, else MODELED-COARSE (cell average) */
+      if(hz==="cflood"||hz==="rflood"){
+        const rel=siteRelief(site);
+        t.coarse=rel==null;
+        t.note=rel==null
+          ?"modeled-coarse: cell-average depth; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
+          :"depth at the structure (site sits "+(rel>=0?rel.toFixed(1)+" m above":Math.abs(rel).toFixed(1)+" m below")+" the cell's land ground)";
+      }
+      return t;
+    }
     const fb=trustFallback(site,hz);
     return {state:"degraded",basis:fb.basis,distKm:r.meta.dist,
       detail:"outside grid coverage ("+Math.round(r.meta.dist)+" km to the nearest cell); "+fb.detail};
@@ -1380,16 +1451,17 @@ function hzSite(site,hz,sc){
   }
   if(hz==="wfire"){
     const b=fireBurnPct(site,sc), fv=fireVulnMult(site);
-    const frac=(b.pct/100)*FIRE_MDD*fv;
-    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*FIRE_MDD*fv:0}));
-    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,burnPct:b.pct,fireSource:b.source};
+    const frac=(b.pct/100)*b.cond*fv;
+    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*b.cond*fv:0}));
+    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,
+            burnPct:b.pct,fireCond:b.cond,fireSource:b.source,fireCondSource:b.condSource};
   }
   if(hz==="prain"){
     const dvec=prainToDepth(hzVector("prain",la,lo,sc));
     const {eadUsd,eadFrac,curve}=floodEad(dvec,val,Math.max(PRAIN_FB+vuln.fbBonus,0),null,vuln.floodCap);
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec:dvec};
   }
-  const vec=hzVector(hz,la,lo,sc);
+  const vec=reliefVec(hzVector(hz,la,lo,sc),siteRelief(site));
   const {eadUsd,eadFrac,curve}=floodEad(vec,val,Math.max((hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,0),null,vuln.floodCap);
   return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
 }
@@ -1509,11 +1581,14 @@ function explainPeril(site,hz,sc){
     if(b.source==="grid")out.source=gridSrc();
     else if(b.source==="interim")out.source={kind:"interim",
       detail:String(site.wui_class||"").toLowerCase()+" WUI class: "+
-        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base burn, +"+
+        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base point-burn probability, +"+
         Math.round(FIRE_WARMING_UPLIFT*100)+"% per degree of warming"};
     else out.source={kind:"none",detail:"no wildfire grid loaded and no wui_class on the site profile, so wildfire scores zero"};
     out.inputs={kind:"burn",burnPct:r.burnPct||0};
-    out.factors=[{name:"conditional damage when a site burns",mult:FIRE_MDD}];
+    out.factors=[b.condSource==="grid"
+      ?{name:"conditional damage at the modeled flame length (WRC CFL)",mult:b.cond}
+      :{name:"conditional damage given fire reaches the site: INTERIM flat ratio, capped",mult:b.cond}];
+    if(b.condSource!=="grid")out.notes.push("the conditional damage side is an interim flat ratio ("+FIRE_COND_INTERIM+", capped) until a flame-length (CFL) layer is supplied; labeled interim here and on the trust chips");
     if(site.roof_class_a)out.factors.push({name:"Class A fire-rated roof",mult:0.6});
     const dsm=+site.defensible_space_m;
     if(isFinite(dsm)&&dsm>=30)out.factors.push({name:"defensible space "+dsm+" m",mult:0.7});
@@ -1539,6 +1614,10 @@ function explainPeril(site,hz,sc){
   out.inputs={kind:"vec",vec:r.vec};
   out.factors=[{name:hz==="cflood"?"coastal freeboard baseline":"riverine freeboard baseline",add:hz==="cflood"?FB_COAST:fbRiver()}]
     .concat(fbBonusTrail(site,vuln));
+  /* Task 4: state the depth basis - structure-adjusted or modeled-coarse */
+  const _rel=siteRelief(site);
+  if(_rel!=null)out.factors.unshift({name:"depth read at the structure (site ground vs cell land mean)",add:-_rel});
+  else out.notes.push("modeled-coarse: depth is the cell average; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read it at the structure");
   if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
   out.notes.push("concave stage-damage above freeboard, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
   return out;
@@ -1589,12 +1668,34 @@ function finSite(s,sc){
   return {value,revenue,gop,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,directByRp,biByRp,heatDays:ind.daysOver32,excess};
 }
+/* Task 5: the canonical portfolio tail. The results pack computes its curve
+   from per-EVENT losses summed across sites FIRST (wind+surge truly joint),
+   which is the honest joint tail; the app's live construction blends
+   per-site return-period losses through a correlation assumption, which is
+   an approximation of co-occurrence, not event math. When a loaded pack
+   covers the scenario, the pack's joint curve is canonical and every tail
+   display says so; without one the live blend stands, EXPLICITLY LABELED.
+   The two are never presented as equivalent: the pack curve is DIRECT
+   damage, the live blend carries direct + business interruption, and each
+   surface states its basis. */
+const TAIL_JOINT_LABEL="joint event tail (results pack, direct damage)";
+const TAIL_BOUND_LABEL="live correlation blend (direct + BI): a co-occurrence approximation, not the joint event tail";
+function canonicalTail(sc){
+  const pk=resultsPack&&resultsPack.data;
+  if(!pk||!pk.scenarios||!pk.scenarios[sc])return null;
+  const p=pk.scenarios[sc].portfolio||{};
+  const byRp={};RPS.forEach(rp=>byRp[rp]=+((p.ep_usd||{})[String(rp)])||0);
+  return {byRp,var100:byRp[100],var250:byRp[250],
+          aal:+p.direct_aal_usd||0,label:TAIL_JOINT_LABEL};
+}
 function finPortfolio(sites,sc){
   const rows=sites.map(s=>Object.assign({name:s.name,brand:s.brand,id:s.id},finSite(s,sc)));
   const sum=k=>rows.reduce((a,r)=>a+r[k],0);
   const value=sum("value"),revenue=sum("revenue");
   // diversified tail: sites rarely share one event, so blend fully-correlated
   // (sum) and independent (root-sum-square) via the correlation assumption.
+  // This is the LIVE approximation; f.jointTail carries the canonical pack
+  // curve when one is loaded (see canonicalTail above).
   const rho=finAssume.corr;
   const varByRp={};RPS.forEach(rp=>{
     let sv=0,sq=0;rows.forEach(r=>{const v=r.directByRp[rp]+r.biByRp[rp];sv+=v;sq+=v*v;});
@@ -1604,15 +1705,18 @@ function finPortfolio(sites,sc){
   return {rows,value,revenue,directEad,biEad,heatCost,totalAal,
     acuteAal:directEad+biEad,chronicAal:heatCost,
     aalPctValue:value?totalAal/value*100:0,aalPctRev:revenue?totalAal/revenue*100:0,
-    var100:varByRp[100],var250:varByRp[250],varByRp};
+    var100:varByRp[100],var250:varByRp[250],varByRp,
+    jointTail:canonicalTail(sc)};
 }
 // TCFD/ISSB-style disclosure rows: present plus the selected pathway at 2050 and 2080
 function finDisclosure(sites,pathway){
   const pw=(pathway&&pathway!=="present")?pathway:"ssp245";
   const scens=[["Present day","present"],[PATHWAY_LABEL[pw]+" \u00b7 2050",pw+"_2050"],[PATHWAY_LABEL[pw]+" \u00b7 2080",pw+"_2080"]];
   return scens.map(([label,sc])=>{const f=finPortfolio(sites,sc);
+    const v100=f.jointTail?f.jointTail.var100:f.var100;      // canonical tail
     return {label,acutePct:f.value?f.acuteAal/f.value*100:0,chronicPct:f.value?f.chronicAal/f.value*100:0,
-      totalPct:f.aalPctValue,var100Pct:f.value?f.var100/f.value*100:0};});
+      totalPct:f.aalPctValue,var100Pct:f.value?v100/f.value*100:0,
+      tailBasis:f.jointTail?"joint event tail":"blend approximation"};});
 }
 /* Aggregate across every risk: one expected-annual-cost total, decomposed two
    consistent ways (by peril and by cost type), plus the portfolio band mix.
@@ -1714,16 +1818,17 @@ function adaptedFinSite(s,sc,mods){
   const w=siteEad(scaleVec(provider()(s.latitude,s.longitude,sc).vec),value,
     {dmgMult:vuln.windMult*(mods.tcDmgMult==null?1:mods.tcDmgMult)*dmgK,vHalf:vuln.vHalf});
   directEad+=w.eadUsd; biEad+=gop*reopenShare*w.eadFrac;
-  let cvec=scaleVec(hzVector("cflood",s.latitude,s.longitude,sc));
+  const relief=siteRelief(s);
+  let cvec=scaleVec(reliefVec(hzVector("cflood",s.latitude,s.longitude,sc),relief));
   if(mods.cfDepthRed){const nv={};RPS.forEach(rp=>nv[rp]=Math.max(0,(cvec[rp]||0)-mods.cfDepthRed));cvec=nv;}
   const cf=floodEad(cvec,value,Math.max(FB_COAST+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=cf.eadUsd; biEad+=gop*reopenShare*cf.eadFrac;
-  const rf=floodEad(scaleVec(hzVector("rflood",s.latitude,s.longitude,sc)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
+  const rf=floodEad(scaleVec(reliefVec(hzVector("rflood",s.latitude,s.longitude,sc),relief)),value,Math.max(fbRiver()+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=rf.eadUsd; biEad+=gop*reopenShare*rf.eadFrac;
   const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,Math.max(PRAIN_FB+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=pv.eadUsd; biEad+=gop*reopenShare*pv.eadFrac;
   const fb2=fireBurnPct(s,sc);
-  const fFrac=Math.min((fb2.pct/100)*haz,1)*FIRE_MDD*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);
+  const fFrac=Math.min((fb2.pct/100)*haz,1)*fb2.cond*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);
   directEad+=fFrac*value; biEad+=gop*reopenShare*fFrac;
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
@@ -1789,7 +1894,11 @@ function layerStatsCalc(varByRp,acuteAal){
 function toleranceFlags(sitesArr,sc,af){
   const f=finPortfolio(sitesArr,sc);
   const portPct=f.value?f.totalAal/f.value*100:0;
-  const varPct=f.value?f.var100/f.value*100:0;
+  /* Task 5: the tail breach reads the CANONICAL tail (the pack's joint
+     event curve) when one is loaded; else the live blend, labeled */
+  const varRef=f.jointTail?f.jointTail.var100:f.var100;
+  const varPct=f.value?varRef/f.value*100:0;
+  const tailBasis=f.jointTail?"joint event tail (results pack)":"live blend approximation";
   const siteBreaches=[];
   f.rows.forEach(r=>{
     const bps=r.value?r.totalAal/r.value*1e4:0;
@@ -1813,7 +1922,7 @@ function toleranceFlags(sitesArr,sc,af){
   });
   siteBreaches.sort((a,b)=>b.bps-a.bps);
   const portBreach=portPct>tolerance.portAalPct, varBreach=varPct>tolerance.varPctValue;
-  return {portPct,varPct,portBreach,varBreach,siteBreaches,
+  return {portPct,varPct,tailBasis,portBreach,varBreach,siteBreaches,
     anyBreach:portBreach||varBreach||siteBreaches.length>0};
 }
 
@@ -2106,14 +2215,14 @@ const INFO={
     "<p>Sample values are illustrative and are not actual Travel + Leisure Co. figures.</p>"},
   ead:{t:"Expected annual damage (EAD)",b:
     "<p>The <b>average</b> loss per year from this peril, blending frequent-small and rare-large events into one number.</p>"+
-    "<p>We compute the damage at six return periods (1-in-10 up to 1-in-500 years) and take the area under the loss-versus-frequency curve. Shown as dollars per year and as a share of value.</p>",
+    "<p>We compute the damage at the six tabulated return periods (1-in-10 up to 1-in-500) and take the area under the loss-versus-frequency curve, <b>extended below 1-in-10</b>: the intensity curve is extrapolated to 1-in-5 and 1-in-2 and run through the same damage curve, so frequent events count instead of being silently floored at zero. Calm sites are unchanged (the damage threshold or freeboard zeroes the extension); chronically-exposed ones stop hiding their frequent losses. The results pack's event math never had the floor.</p>",
     s:"Vulnerability: Emanuel (2011) for wind; stage-damage curve for flood."},
   eadPct:{t:"EAD as a share of value",b:
     "<p>Expected annual damage divided by the site's insured value. A site at <code>0.50%</code> loses, on average, half a percent of its value to this peril each year.</p>"+
     "<p>It puts sites of very different sizes on the same footing.</p>"},
-  rp100:{t:"1-in-100 portfolio loss",b:
-    "<p>The loss the whole portfolio would take from a 1-in-100-year event. We add each site's 1-in-100 loss, which assumes the peril strikes every site at once.</p>"+
-    "<p>Real events rarely hit the whole portfolio together, so treat this as an <b>upper bound</b>. A CLIMADA event set gives the exact combined curve.</p>"},
+  rp100:{t:"1-in-100 loss",b:
+    "<p>Per site, this is that site's own loss at the 1-in-100-year intensity, straight from its damage curve: a physical-units figure to read beside the expected annual damage.</p>"+
+    "<p>At portfolio level we add each site's 1-in-100 loss, which assumes the peril strikes every site at once. Real events rarely hit the whole portfolio together, so the portfolio figure is an <b>upper bound, never the joint tail</b>: the results pack's per-event math carries the canonical joint curve, and every surface states which one it shows.</p>"},
   bands:{t:"Risk bands",b:
     "<p>Five plain-language bands from the annual loss ratio, so you can sort and communicate without reading every number:</p>"+
     "<p><b>Minimal</b> &middot; <b>Low</b> to 0.25% &middot; <b>Moderate</b> to 0.75% &middot; <b>High</b> to 1.5% &middot; <b>Severe</b> above 1.5%.</p>"},
@@ -2134,9 +2243,10 @@ const INFO={
     "<p>Records are grouped by <code>site_id</code> when present, otherwise by exact coordinates. A portfolio with neither draws one marker per record, exactly as before.</p>",
     s:"A display and rollup lens: it groups the same per-record figures, changing none of them."},
   wfire:{t:"Wildfire",b:
-    "<p>Wildfire uses an <b>annual burn probability</b>, not a return-period intensity: expected damage = value x burn probability x a "+(FIRE_MDD*100)+"% conditional damage ratio, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
-    "<p>The probability comes from a wfire grid when loaded, else from the site's <code>wui_class</code> (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
-    "<p><b>Honest limit:</b> at screening probabilities wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app (a burn probability below 1% never crosses the 100-year threshold). The results pack's event math carries the fire tail properly.</p>"},
+    "<p>Wildfire uses the <b>annual probability fire reaches the site point</b> (USFS Wildfire Risk to Communities burn probability, point-sampled by the pipeline at 30 m; never fire-anywhere-in-a-cell, never buffered): expected damage = value x point burn probability x a <b>conditional damage ratio given fire</b>, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
+    "<p>The conditional ratio comes from the modeled <b>flame length</b> at the site (the grid's v25) where the WRC CFL layer was supplied; otherwise an <b>interim flat ratio ("+(FIRE_COND_INTERIM*100)+"%, capped)</b> applies and is labeled interim on the trust surface and the score trace.</p>"+
+    "<p>Without a wfire grid, the site's <code>wui_class</code> gives an interim point probability (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
+    "<p><b>Honest limit:</b> at realistic point probabilities (roughly 0 to 2%/yr even in high-risk WUI) wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app. The results pack carries the fire tail as a per-site occurrence exceedance.</p>"},
   prain:{t:"TC rainfall",b:
     "<p>Event rainfall (mm at each return period, from a prain grid) becomes ponding depth through documented drainage constants: depth = max(0, rain - "+PRAIN_DRAIN_MM+" mm) x "+PRAIN_POND_COEFF+", then the flood damage curve with a "+PRAIN_FB+" m freeboard.</p>"+
     "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"},
@@ -2191,7 +2301,7 @@ const INFO={
     "<p>The bars reconcile exactly: today + growth + climate = future, and future - adaptation = residual.</p>"},
   mFire:{t:"Wildfire hardening",b:
     "<p>Defensible space and a Class A roof assembly cut the share of value lost when fire reaches the site. The slider is the burn-loss reduction; the measure applies only where the site has wildfire exposure (a wfire grid or a wui_class profile field).</p>"+
-    "<p>Wildfire uses an annual burn probability, not a return-period depth: expected damage = value x burn probability x conditional damage ratio ("+(FIRE_MDD*100)+"%), modified by roof_class_a and defensible_space_m.</p>"},
+    "<p>Wildfire uses the annual probability fire reaches the site point, not a return-period depth: expected damage = value x point burn probability x the conditional damage ratio given fire (flame-length-conditioned, or the "+(FIRE_COND_INTERIM*100)+"% interim cap), modified by roof_class_a and defensible_space_m.</p>"},
   layering:{t:"Risk layering & insurance",b:
     "<p>Standard catastrophe practice splits the loss curve into layers: <b>retain</b> frequent small losses, <b>transfer</b> the middle to insurance between an attachment and an exhaustion point, and hold the extreme tail beyond the limit.</p>"+
     "<p>Transferred expected loss is the slice of the diversified loss curve inside the layer, applied to acute expected loss so retained plus transferred always reconcile. Chronic heat cost is operational, not insurable here.</p>"},
@@ -2219,8 +2329,8 @@ const INFO={
     "<p>The part of the annual cost that is not physical damage: business interruption while a site is closed, plus heat's drag on revenue.</p>"+
     "<p>Indirect losses are often overlooked and can rival the damage bill for a hospitality portfolio.</p>"},
   var100:{t:"1-in-100 Value at Risk",b:
-    "<p>The total loss (direct damage plus business interruption) the portfolio would face from a 1-in-100-year year, the standard tail-risk yardstick.</p>"+
-    "<p>It is diversified across sites using the hazard-correlation assumption, so it is not a naive sum. A CLIMADA event set gives the exact combined tail.</p>"},
+    "<p>The tail-risk yardstick: what a 1-in-100-year year would cost the portfolio.</p>"+
+    "<p><b>Which curve you are seeing is stated on every surface.</b> When a results pack is loaded, the CANONICAL figure is its <b>joint event tail</b>: per-event losses summed across sites first (wind and surge share events), direct damage only. Without a pack, the app shows its live construction: per-site return-period losses blended through a correlation assumption (direct + business interruption) - a co-occurrence <b>approximation, never presented as the joint tail</b>.</p>"},
   var250:{t:"1-in-250 Value at Risk",b:
     "<p>The same tail measure at a rarer 1-in-250-year severity, a common capital and stress-test threshold.</p>"+
     "<p>Diversified across sites; treat as a screening estimate until a CLIMADA event set is loaded.</p>"},
@@ -2575,16 +2685,18 @@ function renderSummary(){
   host.innerHTML=
     card("Insured value",fmt$(f.value),sites.length+" site"+(sites.length>1?"s":""),"")+
     card("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high),"totalAal")+
-    card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value","var100")+
+    (f.jointTail
+      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),(f.value?f.jointTail.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_JOINT_LABEL+" · live blend incl. BI: "+fmt$(f.var100),"var100")
+      :card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_BOUND_LABEL,"var100"))+
     card("Climate premium","+"+fmt$(premium)+"/yr","by "+esc(futLabel)+", "+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"% vs today","premium");
   const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat",wfire:"Wildfire",prain:"TC rainfall"};
   const perilArr=Object.keys(agg.byPeril).map(k=>[k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
   const dom=perilArr[0], domShare=agg.total?dom[1]/agg.total*100:0;
   const highSevere=(agg.bands.High||0)+(agg.bands.Severe||0);
   document.getElementById("sumReadout").innerHTML=
-    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.var100)+"</b> ("+(f.value?f.var100/f.value*100:0).toFixed(0)+"% of value). "+
+    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.jointTail?f.jointTail.var100:f.var100)+"</b> ("+(f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(0)+"% of value; "+(f.jointTail?"joint event tail":"blend approximation, not the joint tail")+"). "+
     "<b>"+perilName[dom[0]]+"</b> is the largest driver at "+domShare.toFixed(0)+"% of the annual cost. "+
-    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.var100)+"</b>. "+
+    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.jointTail?ff.jointTail.var100:ff.var100)+"</b>. "+
     (highSevere?("<b>"+highSevere+"</b> of "+sites.length+" sites sit in High or Severe combined physical risk."):("No sites sit in High or Severe combined physical risk at this scenario."));
   document.getElementById("sumByPeril").innerHTML=barsSvg(perilArr.map(([k,v])=>({label:perilName[k],ead:v})),"ead","label","#0F3A4B");
   document.getElementById("sumByType").innerHTML=barsSvg([
@@ -2741,7 +2853,7 @@ function renderTolerance(){
     fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
     '</div><div class="kv" style="margin-top:8px">'+
     line("Portfolio expected cost",t.portPct.toFixed(2)+"%",tolerance.portAalPct+"%",t.portBreach)+
-    line("1-in-100 Value at Risk",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
+    line("1-in-100 Value at Risk ("+t.tailBasis+")",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
     '<span class="k">Sites above threshold</span><span class="v mono">'+t.siteBreaches.length+' of '+sites.length+'</span>'+
     '</div>';
   if(t.siteBreaches.length){
@@ -2792,7 +2904,7 @@ function renderOverview(scored){
     cards=[
       ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
       ["Expected annual damage",fmt$(scored.ead)+"/yr",scored.eadPct.toFixed(2)+"% of value","ead"],
-      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"co-occurrence bound","rp100"],
+      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"sum across sites at equal RP: an upper bound, not the joint tail","rp100"],
       ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
     ];
   }
@@ -2808,7 +2920,7 @@ function renderOverview(scored){
     document.getElementById("epCurve").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
   }else{
     document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
-    document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+".";
+    document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+" (site losses summed at equal RP: an upper bound; the results pack carries the joint event tail).";
     /* an all-zero curve is a data-availability story, not a chart: say why and
        what to do, instead of drawing an empty axis */
     const zero=scored.ead===0&&RPS.every(rp=>!(scored.rpLoss[rp]>0));
@@ -2866,9 +2978,12 @@ function renderOverview(scored){
 function renderSites(){
   const heat=activeHazard==="heat";
   const scored=scoreHazard(sites,activeHazard,scenario);
-  // attach all-peril ratings and a sortable severity for heat
+  // attach all-peril ratings, a sortable severity for heat, and the per-site
+  // 1-in-100 loss for this peril (Task 5: RP losses beside the EAD)
   scored.rows.forEach(r=>{ r.ratings=siteRatings(r,scenario);
-    r.sev=heat?(r.indicators?r.indicators.daysOver32:0):r.ead; });
+    r.sev=heat?(r.indicators?r.indicators.daysOver32:0):r.ead;
+    const c100=(r.curve||[]).find(x=>x.rp===100);
+    r.rp100=heat?0:(c100?c100.loss:0); });
   const key=(heat&&(sortKey==="ead"||sortKey==="eadPct"))?"sev":sortKey;
   const rows=scored.rows.slice().sort((a,b)=>{
     let va=a[key],vb=b[key];if(typeof va==="string"){return sortDir*va.localeCompare(vb);}return sortDir*((va||0)-(vb||0));
@@ -2882,8 +2997,9 @@ function renderSites(){
     '<td class="num mono">'+fmt$(r.asset_value_usd)+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.ead))+'</td>'+
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
+    '<td class="num mono">'+(heat?"&mdash;":fmt$(r.rp100))+'</td>'+
     '<td>'+ratingCell(r)+'</td></tr>').join("")
-    || '<tr><td colspan="6" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+    || '<tr><td colspan="7" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
@@ -2914,7 +3030,7 @@ function namedInsuredDetail(record){
 function siteTrustStrip(site){
   const t=siteTrustSummary(site,scenario);
   const bits=HAZARDS.map(h=>{const x=t.byHz[h.key];const on=x.state==="modeled";
-    return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")":"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
+    return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")"+(x.note?"; "+x.note:""):"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
   return '<div class="ratecell" style="margin:2px 0 10px">'+bits+
     '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'</span></div>';
 }
@@ -3035,35 +3151,36 @@ function renderAdaptation(){
   const wf=waterfallData(sites,futureSc);
   document.getElementById("wfHint").textContent="Present to "+(SCEN_LABEL[futureSc]||futureSc)+", exposure growth "+adapt.growth.toFixed(1)+"%/yr over "+wf.years+" years, minus the selected measure portfolio.";
   document.getElementById("waterfallChart").innerHTML=waterfallSvg(wf);
-  // risk layering
+  // risk layering: the canonical joint curve prices the layer when a pack
+  // is loaded; without one the live blend stands, explicitly labeled (Task 5)
   const f=finPortfolio(sites,scenario);
-  const ls=layerStatsCalc(f.varByRp,f.acuteAal);
+  const tailCurve=f.jointTail?f.jointTail.byRp:f.varByRp;
+  const tailBase=f.jointTail?f.jointTail.aal:f.acuteAal;
+  const ls=layerStatsCalc(tailCurve,tailBase);
   document.getElementById("layerStats").innerHTML=
+    '<span class="k">Priced on</span><span class="v">'+(f.jointTail?TAIL_JOINT_LABEL:TAIL_BOUND_LABEL)+'</span>'+
     '<span class="k">Attachment (1-in-'+adapt.attach+')</span><span class="v mono">'+fmt$(ls.A)+'</span>'+
     '<span class="k">Limit</span><span class="v mono">'+fmt$(ls.limit)+'</span>'+
-    '<span class="k">Transferred</span><span class="v mono">'+fmt$(ls.transferred)+'/yr ('+(ls.frac*100).toFixed(0)+'% of acute)</span>'+
+    '<span class="k">Transferred</span><span class="v mono">'+fmt$(ls.transferred)+'/yr ('+(ls.frac*100).toFixed(0)+'% of '+(f.jointTail?'direct AAL':'acute')+')</span>'+
     '<span class="k">Retained</span><span class="v mono">'+fmt$(ls.retained)+'/yr</span>'+
     '<span class="k">Indicative premium</span><span class="v mono">'+fmt$(ls.premium)+'/yr</span>'+
     '<span class="k">Cost of certainty</span><span class="v mono">'+fmt$(ls.premium-ls.transferred)+'/yr</span>'+
-    (function(){const ps=packLayerStats(scenario);return (ps&&ps.limit>0)?
-      '<span class="k">Event-set benchmark</span><span class="v mono">'+fmt$(ps.transferred)+'/yr to layer \u00b7 technical premium '+fmt$(ps.premium)+'/yr <small>CLIMADA results pack, direct damage; judge quotes against this</small></span>':'';})()+
+    (function(){if(!f.jointTail)return '';const bs=layerStatsCalc(f.varByRp,f.acuteAal);
+      return '<span class="k">Live blend (for reference)</span><span class="v mono">'+fmt$(bs.transferred)+'/yr to layer \u00b7 premium '+fmt$(bs.premium)+'/yr <small>'+TAIL_BOUND_LABEL+'</small></span>';})()+
     (function(){ // Wave 1 R2: quoted premium vs the modeled benchmark
       if(!(adapt.quote>0))return '';
       const gapM=quoteGapPct(adapt.quote,ls.premium);
-      const psq=packLayerStats(scenario);
-      const gapP=(psq&&psq.limit>0)?quoteGapPct(adapt.quote,psq.premium):null;
       const wd=g=>Math.abs(g)<=15?"broadly in line with":(g>0?g.toFixed(0)+"% above":Math.abs(g).toFixed(0)+"% below");
       const hint=gapM==null?"No modeled premium to compare at this layer.":
         gapM>15?"Grounds to negotiate, or to raise the attachment (see the retention table below).":
         gapM<-15?"Below the technical benchmark: attractive if terms and exclusions are equivalent.":
         "Within the range a benchmark can resolve.";
       return '<span class="k">Broker quote'+infoBtn("quote")+'</span><span class="v mono">'+fmt$(adapt.quote)+'/yr'+
-        (gapM!=null?': '+wd(gapM)+' the modeled technical premium':'')+
-        (gapP!=null?'; '+wd(gapP)+' the event-set benchmark':'')+
+        (gapM!=null?': '+wd(gapM)+' the '+(f.jointTail?'joint-tail':'blend')+' technical premium':'')+
         '. <small>'+hint+' The '+adapt.load.toFixed(1)+'x loading assumption is yours to set.</small></span>';
     })();
-  document.getElementById("layerChart").innerHTML=layerSvg(f.varByRp,ls);
-  document.getElementById("sweepHost").innerHTML=sweepTable(f.varByRp,f.acuteAal);
+  document.getElementById("layerChart").innerHTML=layerSvg(tailCurve,ls);
+  document.getElementById("sweepHost").innerHTML=sweepTable(tailCurve,tailBase);
   // per-site recommendations: best measure by site BCR
   const rec=sites.map(s=>{
     const sBase=adaptedFinSite(s,scenario,{}).totalAal;
@@ -3294,8 +3411,11 @@ function renderFinance(){
   kpis.innerHTML=
     card("Expected annual cost",fmt$(f.totalAal)+"/yr","range "+fmt$(u.low)+" to "+fmt$(u.high)+" \u00b7 "+f.aalPctValue.toFixed(2)+"% of value","totalAal")+
     card("Indirect share",(f.totalAal?indirect/f.totalAal*100:0).toFixed(0)+"%",fmt$(f.biEad)+" BI + "+fmt$(f.heatCost)+" heat","indirect")+
-    card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult),"var100")+
-    card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value","var250");
+    (f.jointTail
+      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var100),"var100")+
+       card("1-in-250 Value at Risk",fmt$(f.jointTail.var250),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var250),"var250")
+      :card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult)+" \u00b7 "+TAIL_BOUND_LABEL,"var100")+
+       card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value \u00b7 "+TAIL_BOUND_LABEL,"var250"));
   document.getElementById("finBreakdown").innerHTML=barsSvg([
     {label:"Direct damage",ead:f.directEad},
     {label:"Business interruption",ead:f.biEad},
@@ -3320,7 +3440,10 @@ function renderFinance(){
     '<tr><td>'+esc(r.label)+'</td><td class="num mono">'+r.acutePct.toFixed(2)+'%</td><td class="num mono">'+r.chronicPct.toFixed(2)+'%</td>'+
     '<td class="num mono">'+r.totalPct.toFixed(2)+'%</td><td class="num mono">'+r.var100Pct.toFixed(1)+'%</td></tr>').join("");
   document.getElementById("finDiscNote").innerHTML=(hazardGrid?"Figures use the loaded CLIMADA grid where available. ":"Figures use the interim model and are for exploration, not disclosure. ")+
-    "Value at Risk is diversified across sites at correlation "+finAssume.corr.toFixed(2)+"; a CLIMADA event set gives the exact combined tail. Total AAL today: central "+fmt$(u.central)+", plausible range "+fmt$(u.low)+" to "+fmt$(u.high)+".";
+    (f.jointTail
+      ?"The 1-in-100 column is the results pack's JOINT EVENT TAIL (direct damage), the canonical figure; the live correlation blend (corr "+finAssume.corr.toFixed(2)+", incl. BI) is shown only where labeled. "
+      :"Value at Risk here is the live correlation blend (corr "+finAssume.corr.toFixed(2)+"): a co-occurrence approximation, NOT the joint event tail. Load the results pack for the canonical joint figure. ")+
+    "Total AAL today: central "+fmt$(u.central)+", plausible range "+fmt$(u.low)+" to "+fmt$(u.high)+".";
   const rows=f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal);
   document.getElementById("finSiteBody").innerHTML=rows.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td><td class="num mono">'+fmt$(r.value)+'</td><td class="num mono">'+fmt$(r.revenue)+'</td>'+
@@ -3396,7 +3519,7 @@ function renderScorecard(s){
     '</div>'+
     '<div class="grid2">'+
       '<div class="panel" style="margin-bottom:14px"><h3>Trajectory</h3><div class="hint">Climate cost under '+esc(PATHWAY_LABEL[pathway])+'.</div>'+barsSvg(traj,"ead","label","#2C7DA0")+'</div>'+
-      '<div class="panel" style="margin-bottom:14px"><h3>Return-period losses</h3><div class="hint">Combined physical damage plus interruption.</div>'+
+      '<div class="panel" style="margin-bottom:14px"><h3>Return-period losses</h3><div class="hint">Combined physical damage plus interruption; peril losses added at equal return period (an upper bound, not a joint event figure).</div>'+
         '<table class="tbl"><thead><tr><th>Return period</th><th class="num">Damage</th><th class="num">Interruption</th><th class="num">Total</th></tr></thead><tbody>'+
         RPS.map(rp=>{const d=perils.reduce((a,p)=>{const c=p.curve.find(x=>x.rp===rp);return a+(c?c.loss:0);},0);
           const bi=dailyGop*maxDown*(s.asset_value_usd?d/s.asset_value_usd:0);
@@ -3538,6 +3661,11 @@ function renderHazProv(){
     let kv=
       '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario or site coverage; green needs every scenario AND every site inside coverage</small>':'')+'</span>'+
       (uncovered.length?'<span class="k">Site coverage</span><span class="v">'+uncovered.map(a=>a.label.toLowerCase()+": "+a.sitesModeled+" of "+a.nSites+" sites within coverage").join(" \u00b7 ")+' <small>sites outside a peril\u2019s coverage show degraded on that peril, never a silent zero</small></span>':'')+
+      /* Task 4: flood depth basis at a glance */
+      ((sites.length&&(gridByHazard.cflood||gridByHazard.rflood))?(function(){
+        const n=sites.filter(s=>siteRelief(s)!=null).length;
+        return '<span class="k">Flood depth basis</span><span class="v">at the structure for '+n+' of '+sites.length+' sites'+(n<sites.length?'; the rest read the cell average (modeled-coarse, flagged per site)':'')+'</span>';
+      })():'')+
       '<span class="k">File</span><span class="v mono">'+esc(hazardGrid.meta.name)+'</span>'+
       '<span class="k">Grid cells</span><span class="v mono">'+hazardGrid.meta.cells+'</span>'+
       '<span class="k">Scenarios</span><span class="v mono">'+hazardGrid.meta.scenarios.length+' keys</span>'+
@@ -3741,7 +3869,9 @@ function briefHtml(){
     '<div class="bkpis">'+
       kpi("Insured value",fmt$(f.value),"")+
       kpi("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high))+
-      kpi("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value")+
+      kpi("1-in-100 Value at Risk",fmt$(f.jointTail?f.jointTail.var100:f.var100),
+          (f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(1)+"% of value · "+
+          (f.jointTail?"joint event tail (results pack, direct damage)":"blend approximation, not the joint tail"))+
       kpi("Climate premium","+"+fmt$(ff.totalAal-pf.totalAal)+"/yr","by "+esc(SCEN_LABEL[futureSc]||futureSc))+
     '</div>'+
     '<div class="bcols"><div>'+
@@ -3831,6 +3961,10 @@ function loadSiteCsv(text){
     const wu2=String(row.get("wui_class")||"").trim().toLowerCase();if(FIRE_WUI_PBURN[wu2]!=null||wu2==="none")rec.wui_class=wu2;
     const ds2=toNum(row.get("defensible_space_m"));if(isFinite(ds2)&&ds2>=0)rec.defensible_space_m=ds2;
     const at2=String(row.get("archetype")||"").trim().toLowerCase();if(ARCHETYPES[at2]!=null)rec.archetype=at2;
+    /* Task 4: site + cell ground elevation (m above MSL; negative allowed,
+       e.g. below-sea-level ground). Both present -> depth at the structure. */
+    const ge2=toNum(row.get("ground_elev_m"));if(isFinite(ge2)&&ge2>-500&&ge2<9000)rec.ground_elev_m=ge2;
+    const ce2=toNum(row.get("cell_ground_elev_m"));if(isFinite(ce2)&&ce2>-500&&ce2<9000)rec.cell_ground_elev_m=ce2;
     const ra2=row.get("roof_class_a");if(ra2!==undefined&&String(ra2).trim()!=="")rec.roof_class_a=truthy(ra2);
     /* named-insured aggregation: who is insured (named_insured), which physical
        site they sit on (site_id groups them into one map marker), and the
@@ -3851,7 +3985,8 @@ function loadSiteCsv(text){
    location or value is invalid. Pure; defined before restore() so it is testable. */
 const FORM_OPTIONAL_FIELDS=["annual_revenue_usd","construction","year_built","defended",
   "roof_type","roof_year","opening_protection","first_floor_elev_m","equipment_elevated",
-  "wui_class","defensible_space_m","archetype","named_insured","site_id","site_name"];
+  "wui_class","defensible_space_m","archetype","ground_elev_m","cell_ground_elev_m",
+  "named_insured","site_id","site_name"];
 function siteRecordFromFields(raw){
   raw=raw||{};
   const lat=toNum(raw.latitude),lon=toNum(raw.longitude),val=toNum(raw.asset_value_usd);
@@ -3870,6 +4005,8 @@ function siteRecordFromFields(raw){
   const wu=String(raw.wui_class||"").trim().toLowerCase(); if(FIRE_WUI_PBURN[wu]!=null||wu==="none")rec.wui_class=wu;
   const ds=toNum(raw.defensible_space_m); if(isFinite(ds)&&ds>=0)rec.defensible_space_m=ds;
   const at=String(raw.archetype||"").trim().toLowerCase(); if(ARCHETYPES[at]!=null)rec.archetype=at;
+  const ge=toNum(raw.ground_elev_m); if(isFinite(ge)&&ge>-500&&ge<9000)rec.ground_elev_m=ge;
+  const ce=toNum(raw.cell_ground_elev_m); if(isFinite(ce)&&ce>-500&&ce<9000)rec.cell_ground_elev_m=ce;
   const ni=String(raw.named_insured||"").trim(); if(ni)rec.named_insured=ni.slice(0,80);
   const sid=String(raw.site_id||"").trim(); if(sid)rec.site_id=sid.slice(0,80);
   const snm=String(raw.site_name||"").trim(); if(snm)rec.site_name=snm.slice(0,120);
@@ -4092,6 +4229,7 @@ function openForm(mode,site){
   g("mEquipElev").checked=!!s.equipment_elevated;
   g("mWui").value=s.wui_class||""; set("mDefSpace",s.defensible_space_m);
   g("mArch").value=s.archetype||"";
+  set("mGround",s.ground_elev_m); set("mCellGround",s.cell_ground_elev_m);
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
@@ -4107,6 +4245,7 @@ function submitForm(){
     roof_year:g("mRoofYear").value,opening_protection:g("mOpening").value,first_floor_elev_m:g("mFfe").value,
     equipment_elevated:g("mEquipElev").checked,wui_class:g("mWui").value,defensible_space_m:g("mDefSpace").value,
     archetype:g("mArch").value,
+    ground_elev_m:g("mGround").value,cell_ground_elev_m:g("mCellGround").value,
     named_insured:g("mNamedInsured").value,site_id:g("mSiteId").value,site_name:g("mSiteName").value};
   const rec=siteRecordFromFields(raw);
   if(!rec){toast("Enter a valid location (latitude -90..90, longitude -180..180) and a non-negative asset value.");return;}
@@ -4208,11 +4347,11 @@ function downloadTemplate(){
   // The first two rows share a site_id (CAMPUS-BEACH), so they aggregate into a
   // single site on the map with an HOA / operating-company named-insured breakout.
   const csv=
-    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,archetype,named_insured,site_id,site_name\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,beachfront_lowrise,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,tower_concrete,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,lowrise_timber,,,\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,,\n";
+    "name,brand,latitude,longitude,asset_value_usd,country,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a,archetype,ground_elev_m,cell_ground_elev_m,named_insured,site_id,site_name\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,,beachfront_lowrise,2.6,1.6,HOA,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,12000000,USA,,masonry,2002,false,metal,2018,impact,1.2,true,,,,tower_concrete,2.6,1.6,Operating company,CAMPUS-BEACH,Example Beachfront Resort\n"+
+    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,,frame,2005,,shingle,2005,none,,,intermix,10,false,lowrise_timber,,,,,\n"+
+    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,18000000,engineered,2011,true,,,,,,,,,,,,,,\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

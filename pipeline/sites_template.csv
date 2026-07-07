@@ -1,4 +1,4 @@
-name,brand,latitude,longitude,asset_value_usd,country,construction,year_built,defended,annual_revenue_usd,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,stories,keys,renovation_year,wui_class,defensible_space_m,roof_class_a,fema_zone,named_insured,site_id,site_name
-Example Beachfront Resort,BrandA,26.1224,-81.8031,180000000,USA,engineered,2012,true,,metal,2019,impact,1.4,true,8,320,2028,,,,AE,HOA,CAMPUS-BEACH,Example Beachfront Resort
-Example Beachfront Resort,BrandA,26.1224,-81.8031,45000000,USA,masonry,2012,true,,metal,2019,impact,1.4,true,3,,2028,,,,AE,TNL,CAMPUS-BEACH,Example Beachfront Resort
-Example Island Resort,BrandB,18.3358,-64.9312,95000000,VIR,masonry,1998,false,40000000,tile,2010,partial,0.6,false,3,140,2027,,,,VE,HOA,CAMPUS-ISLAND,Example Island Resort
+name,brand,latitude,longitude,asset_value_usd,country,construction,year_built,defended,annual_revenue_usd,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,stories,keys,renovation_year,wui_class,defensible_space_m,roof_class_a,archetype,ground_elev_m,cell_ground_elev_m,fema_zone,named_insured,site_id,site_name
+Example Beachfront Resort,BrandA,26.1224,-81.8031,180000000,USA,engineered,2012,true,,metal,2019,impact,1.4,true,8,320,2028,,,,tower_concrete,2.6,1.6,AE,HOA,CAMPUS-BEACH,Example Beachfront Resort
+Example Beachfront Resort,BrandA,26.1224,-81.8031,45000000,USA,masonry,2012,true,,metal,2019,impact,1.4,true,3,,2028,,,,beachfront_lowrise,2.6,1.6,AE,TNL,CAMPUS-BEACH,Example Beachfront Resort
+Example Island Resort,BrandB,18.3358,-64.9312,95000000,VIR,masonry,1998,false,40000000,tile,2010,partial,0.6,false,3,140,2027,,,,lowrise_masonry,,,VE,HOA,CAMPUS-ISLAND,Example Island Resort

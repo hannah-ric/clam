@@ -5,28 +5,64 @@
 const V_THRESH=25.7, V_HALF=74.7;
 const RPS=[10,25,50,100,250,500];
 // Scenario keys are "present" or "<pathway>_<horizon>" on the CMIP6 SSP-RCP
-// framework. Warming (deg C above present) and sea-level rise (m) are
-// screening-grade central estimates consistent with IPCC AR6 ranges.
+// framework. The WARMING and SLR_REGIONS tables are GENERATED into
+// 05_assumptions.js from pipeline/assumptions.py (the single sourced
+// registry: AR6 central + explicit conservative delta, with units, baseline
+// period, and citation per entry), so app and pipeline can never disagree.
 const PATHWAYS=["ssp126","ssp245","ssp585"];
 const HORIZONS=[2030,2050,2080];
 const PATHWAY_LABEL={present:"Present day",ssp126:"SSP1-2.6",ssp245:"SSP2-4.5",ssp585:"SSP5-8.5"};
-const WARMING={present:0,
-  ssp126_2030:0.6,ssp126_2050:1.0,ssp126_2080:1.3,
-  ssp245_2030:0.7,ssp245_2050:1.4,ssp245_2080:2.3,
-  ssp585_2030:0.8,ssp585_2050:2.0,ssp585_2080:3.6};
-const SLR={present:0,
-  ssp126_2030:0.09,ssp126_2050:0.19,ssp126_2080:0.34,
-  ssp245_2030:0.10,ssp245_2050:0.22,ssp245_2080:0.44,
-  ssp585_2030:0.11,ssp585_2050:0.27,ssp585_2080:0.62};
 function warming(sc){return WARMING[sc]||0;}
-function slrOf(sc){return SLR[sc]||0;}
+/* sea-level rise is REGIONAL (Gulf subsidence most of all): with a location,
+   the first matching region box's table applies; without one, or outside
+   every box, the global-mean table (the legacy single table) applies. */
+function slrRegionOf(la,lo){
+  for(const [name,la0,la1,lo0,lo1] of SLR_REGION_BOXES)
+    if(la>=la0&&la<=la1&&lo>=lo0&&lo<=lo1)return name;
+  return "global_mean";
+}
+function slrOf(sc,la,lo){
+  const t=(la!=null&&lo!=null&&SLR_REGIONS[slrRegionOf(la,lo)])||SLR;
+  return t[sc]||0;
+}
 const SCEN_KEYS=["present"].concat([].concat(...HORIZONS.map(h=>PATHWAYS.map(p=>p+"_"+h))));
 const SCEN_LABEL=(()=>{const o={present:"Present day"};
   for(const p of PATHWAYS)for(const h of HORIZONS)o[p+"_"+h]=PATHWAY_LABEL[p]+" \u00b7 "+h;return o;})();
-// Wind intensity uplift for the interim TC field: ~2% per deg C of warming.
-const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+0.02*warming(k);return o;})();
+// Wind intensity uplift for the interim TC field, per deg C of warming.
+const SCEN_UPLIFT=(()=>{const o={};for(const k of SCEN_KEYS)o[k]=1+TC_UPLIFT_PER_C*warming(k);return o;})();
 
-function emanuelMdd(v){const vt=Math.max((v-V_THRESH)/(V_HALF-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+function emanuelMdd(v,vHalf){vHalf=vHalf||V_HALF;const vt=Math.max((v-V_THRESH)/(vHalf-V_THRESH),0);const c=vt*vt*vt;return c/(1+c);}
+/* Task 5: the EAD integral used to START at 1-in-10, silently assuming zero
+   loss from anything more frequent. subTenPts extends the curve to 1-in-5
+   and 1-in-2 by log-linear extrapolation of the intensity/depth vector
+   below its most frequent point (slope floored at 0 so the extension can
+   never EXCEED the 1-in-10 value, clamped at 0 below). Frequent events then
+   enter the integral through the same damage curve, which zeroes them
+   naturally below the damage threshold or freeboard: calm sites are
+   unchanged, chronically-wet ones stop hiding their frequent losses. */
+const SUB10_RPS=[5,2];
+function subTenPts(vec){
+  const v10=Math.max(vec[10]||0,0), v25=Math.max(vec[25]||0,0);
+  const b=Math.max((v25-v10)/(Math.log(25)-Math.log(10)),0);
+  return SUB10_RPS.map(rp=>({rp,v:Math.max(v10-b*(Math.log(10)-Math.log(rp)),0)}));
+}
+/* Task 4: flood/surge depth read AT THE STRUCTURE. Relief = site ground
+   minus the hazard cell's mean land ground (both from survey or
+   enrich_sites.py). Wet cells shift by the relief; DRY CELLS STAY DRY (a
+   low-spot site cannot conjure water the model did not put in the cell).
+   Without both fields the cell value stands and the site reads
+   MODELED-COARSE on the trust surface. */
+const RELIEF_CLAMP_M=10;
+function siteRelief(site){
+  const g=+site.ground_elev_m, c=+site.cell_ground_elev_m;
+  if(!isFinite(g)||!isFinite(c))return null;
+  return Math.max(-RELIEF_CLAMP_M,Math.min(g-c,RELIEF_CLAMP_M));
+}
+function reliefVec(vec,relief){
+  if(relief==null)return vec;
+  const o={};RPS.forEach(rp=>{const v=vec[rp]||0;o[rp]=v>0?Math.max(v-relief,0):0;});
+  return o;
+}
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
@@ -72,12 +108,13 @@ function makeGridProvider(rows){
 }
 function siteEad(vec,value,opts){
   opts=opts||{};const windRed=opts.windRed||0;const dmgMult=opts.dmgMult==null?1:opts.dmgMult;
-  const pts=RPS.map(rp=>{const v=Math.max((vec[rp]||0)-windRed,0);return {rp,v,f:1/rp,frac:Math.min(emanuelMdd(v)*dmgMult,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const v=Math.max(p.v-windRed,0);return {rp:p.rp,v,f:1/p.rp,frac:Math.min(emanuelMdd(v,opts.vHalf)*dmgMult,1)};});
   if(opts.transfer){for(const p of pts){if(p.rp>=opts.transfer.attachRp&&p.rp<=opts.transfer.exhaustRp)p.frac=0;}}
   const s=pts.slice().sort((x,y)=>y.f-x.f);let eadFrac=0;
   for(let i=0;i<s.length-1;i++)eadFrac+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   eadFrac+=s[s.length-1].frac*s[s.length-1].f;
-  const curve=pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
+  const curve=pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}));
   return {eadUsd:eadFrac*value,eadFrac,curve};
 }
 function bandOf(pct){if(pct>=1.5)return"Severe";if(pct>=0.75)return"High";if(pct>=0.25)return"Moderate";if(pct>0.001)return"Low";return"Minimal";}
@@ -213,7 +250,7 @@ function coastalFloodVector(la,lo,sc){
   const near=Math.exp(-coastKm(la,lo)/40);
   const surge=(interimVector(la,lo,"present").vec[100])/74.7;
   const base100=1.8*near*(0.5+0.5*surge);
-  const rise=slrOf(sc)*near;                                   // SLR lifts the curve
+  const rise=slrOf(sc,la,lo)*near;                     // regional SLR lifts the curve
   const shape={10:0.35,25:0.55,50:0.78,100:1.0,250:1.25,500:1.45};
   const vec={};for(const rp of RPS)vec[rp]=Math.max(0,base100*shape[rp]+rise);return vec;
 }
@@ -243,32 +280,46 @@ function heatIndicators(la,lo,sc){
   const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
   return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
 }
-// flood EAD, same frequency integration as siteEad (f descending, tail closed)
+// flood EAD, same frequency integration as siteEad (f descending, tail
+// closed, and Task 5's sub-1-in-10 extension included)
 function floodEad(vec,value,fb,dmgScale,cap){
   const k=dmgScale==null?1:dmgScale;
-  const pts=RPS.map(rp=>{const d=Math.max(vec[rp]||0,0);return {rp,v:d,f:1/rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
+  const pts=subTenPts(vec).concat(RPS.map(rp=>({rp,v:vec[rp]||0})))
+    .map(p=>{const d=Math.max(p.v,0);return {rp:p.rp,v:d,f:1/p.rp,frac:Math.min(floodMdd(d,fb,cap)*k,1)};});
   const s=pts.slice().sort((x,y)=>y.f-x.f);let ef=0;
   for(let i=0;i<s.length-1;i++)ef+=0.5*(s[i].frac+s[i+1].frac)*(s[i].f-s[i+1].f);
   ef+=s[s.length-1].frac*s[s.length-1].f;
-  return {eadUsd:ef*value,eadFrac:ef,curve:pts.map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
+  return {eadUsd:ef*value,eadFrac:ef,
+    curve:pts.filter(p=>RPS.indexOf(p.rp)>=0).map(p=>({rp:p.rp,v:p.v,loss:p.frac*value}))};
 }
 function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate","High","Severe"];let i=0;while(i<t.length&&days32>t[i])i++;return n[i];}
 
-/* Increment 3: wildfire and TC-rainfall perils. MIRRORS the pipeline's
-   constants; change both sides. Migration safety: with no wfire grid and no
-   wui_class, burn probability is ZERO; rainfall has NO interim model at all
-   (a grid is required), so loading nothing reproduces the five-peril math. */
-const FIRE_MDD=0.6;                              // conditional damage ratio when a site burns
-const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual burn %, by WUI class
-const FIRE_WARMING_UPLIFT=0.14;                  // burn-probability uplift per deg C
+/* Increment 3 / Task 3.5: wildfire and TC-rainfall perils. MIRRORS the
+   pipeline's constants; change both sides. Migration safety: with no wfire
+   grid and no wui_class, burn probability is ZERO; rainfall has NO interim
+   model at all (a grid is required).
+   Wildfire semantics after the structural fix: v10 is the annual
+   probability fire REACHES THE SITE POINT (USFS WRC burn probability,
+   point-sampled by the pipeline - never cell occupancy, never buffered),
+   and v25 is the conditional damage ratio given fire at the modeled flame
+   length. The retired flat FIRE_MDD=0.6 is replaced: where v25 is absent
+   (an older grid, or no CFL raster supplied) the capped INTERIM ratio
+   FIRE_COND_INTERIM applies and is LABELED interim on the trust surface. */
+const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual point-burn %, by WUI class
+/* FIRE_WARMING_UPLIFT and FIRE_COND_INTERIM live in 05_assumptions.js */
 const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;
   if(g){const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),source:"grid"};}
+    if(!(r.meta&&r.meta.outside)){
+      const v25=+r.vec[25]||0;
+      return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),
+              cond:v25>0?Math.min(v25/100,1):FIRE_COND_INTERIM,
+              source:"grid",condSource:v25>0?"grid":"interim"};}}
   const wui=String(site.wui_class||"").toLowerCase();
   const base=FIRE_WUI_PBURN[wui]||0;
-  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),source:base?"interim":"none"};
+  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),cond:FIRE_COND_INTERIM,
+          source:base?"interim":"none",condSource:"interim"};
 }
 function fireVulnMult(site){
   let m=1;
@@ -293,6 +344,10 @@ const ROOF_TYPE_FACTOR={shingle:1.1,metal:0.85,tile:0.95,membrane:0.95};
 const ROOF_AGE_REF_YEAR=2026;
 const OPENING_FACTOR={impact:0.85,partial:0.95,none:1.05};
 const FIRST_FLOOR_MAX_M=3.0, EQUIP_ELEV_FLOOD_CAP=0.5, FLOOD_CAP_DEFAULT=0.75;
+function archOf(site){
+  const key=String((site&&site.archetype)||"").toLowerCase();
+  return ARCHETYPES[key]||ARCHETYPES[DEFAULT_ARCHETYPE];
+}
 function vulnOf(site){
   let w=1;
   const c=String(site.construction||"").toLowerCase();
@@ -310,9 +365,18 @@ function vulnOf(site){
     if(isFinite(y)&&y>1800){ if(y<1995)w*=1.15; else if(y>=2010)w*=0.9; }
   }
   const ffe=+site.first_floor_elev_m;
-  const fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  let fbBonus=(isFinite(ffe)&&ffe>=0)?Math.min(ffe,FIRST_FLOOR_MAX_M):(site.defended?0.5:0);
+  /* archetype layer (schema v2): the archetype moves the CURVES (wind
+     half-damage speed, flood freeboard, flood cap); the factor table above
+     stays the mapping layer for envelope condition on top. The default
+     archetype is neutral, so profiles without one reproduce today's numbers
+     exactly. Site-measured equipment_elevated still caps DOWNWARD. */
+  const a=archOf(site);
+  fbBonus+=a.fb_add_m;
+  const capP=site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT;
+  const cap=a.flood_cap==null?capP:(site.equipment_elevated?Math.min(a.flood_cap,capP):a.flood_cap);
   return {windMult:Math.min(Math.max(w,0.5),1.6), fbBonus,
-          floodCap:site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT};
+          floodCap:cap, vHalf:V_HALF*a.v_half_mult};
 }
 
 /* ============================================================
@@ -343,8 +407,23 @@ function siteTrust(site,hz,sc){
   const g=gridByHazard[hz];
   if(g){
     const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))
-      return {state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+    if(!(r.meta&&r.meta.outside)){
+      const t={state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+      /* the wildfire conditional-damage side stays LABELED interim until a
+         flame-length (CFL) value reaches this site (v25>0) */
+      if(hz==="wfire"&&!(+r.vec[25]>0))
+        t.note="conditional damage interim (flat "+FIRE_COND_INTERIM+", capped) until a flame-length layer is supplied";
+      /* Task 4: flood/surge depth basis - at the structure when the site
+         carries both elevation fields, else MODELED-COARSE (cell average) */
+      if(hz==="cflood"||hz==="rflood"){
+        const rel=siteRelief(site);
+        t.coarse=rel==null;
+        t.note=rel==null
+          ?"modeled-coarse: cell-average depth; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
+          :"depth at the structure (site sits "+(rel>=0?rel.toFixed(1)+" m above":Math.abs(rel).toFixed(1)+" m below")+" the cell's land ground)";
+      }
+      return t;
+    }
     const fb=trustFallback(site,hz);
     return {state:"degraded",basis:fb.basis,distKm:r.meta.dist,
       detail:"outside grid coverage ("+Math.round(r.meta.dist)+" km to the nearest cell); "+fb.detail};
@@ -391,22 +470,23 @@ function hzSite(site,hz,sc){
   }
   if(hz==="tc"){
     const {vec,meta}=provider()(la,lo,sc);
-    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult});
+    const {eadUsd,eadFrac,curve}=siteEad(vec,val,{dmgMult:vuln.windMult,vHalf:vuln.vHalf});
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec,hazardMeta:meta};
   }
   if(hz==="wfire"){
     const b=fireBurnPct(site,sc), fv=fireVulnMult(site);
-    const frac=(b.pct/100)*FIRE_MDD*fv;
-    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*FIRE_MDD*fv:0}));
-    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,burnPct:b.pct,fireSource:b.source};
+    const frac=(b.pct/100)*b.cond*fv;
+    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*b.cond*fv:0}));
+    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,
+            burnPct:b.pct,fireCond:b.cond,fireSource:b.source,fireCondSource:b.condSource};
   }
   if(hz==="prain"){
     const dvec=prainToDepth(hzVector("prain",la,lo,sc));
-    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,PRAIN_FB+vuln.fbBonus,null,vuln.floodCap);
+    const {eadUsd,eadFrac,curve}=floodEad(dvec,val,Math.max(PRAIN_FB+vuln.fbBonus,0),null,vuln.floodCap);
     return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec:dvec};
   }
-  const vec=hzVector(hz,la,lo,sc);
-  const {eadUsd,eadFrac,curve}=floodEad(vec,val,(hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,null,vuln.floodCap);
+  const vec=reliefVec(hzVector(hz,la,lo,sc),siteRelief(site));
+  const {eadUsd,eadFrac,curve}=floodEad(vec,val,Math.max((hz==="cflood"?FB_COAST:fbRiver())+vuln.fbBonus,0),null,vuln.floodCap);
   return {ead:eadUsd,eadPct:eadFrac*100,band:bandOf(eadFrac*100),curve,vec};
 }
 function scoreHazard(sites,hz,sc){
@@ -476,10 +556,22 @@ function windFactorTrail(site){
   return t;
 }
 function fbBonusTrail(site,vuln){
-  if(!(vuln.fbBonus>0))return [];
-  const ffe=+site.first_floor_elev_m;
-  const fromFfe=isFinite(ffe)&&ffe>=0;
-  return [{name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:vuln.fbBonus}];
+  const t=[];
+  const a=archOf(site);
+  const base=vuln.fbBonus-a.fb_add_m;      // the profile share (ffe/defended)
+  if(base>0){
+    const ffe=+site.first_floor_elev_m;
+    const fromFfe=isFinite(ffe)&&ffe>=0;
+    t.push({name:fromFfe?("first-floor elevation "+Math.min(ffe,FIRST_FLOOR_MAX_M).toFixed(1)+" m"):"defended site",add:base});
+  }
+  if(a.fb_add_m)t.push({name:"archetype: "+a.label,add:a.fb_add_m});
+  return t;
+}
+/* wind-side archetype entry for the trace: the archetype moves the CURVE
+   (half-damage speed), not the multiplier, so it gets its own line. */
+function archWindTrail(site){
+  const a=archOf(site);
+  return a.v_half_mult===1?[]:[{name:"archetype: "+a.label+" (half-damage speed x"+a.v_half_mult.toFixed(2)+")",mult:1}];
 }
 function explainPeril(site,hz,sc){
   const la=site.latitude,lo=site.longitude;
@@ -503,9 +595,9 @@ function explainPeril(site,hz,sc){
     out.source=meta.source==="grid"?{kind:"grid",dataset:ds,distKm:meta.dist}
       :{kind:"interim",detail:"regional wind anchors, inverse-distance weighted"};
     out.inputs={kind:"vec",vec:r.vec};
-    out.factors=windFactorTrail(site);
+    out.factors=windFactorTrail(site).concat(archWindTrail(site));
     out.windMult=vuln.windMult;
-    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+V_HALF+" m/s");
+    out.notes.push("Emanuel (2011) cubic damage: threshold "+V_THRESH+" m/s, half damage at "+vuln.vHalf.toFixed(1)+" m/s"+(vuln.vHalf!==V_HALF?" (archetype-shifted from "+V_HALF+")":""));
     return out;
   }
   if(hz==="wfire"){
@@ -513,11 +605,14 @@ function explainPeril(site,hz,sc){
     if(b.source==="grid")out.source=gridSrc();
     else if(b.source==="interim")out.source={kind:"interim",
       detail:String(site.wui_class||"").toLowerCase()+" WUI class: "+
-        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base burn, +"+
+        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base point-burn probability, +"+
         Math.round(FIRE_WARMING_UPLIFT*100)+"% per degree of warming"};
     else out.source={kind:"none",detail:"no wildfire grid loaded and no wui_class on the site profile, so wildfire scores zero"};
     out.inputs={kind:"burn",burnPct:r.burnPct||0};
-    out.factors=[{name:"conditional damage when a site burns",mult:FIRE_MDD}];
+    out.factors=[b.condSource==="grid"
+      ?{name:"conditional damage at the modeled flame length (WRC CFL)",mult:b.cond}
+      :{name:"conditional damage given fire reaches the site: INTERIM flat ratio, capped",mult:b.cond}];
+    if(b.condSource!=="grid")out.notes.push("the conditional damage side is an interim flat ratio ("+FIRE_COND_INTERIM+", capped) until a flame-length (CFL) layer is supplied; labeled interim here and on the trust chips");
     if(site.roof_class_a)out.factors.push({name:"Class A fire-rated roof",mult:0.6});
     const dsm=+site.defensible_space_m;
     if(isFinite(dsm)&&dsm>=30)out.factors.push({name:"defensible space "+dsm+" m",mult:0.7});
@@ -543,6 +638,10 @@ function explainPeril(site,hz,sc){
   out.inputs={kind:"vec",vec:r.vec};
   out.factors=[{name:hz==="cflood"?"coastal freeboard baseline":"riverine freeboard baseline",add:hz==="cflood"?FB_COAST:fbRiver()}]
     .concat(fbBonusTrail(site,vuln));
+  /* Task 4: state the depth basis - structure-adjusted or modeled-coarse */
+  const _rel=siteRelief(site);
+  if(_rel!=null)out.factors.unshift({name:"depth read at the structure (site ground vs cell land mean)",add:-_rel});
+  else out.notes.push("modeled-coarse: depth is the cell average; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read it at the structure");
   if(site.equipment_elevated)out.factors.push({name:"equipment elevated",cap:EQUIP_ELEV_FLOOD_CAP});
   out.notes.push("concave stage-damage above freeboard, capped at "+Math.round((site.equipment_elevated?EQUIP_ELEV_FLOOD_CAP:FLOOD_CAP_DEFAULT)*100)+"% of value");
   return out;

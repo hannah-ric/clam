@@ -29,9 +29,10 @@ Scope, stated honestly
     - river flood is an independent catalog; its exceedance losses add to
       the wind+surge curve at equal return periods (comonotonic, an upper
       bound on that pairing only).
-    - TC rainfall and wildfire are independent catalogs (their own track
-      set and fire seasons); both add comonotonically, and wildfire's
-      warming signal scales the fire FREQUENCY, not the per-event loss.
+    - TC rainfall is an independent catalog per basin domain; wildfire is a
+      per-site occurrence process on the WRC point burn probability (Task
+      3.5). Both add comonotonically, and wildfire's warming signal scales
+      the arrival probability, not the loss given fire.
     - countries are independent catalogs; combined the same comonotonic way.
 * Impact arithmetic: per-event site losses = value x damage_fraction(nearest
   centroid intensity), exceedance from event losses and frequencies. For
@@ -80,6 +81,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import refresh_hazard as rh
 import refresh_prain as rpn
 import refresh_wildfire as rw
@@ -98,8 +100,9 @@ CONSTR_FACTOR = {"frame": 1.3, "masonry": 1.0, "engineered": 0.75}
 MAX_SNAP_KM = 200.0                          # the app's nearest-cell limit
 SNAP_TOL_KM = 10.0                           # cell-scale slack for water layers
 
-DISCOUNT_RATE = 0.03                         # BCR appraisal settings
-HORIZON_YEARS = 25                           # (recorded in the pack)
+# BCR appraisal settings (recorded in the pack): the ONE convention shared
+# with the app's slider defaults, from the single sourced registry
+DISCOUNT_RATE, HORIZON_YEARS = assumptions.appraisal_defaults()
 
 # the app's hazard-touching measures at their default slider settings
 MEASURES = [
@@ -119,8 +122,11 @@ MC_FACTORS = [               # jointly sampled; bounds mirror the app's tornado
 ]
 UNCERTAINTY_SCENARIOS = ["present", "ssp245_2050", "ssp585_2080"]
 
-# increment 3 damage constants. MIRROR the app's v1.12 values; change both.
-FIRE_MDD = 0.6                    # conditional damage ratio when a site burns
+# increment 3 damage constants. MIRROR the app's values; change both.
+# The flat FIRE_MDD=0.6 is RETIRED (Task 3.5): the conditional damage ratio
+# now comes per site from the WRC flame-length layer (or the registry's
+# capped interim ratio), carried in prep["wfire"]["cond"].
+FIRE_COND_INTERIM = assumptions.scalar("fire_cond_interim")
 FIRE_ROOF_A = 0.6                 # fire vulnerability factor: Class A roof
 FIRE_DEFENSIBLE = 0.7             # fire vulnerability factor: space >= 30 m
 PRAIN_DRAIN_MM = 150.0            # site drainage capacity per event
@@ -236,6 +242,62 @@ def vuln_v2(construction=None, year_built=None, defended=False,
     return wind_mult, fb_bonus, cap
 
 
+RELIEF_CLAMP_M = 10.0     # sanity clamp on site-vs-cell ground relief (m)
+
+
+def site_relief(ground_elev_m, cell_ground_elev_m):
+    """(relief m, has_elevation mask) per site. Relief = site ground minus
+    the hazard cell's mean ground: the number that converts depth AT THE
+    CELL into depth AT THE STRUCTURE. Both fields must be present (survey or
+    enrich_sites.py --dem); otherwise relief is 0 and the site is flagged
+    modeled-coarse rather than silently treated as refined."""
+    ge = pd.to_numeric(pd.Series(ground_elev_m), errors="coerce").to_numpy(float)
+    ce = pd.to_numeric(pd.Series(cell_ground_elev_m), errors="coerce").to_numpy(float)
+    has = np.isfinite(ge) & np.isfinite(ce)
+    relief = np.where(has, np.clip(ge - ce, -RELIEF_CLAMP_M, RELIEF_CLAMP_M), 0.0)
+    return relief, has
+
+
+def depth_at_structure(depth, relief):
+    """Adjust cell water depth to the structure's ground: wet cells shift by
+    the site's relief (positive = site sits above the cell mean = shallower;
+    negative = a low spot = deeper). DRY CELLS STAY DRY: a below-cell-mean
+    site cannot conjure water the flood model did not put in the cell."""
+    d = np.asarray(depth, float)
+    r = np.asarray(relief, float)
+    return np.where(d > 0, np.maximum(d - r, 0.0), 0.0)
+
+
+def archetype_arrays(rows):
+    """(v_half, fb_add_m, cap_override) per-site arrays from the archetype
+    field (profile schema v2). The archetype acts on the CURVES: v_half
+    shifts the wind curve, fb_add_m moves the effective flood freeboard,
+    cap_override replaces the flood damage cap (site-measured
+    equipment_elevated still wins downward). Absent/unknown archetypes are
+    the default (the published curve): existing profiles reproduce today's
+    numbers exactly."""
+    arch = [assumptions.archetype_of(r.get("archetype")) for r in rows]
+    v_half = np.array([V_HALF * a["v_half_mult"] for a in arch])
+    fb_add = np.array([a["fb_add_m"] for a in arch])
+    cap_o = np.array([np.nan if a["flood_cap"] is None else a["flood_cap"]
+                      for a in arch])
+    return v_half, fb_add, cap_o
+
+
+def compose_flood_cap(cap_profile, cap_override, equipment_elevated):
+    """Effective flood MDD cap: the profile's own cap when the archetype is
+    silent; else the archetype's cap, except that a site-measured elevated
+    plant (equipment_elevated) still caps DOWNWARD (site data beats
+    archetype)."""
+    cap_profile = np.asarray(cap_profile, float)
+    cap_override = np.asarray(cap_override, float)
+    ee = np.asarray(equipment_elevated, bool)
+    out = np.where(np.isnan(cap_override), cap_profile,
+                   np.where(ee, np.minimum(cap_override, cap_profile),
+                            cap_override))
+    return out
+
+
 def fire_vuln_of(roof_class_a=False, defensible_space_m=None):
     """Fire vulnerability multiplier from the wildfire profile fields,
     the app's fireVulnMult mirrored."""
@@ -338,6 +400,46 @@ def site_ead(losses, freq):
     return (np.asarray(losses, float) * np.asarray(freq, float)[:, None]).sum(axis=0)
 
 
+SITE_RPS = (100, 250)      # per-site return periods surfaced beside the EAD
+
+
+def site_rp_losses(losses, freq, rps=SITE_RPS):
+    """{rp: per-site loss} at the requested return periods: each site's OWN
+    exceedance over the catalog's events. Step lookup (the loss of the
+    least-severe event at which the site's cumulative event frequency
+    reaches 1/RP; zero when it never does), vectorized across sites; the
+    step convention is recorded in the pack meta."""
+    L = np.asarray(losses, float)
+    f = np.asarray(freq, float)
+    keep = f > 0
+    L, f = L[keep], f[keep]
+    n = L.shape[1] if L.ndim == 2 else 0
+    if not L.size:
+        return {rp: np.zeros(n) for rp in rps}
+    order = np.argsort(-L, axis=0, kind="stable")
+    l_desc = np.take_along_axis(L, order, axis=0)
+    cum = np.cumsum(f[order], axis=0)
+    out = {}
+    for rp in rps:
+        hit = cum >= (1.0 / rp) - 1e-12
+        first = hit.argmax(axis=0)
+        vals = np.take_along_axis(l_desc, first[None, :], axis=0)[0]
+        out[rp] = np.where(hit.any(axis=0), vals, 0.0)
+    return out
+
+
+def _rp_zero(n, rps=SITE_RPS):
+    return {rp: np.zeros(n) for rp in rps}
+
+
+def _rp_add(a, b):
+    return {rp: a[rp] + b[rp] for rp in a}
+
+
+def _rp_scale(a, k):
+    return {rp: a[rp] * k for rp in a}
+
+
 def blend_results(parts):
     """Weighted mean of per-source result dicts {aal, ep{rp}, ead[site]},
     with weight renormalisation over the members present (the same graceful
@@ -402,7 +504,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   dmg_scale=1.0, haz_mult=1.0, exp_mult=1.0,
                   wind_dmg_mult=1.0, fb_bonus=0.0, cf_depth_red=0.0,
                   flood_cap=None, fb_prain=None, fire_vuln=None,
-                  fire_mult=1.0):
+                  fire_mult=1.0, v_half=None, site_rp=False):
     """One scenario's portfolio result from prepared intensities.
 
     `prep` is the pure data structure build_country_prep() returns:
@@ -415,14 +517,15 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
     vals = values * exp_mult
     recipe = rh.APP_SCENARIOS[app_key]
 
-    ws_parts, w_parts, s_parts = [], [], []
+    ws_parts, w_parts, s_parts, ws_rp_parts = [], [], [], []
     for w, src in recipe:
         skey = rh.source_key(src)
         if skey not in prep["wind"]:
             continue
         wnd = prep["wind"][skey]
         wl = wind_losses(wnd["int"], vals, wind_mult * wind_dmg_mult,
-                         dmg_scale, haz_mult)
+                         dmg_scale, haz_mult,
+                         v_half=V_HALF if v_half is None else v_half)
         w_parts.append((w, {"aal": float(site_ead(wl, wnd["freq"]).sum()),
                             "ep": ep_curve(wl.sum(axis=1), wnd["freq"]),
                             "ead": site_ead(wl, wnd["freq"])}))
@@ -447,12 +550,21 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         ws_parts.append((w, {"aal": float(site_ead(combined, wnd["freq"]).sum()),
                              "ep": ep_curve(combined.sum(axis=1), wnd["freq"]),
                              "ead": site_ead(combined, wnd["freq"])}))
+        if site_rp:
+            ws_rp_parts.append((w, site_rp_losses(combined, wnd["freq"])))
 
     wind = blend_results(w_parts)
     surge = blend_results(s_parts)
     joint = blend_results(ws_parts)
+    joint_rp = None
+    if site_rp and ws_rp_parts:
+        wsum = sum(w for w, _ in ws_rp_parts)
+        joint_rp = _rp_zero(len(vals))
+        for w, r_ in ws_rp_parts:
+            joint_rp = _rp_add(joint_rp, _rp_scale(r_, w / wsum))
 
     river = None
+    river_rp = None
     members = prep["rflood"].get(app_key) or []
     if members:
         mparts = []
@@ -463,11 +575,16 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                            {"aal": float(site_ead(rl, m["freq"]).sum()),
                             "ep": ep_curve(rl.sum(axis=1), m["freq"]),
                             "ead": site_ead(rl, m["freq"])}))
+            if site_rp:
+                mr = _rp_scale(site_rp_losses(rl, m["freq"]),
+                               1.0 / len(members))
+                river_rp = mr if river_rp is None else _rp_add(river_rp, mr)
         river = blend_results(mparts)
 
     warm = rw.WARMING.get(app_key, 0.0)
 
     rain = None
+    rain_rp = None
     pw = prep.get("prain")
     if pw is not None:
         # one member per basin domain (a lone dict is the legacy one-domain
@@ -477,6 +594,7 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
         rain_members = [pw] if isinstance(pw, dict) else pw
         rain = {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
                 "ead": np.zeros_like(vals)}
+        rain_rp = _rp_zero(len(vals)) if site_rp else None
         for pm in rain_members:
             # scenario scaling by Clausius-Clapeyron on the rain field itself,
             # then the documented drainage conversion (mirrors the app exactly)
@@ -487,32 +605,43 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
             rain["aal"] += float(site_ead(pl, pm["freq"]).sum())
             rain["ep"] = add_ep(rain["ep"], ep_curve(pl.sum(axis=1), pm["freq"]))
             rain["ead"] = rain["ead"] + site_ead(pl, pm["freq"])
+            if site_rp:
+                rain_rp = _rp_add(rain_rp, site_rp_losses(pl, pm["freq"]))
 
     fire = None
     fw = prep.get("wfire")
     if fw is not None:
-        # true event math over the probabilistic fire seasons: per-event site
-        # losses are value x conditional damage x profile vulnerability, and
-        # warming scales the fire FREQUENCY (arrival rate), not the loss
+        # point-probability math (Task 3.5): each site's fire is its own
+        # arrival process at the WRC point burn probability, with loss given
+        # fire = value x flame-length-conditioned damage x profile
+        # vulnerability. Warming scales the arrival PROBABILITY (capped at
+        # 1), not the loss. The portfolio curve is the per-site occurrence
+        # exceedance over these independent arrivals (recorded in meta).
         fv = np.ones_like(vals) if fire_vuln is None else np.asarray(fire_vuln)
-        frac = np.minimum(FIRE_MDD * fv * dmg_scale * fire_mult, 1.0)
-        fl = fw["hits"].astype(float) * (frac * vals)[None, :]
-        freq_f = np.asarray(fw["freq"], float) * haz_mult             * (1.0 + rw.FIRE_WARMING_UPLIFT * warm)
-        fire = {"aal": float(site_ead(fl, freq_f).sum()),
-                "ep": ep_curve(fl.sum(axis=1), freq_f),
-                "ead": site_ead(fl, freq_f)}
+        p = np.minimum(np.asarray(fw["bp"], float) * haz_mult
+                       * (1.0 + rw.FIRE_WARMING_UPLIFT * warm), 1.0)
+        frac = np.minimum(np.asarray(fw["cond"], float) * fv * dmg_scale
+                          * fire_mult, 1.0)
+        loss_given_fire = frac * vals
+        fire = {"aal": float((p * loss_given_fire).sum()),
+                "ep": ep_curve(loss_given_fire, p),
+                "ead": p * loss_given_fire}
+        if site_rp:
+            fire["_site_rp"] = {rp: np.where(p >= 1.0 / rp, loss_given_fire,
+                                             0.0) for rp in SITE_RPS}
 
     if joint is None and river is None and rain is None and fire is None:
         return None
     zero = lambda: {"aal": 0.0, "ep": {rp: 0.0 for rp in RPS},
                     "ead": np.zeros_like(vals)}
+    fire_rp = (fire or {}).pop("_site_rp", None) if fire else None
     joint = joint or zero()
     river = river or zero()
     rain = rain or zero()
     fire = fire or zero()
     acute_ep = add_ep(add_ep(add_ep(joint["ep"], river["ep"]),
                              rain["ep"]), fire["ep"])
-    return {
+    out = {
         "tc": wind or zero(),
         "cflood": surge or zero(),
         "rflood": river,
@@ -523,10 +652,19 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
                   "ead": np.asarray(joint["ead"]) + np.asarray(river["ead"])
                        + np.asarray(rain["ead"]) + np.asarray(fire["ead"])},
     }
+    if site_rp:
+        # Task 5: per-site return-period losses beside the EAD. Catalogs add
+        # comonotonically per site, the same rule the portfolio curve uses.
+        acute_rp = _rp_zero(len(vals))
+        for part_rp in (joint_rp, river_rp, rain_rp, fire_rp):
+            if part_rp is not None:
+                acute_rp = _rp_add(acute_rp, part_rp)
+        out["acute"]["site_rp"] = acute_rp
+    return out
 
 
 def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
-                   flood_cap=None, fb_prain=None, fire_vuln=None):
+                   flood_cap=None, fb_prain=None, fire_vuln=None, v_half=None):
     """Averted direct AAL, cost, and BCR per measure per scenario."""
     an = annuity(HORIZON_YEARS, DISCOUNT_RATE)
     out = {}
@@ -552,7 +690,7 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
             adapted = eval_scenario(prep, app_key, values, wind_mult,
                                     fb_coast, fb_river, flood_cap=flood_cap,
                                     fb_prain=fb_prain, fire_vuln=fire_vuln,
-                                    **kw)
+                                    v_half=v_half, **kw)
             if adapted is None:
                 continue
             cost = float((values[in_scope] * m["cost_pct_value"] / 100.0).sum())
@@ -580,7 +718,7 @@ def run_adaptation(prep, values, wind_mult, fb_coast, fb_river, base_by_scen,
 
 def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
                     scenarios, n_samples, seed, flood_cap=None,
-                    fb_prain=None, fire_vuln=None):
+                    fb_prain=None, fire_vuln=None, v_half=None):
     """Seeded joint Monte Carlo over the three physical factors. Returns
     per-scenario quantiles for acute AAL and 1-in-100 loss, plus a
     one-at-a-time driver ranking (the tornado, computed the app's way).
@@ -597,22 +735,23 @@ def run_uncertainty(prep, values, wind_mult, fb_coast, fb_river,
                               fb_river, dmg_scale=draws["dmg"][i],
                               haz_mult=draws["haz"][i], exp_mult=draws["exp"][i],
                               flood_cap=flood_cap, fb_prain=fb_prain,
-                              fire_vuln=fire_vuln)
+                              fire_vuln=fire_vuln, v_half=v_half)
             aal[i] = r["acute"]["aal"] if r else 0.0
             var100[i] = r["acute"]["ep"][100] if r else 0.0
         central = eval_scenario(prep, app_key, values, wind_mult,
                                 fb_coast, fb_river, flood_cap=flood_cap,
-                                fb_prain=fb_prain, fire_vuln=fire_vuln)
+                                fb_prain=fb_prain, fire_vuln=fire_vuln,
+                                v_half=v_half)
         drivers = []
         for f in MC_FACTORS:
             lo = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
                                fb_river, flood_cap=flood_cap,
                                fb_prain=fb_prain, fire_vuln=fire_vuln,
-                               **{_MC_KW[f["key"]]: f["lo"]})
+                               v_half=v_half, **{_MC_KW[f["key"]]: f["lo"]})
             hi = eval_scenario(prep, app_key, values, wind_mult, fb_coast,
                                fb_river, flood_cap=flood_cap,
                                fb_prain=fb_prain, fire_vuln=fire_vuln,
-                               **{_MC_KW[f["key"]]: f["hi"]})
+                               v_half=v_half, **{_MC_KW[f["key"]]: f["hi"]})
             swing = abs((hi["acute"]["aal"] if hi else 0.0) -
                         (lo["acute"]["aal"] if lo else 0.0))
             drivers.append({"label": f["label"], "swing_usd": round(swing, 2)})
@@ -640,7 +779,7 @@ _MC_KW = {"haz": "haz_mult", "dmg": "dmg_scale", "exp": "exp_mult"}
 # ---------------------------------------------------------------------------
 
 def run_catalog(prep, sites_c, values, wind_mult, fb_coast, fb_river, fcap,
-                base_by_scen, fb_prain=None, fire_vuln=None,
+                base_by_scen, fb_prain=None, fire_vuln=None, v_half=None,
                 plan_scenario_pref=("ssp245_2050", "present")):
     """Appraise every catalog measure per site (increment 2). Returns
     (measures_catalog section, projects list ready for phasing, scenario).
@@ -681,6 +820,7 @@ def run_catalog(prep, sites_c, values, wind_mult, fb_coast, fb_river, fcap,
         adapted = eval_scenario(prep, sc, values, wind_mult, fb_coast,
                                 fb_river, flood_cap=cap_eff,
                                 fb_prain=fb_prain, fire_vuln=fv_eff,
+                                v_half=v_half,
                                 wind_dmg_mult=knobs["wind_dmg_mult"],
                                 fb_bonus=knobs["fb_bonus"],
                                 cf_depth_red=knobs["cf_depth_red"])
@@ -802,11 +942,12 @@ def fit_v_half(calib_parts, observed_total, lo=VHALF_LO, hi=VHALF_HI,
 def build_calibration(calib_parts, observed_total, matched):
     vh, modeled_at_fit, clipped = fit_v_half(calib_parts, observed_total)
     base = None
-    for p in calib_parts:                      # bias uses the PUBLISHED curve
+    for p in calib_parts:      # bias uses the model AS RUN (archetype curves)
         base = (base or 0.0)
         w = p.get("wind")
         if w is not None and w["int"].size:
-            wl = wind_losses(w["int"], p["values"], p["wind_mult"])
+            wl = wind_losses(w["int"], p["values"], p["wind_mult"],
+                             v_half=p.get("v_half", V_HALF))
             base += float(site_ead(wl, w["freq"]).sum())
         base += p["flood_fixed"]
     bias = round(observed_total / base, 3) if base else None
@@ -865,8 +1006,8 @@ def fetch_river_flood_hazards(iso3, app_key, meta, cache=None):
 
 
 def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
-                       fire_enabled=True, rain_enabled=True, firms_df=None,
-                       workers=1, wfire_haz=None, wfire_err=None):
+                       fire_enabled=True, rain_enabled=True,
+                       workers=1, wrc_bp=None, wrc_cfl=None):
     """Fetch hazards once per country and reduce them to per-site intensity
     matrices (the pure structure eval_scenario consumes).
 
@@ -879,7 +1020,13 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
     order the fetches complete in."""
     lat = sites_c["latitude"].to_numpy(float)
     lon = sites_c["longitude"].to_numpy(float)
+    # Task 4: per-site ground relief converts flood/surge depth at the CELL
+    # into depth at the STRUCTURE. Sites without both elevation fields keep
+    # the cell value and are flagged modeled-coarse (prep["_flood_basis"]).
+    relief, has_elev = site_relief(sites_c["ground_elev_m"],
+                                   sites_c["cell_ground_elev_m"])
     prep = {"wind": {}, "surge": {}, "rflood": {}, "_outside": set(),
+            "_flood_basis": has_elev,     # True = depth read at the structure
             # per-site structural coverage per peril (bool arrays): did this
             # peril's model speak for the site's location at all? False means
             # the site is FLAGGED as outside coverage, never silently zeroed.
@@ -907,16 +1054,38 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         out["wind"] = {"freq": np.asarray(haz.frequency, float),
                        "int": site_intensity(haz, idx)}
         if surge_enabled:
+            # Surge is REGIONAL: each site's depth comes from a bathtub run
+            # over its own coastline's wind cells at that coastline's SLR
+            # table (Gulf subsidence most of all); sites outside every region
+            # box read the global-mean run, which equals the legacy table.
+            site_regions = rh.slr_region_partition(lat, lon)
+            boxes = {n: (la0, la1, lo0, lo1)
+                     for n, la0, la1, lo0, lo1 in rh.SLR_REGION_BOXES}
+            subs = {region: (haz if region == "global_mean" else
+                             rh.subset_hazard_extent(haz, boxes[region]))
+                    for region, _m in site_regions}
+            n_ev = out["wind"]["int"].shape[0]
             for app_key, recipe in rh.APP_SCENARIOS.items():
                 if not any(rh.source_key(s) == skey for _w, s in recipe):
                     continue
                 try:
-                    surge = rh.compute_surge(haz, rh.SLR_M[app_key])
-                    s_idx, s_dist = nearest_centroids(
-                        lat, lon, surge.centroids.lat, surge.centroids.lon)
-                    out["surge"][app_key] = {"int": site_intensity(surge, s_idx),
-                                             "dist": s_dist}
-                    del surge
+                    s_int = np.zeros((n_ev, len(lat)))
+                    s_dist = np.full(len(lat), np.inf)
+                    for region, m in site_regions:
+                        sub = subs[region]
+                        if sub is None:
+                            continue    # no wind cells in this region: its
+                                        # sites stay zero at infinite distance
+                                        # (they are outside wind coverage too)
+                        surge = rh.compute_surge(sub,
+                                                 rh.slr_of(app_key, region))
+                        idx_r, dist_r = nearest_centroids(
+                            lat[m], lon[m], surge.centroids.lat,
+                            surge.centroids.lon)
+                        s_int[:, m] = site_intensity(surge, idx_r)
+                        s_dist[m] = dist_r
+                        del surge
+                    out["surge"][app_key] = {"int": s_int, "dist": s_dist}
                 except Exception as exc:
                     out["surge_skipped"].append(
                         {"country": iso3, "source": skey, "scenario": app_key,
@@ -960,6 +1129,8 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         for app_key, sg in out["surge"].items():
             sint = np.asarray(sg["int"], float).copy()
             sint[:, ~(sg["dist"] <= limit)] = 0.0
+            # Task 4: depth at the structure where site elevation is known
+            sint = depth_at_structure(sint, relief[None, :])
             prep["surge"][(skey, app_key)] = {"int": sint}
         for sk in out["surge_skipped"]:
             LOG.warning("Surge failed %s / %s @ %s: %s",
@@ -983,7 +1154,10 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
                 midx = water_snap(lat, lon, mhaz.centroids.lat,
                                   mhaz.centroids.lon, wind_dist)
                 packed.append({"freq": np.asarray(mhaz.frequency, float),
-                               "int": site_intensity(mhaz, midx)})
+                               # Task 4: depth at the structure where known
+                               "int": depth_at_structure(
+                                   site_intensity(mhaz, midx),
+                                   relief[None, :])})
             if packed:
                 prep["rflood"][app_key] = packed
             elif not fetch_failed:      # empty result; failure already recorded
@@ -1000,40 +1174,37 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         prep["_cov"]["rflood"] = prep["_cov"]["tc"].copy()
 
     if fire_enabled:
-        # Petals' WildFire needs a FIRMS DataFrame, not a country code (see
-        # refresh_wildfire.build_wildfire_hazard). The fire-season clustering
-        # depends only on the (site-trimmed) FIRMS data, which is the same for
-        # every country, so the hazard is built ONCE by the caller and passed in
-        # as `wfire_haz`; here each country only snaps its own sites onto it.
-        # Without a --firms download the event-set wildfire layer is skipped,
-        # exactly as the grid producer does.
-        if firms_df is None or len(firms_df) == 0:
-            LOG.warning("Wildfire skipped %s: no FIRMS CSV supplied (--firms); "
-                        "download from https://firms.modaps.eosdis.nasa.gov/download/",
-                        iso3)
+        # Task 3.5: wildfire is the USFS WRC burn probability sampled AT the
+        # site point (30 m native), with the damage side conditioned on the
+        # WRC flame-length layer (or the capped interim ratio). No FIRMS, no
+        # cell occupancy, no spatial buffer. Sites the raster does not cover
+        # (confirm WRC coverage for Hawaii and the territories per release)
+        # are FLAGGED, never silently zeroed.
+        if wrc_bp is None:
+            LOG.warning("Wildfire skipped %s: no WRC burn-probability raster "
+                        "(--wrc-bp / %s / ./%s/); download once from "
+                        "wildfirerisk.org (USFS RDS-2020-0016).",
+                        iso3, rw.WRC_BP_ENV, rw.DEFAULT_WRC_DIR)
             meta["skipped"].append({"country": iso3, "layer": "wfire",
-                                    "reason": "no FIRMS CSV supplied (--firms)"})
-        elif wfire_haz is None:
-            LOG.warning("Wildfire unavailable %s: %s", iso3,
-                        wfire_err or "wildfire hazard build failed")
-            meta["skipped"].append({"country": iso3, "layer": "wfire",
-                                    "reason": wfire_err
-                                    or "wildfire hazard build failed"})
+                                    "reason": "no WRC BP raster (--wrc-bp / "
+                                              f"{rw.WRC_BP_ENV} / "
+                                              f"./{rw.DEFAULT_WRC_DIR}/)"})
         else:
             try:
-                fidx, fd = nearest_centroids(lat, lon, wfire_haz.centroids.lat,
-                                             wfire_haz.centroids.lon)
-                prep["wfire"] = {"freq": np.asarray(wfire_haz.frequency, float),
-                                 "hits": site_intensity(wfire_haz, fidx) > 0}
-                prep["_cov"]["wfire"] = fidx >= 0
-                for j in np.where(fidx < 0)[0]:
+                w = rw.wrc_at_points(lat, lon, wrc_bp, wrc_cfl)
+                prep["wfire"] = {"bp": w["bp"], "cond": w["cond"],
+                                 "cond_interim": w["cond_interim"]}
+                prep["_cov"]["wfire"] = w["covered"]
+                for j in np.where(~w["covered"])[0]:
                     meta["skipped"].append(
                         {"country": iso3, "layer": "wfire",
                          "site": str(sites_c.iloc[j]["name"]),
-                         "reason": f"outside coverage ({fd[j]:.0f} km to the "
-                                   f"nearest fire cell)"})
-                LOG.info("  wfire %s -> %d events x %d sites", iso3,
-                         *prep["wfire"]["hits"].shape)
+                         "reason": "outside WRC burn-probability raster "
+                                   "coverage (no valid value at the site "
+                                   "point)"})
+                LOG.info("  wfire %s -> %d of %d sites point-sampled "
+                         "(mean p %.3f%%)", iso3, int(w["covered"].sum()),
+                         len(sites_c), float(w["bp"].mean()) * 100)
             except Exception as exc:
                 LOG.warning("Wildfire unavailable %s: %s", iso3, str(exc)[:200])
                 meta["skipped"].append({"country": iso3, "layer": "wfire",
@@ -1103,12 +1274,15 @@ def combine_countries(results, site_counts, countries=None, meta=None):
         combined = {}
         for peril in ("tc", "cflood", "rflood", "prain", "wfire", "acute"):
             aal, ep, eads = 0.0, {rp: 0.0 for rp in RPS}, []
+            rp_parts = {rp: [] for rp in SITE_RPS}
             for r, n, iso3 in zip(results, site_counts, countries):
                 p = r.get(app_key)
                 if p is not None and peril not in p:      # legacy 3-peril dict
                     p = None if peril in ("prain", "wfire") else p
                 if p is None:
                     eads.append(np.zeros(n))
+                    for rp in SITE_RPS:
+                        rp_parts[rp].append(np.zeros(n))
                     if meta is not None and peril == "acute":
                         meta["skipped"].append(
                             {"country": iso3, "scenario": app_key,
@@ -1119,8 +1293,15 @@ def combine_countries(results, site_counts, countries=None, meta=None):
                 aal += p[peril]["aal"]
                 ep = add_ep(ep, p[peril]["ep"])
                 eads.append(np.asarray(p[peril]["ead"], float))
+                srp = p[peril].get("site_rp")
+                for rp in SITE_RPS:
+                    rp_parts[rp].append(np.asarray(srp[rp], float)
+                                        if srp is not None else np.zeros(n))
             combined[peril] = {"aal": aal, "ep": ep,
                                "ead": np.concatenate(eads)}
+            if peril == "acute":
+                combined[peril]["site_rp"] = {
+                    rp: np.concatenate(rp_parts[rp]) for rp in SITE_RPS}
         out[app_key] = combined
     return out
 
@@ -1149,21 +1330,33 @@ def named_insured_rollup(acute_ead, named_insured):
 
 def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
                sites_file, site_named_insured=None, site_ids=None,
-               site_coverage=None):
+               site_coverage=None, site_flood_basis=None):
     n = len(site_names)
     site_named_insured = (list(site_named_insured)
                           if site_named_insured is not None else [None] * n)
     site_ids = list(site_ids) if site_ids is not None else [None] * n
     scenarios = {}
     for app_key, r in scen_results.items():
+        site_rp = r["acute"].get("site_rp")
         per_site = [{"name": n_,
                      "named_insured": _norm_insured(site_named_insured[i]),
                      "site_id": (_txt(site_ids[i]) and str(site_ids[i]).strip())
                                 or None,
                      "direct_ead_usd": round(float(r["acute"]["ead"][i]), 2),
+                     # Task 5: per-site return-period losses beside the EAD
+                     **({"loss_rp100_usd": round(float(site_rp[100][i]), 2),
+                         "loss_rp250_usd": round(float(site_rp[250][i]), 2)}
+                        if site_rp is not None else {}),
                      "by_peril": {p: round(float(r[p]["ead"][i]), 2)
                                   for p in ("tc", "cflood", "rflood",
                                             "prain", "wfire") if p in r},
+                     # Task 4: whether flood/surge depth was read at the
+                     # structure (site + cell ground known) or is the cell
+                     # average (modeled-coarse, flagged on the trust surface)
+                     **({"flood_depth_basis": ("structure"
+                                               if site_flood_basis[i]
+                                               else "cell")}
+                        if site_flood_basis is not None else {}),
                      # per-site-per-peril coverage: false = this peril's model
                      # did not speak for this site (flagged, not zeroed)
                      **({"coverage": {p: bool(site_coverage[p][i])
@@ -1210,20 +1403,34 @@ def pack_meta(pack, args, meta):
         "discount_rate": DISCOUNT_RATE,
         "horizon_years": HORIZON_YEARS,
         "vulnerability": {"wind": f"Emanuel cubic sigmoid, V_THRESH={V_THRESH}, "
-                                  f"V_HALF={V_HALF} m/s, x construction/age factor",
+                                  f"V_HALF={V_HALF} m/s (archetype-shifted per "
+                                  f"site), x construction/age factor",
                           "flood": "1-exp(-0.6 x depth over freeboard), cap 0.75; "
                                    f"freeboard cflood {FB_COAST} m / rflood "
-                                   f"{FB_RIVER} m, +0.5 m if defended"},
+                                   f"{FB_RIVER} m, +0.5 m if defended",
+                          "wildfire": "WRC point burn probability x flame-"
+                                      "length-conditioned damage (or the "
+                                      f"capped interim ratio "
+                                      f"{FIRE_COND_INTERIM}, labeled interim)"},
         "combination_rules": {
             "wind_surge": "per event (shared catalog, truly joint)",
             "river_flood": "comonotonic (exceedance losses add at equal RP)",
             "tc_rainfall": "comonotonic (own track catalog per basin domain; "
                            "domains add comonotonically; Clausius-Clapeyron "
                            "scenario scaling)",
-            "wildfire": "comonotonic (own fire seasons; warming scales the "
-                        "fire frequency, not the loss)",
+            "wildfire": "comonotonic (per-site occurrence exceedance over "
+                        "independent WRC point burn probabilities; warming "
+                        "scales the arrival probability, not the loss)",
             "countries": "comonotonic (exceedance losses add at equal RP)",
             "ep_tail": "flat beyond the largest simulated return period"},
+        "per_site_return_periods": {
+            "rps": list(SITE_RPS),
+            "basis": "step exceedance over each site's own events (the loss "
+                     "of the least-severe event whose cumulative frequency "
+                     "reaches 1/RP); catalogs add comonotonically per site"},
+        "ead_basis": "full event-frequency range: the event math never had a "
+                     "1-in-10 floor, and the app's interim integral now "
+                     "extends below 1-in-10 to match",
         "layers": [{"scenario": k,
                     "sites": len(v["per_site"]),
                     "direct_aal_usd": v["portfolio"]["direct_aal_usd"]}
@@ -1258,7 +1465,8 @@ def load_sites(path):
     for c in ("construction", "year_built", "roof_type", "roof_year",
               "opening_protection", "first_floor_elev_m", "stories", "keys",
               "buildings", "fema_zone", "backup_power", "renovation_year",
-              "wui_class", "defensible_space_m",
+              "wui_class", "defensible_space_m", "archetype",
+              "ground_elev_m", "cell_ground_elev_m",
               "named_insured", "site_id", "site_name"):
         if c not in df.columns:
             df[c] = None
@@ -1285,11 +1493,20 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=None,
                     help="concurrent Data API wind fetches per country (default: "
                          "CLAM_WORKERS or 4; pass 1 for the exact serial run)")
+    ap.add_argument("--wrc-bp", default=None, metavar="TIF",
+                    help="USFS WRC burn-probability GeoTIFF for the wildfire "
+                         f"layer (or {rw.WRC_BP_ENV}, or ./{rw.DEFAULT_WRC_DIR}/); "
+                         "local pre-downloaded file, wildfirerisk.org")
+    ap.add_argument("--wrc-cfl", default=None, metavar="TIF",
+                    help="USFS WRC conditional flame length GeoTIFF (absent: "
+                         "the capped interim conditional ratio, labeled)")
     ap.add_argument("--firms", nargs="+", default=None,
-                    help="NASA FIRMS archive CSV(s) or a directory, for the "
-                         "wildfire layer (https://firms.modaps.eosdis.nasa.gov/download/)")
+                    help="DEPRECATED for loss: FIRMS no longer feeds burn "
+                         "probability (Task 3.5 structural fix). Use "
+                         "refresh_wildfire.py --firms-context for the "
+                         "historical-context export.")
     ap.add_argument("--no-fire", action="store_true",
-                    help="skip the wildfire event layer in the pack")
+                    help="skip the wildfire layer in the pack")
     ap.add_argument("--no-rain", action="store_true",
                     help="skip the TC rainfall event layer in the pack")
     ap.add_argument("--budget", type=float, default=None, metavar="USD",
@@ -1320,37 +1537,22 @@ def main(argv=None) -> int:
     meta = {"skipped": [], "wind_sources": {}, "_countries": set(),
             "fetch_workers": workers}
 
-    # Wildfire needs an operator-supplied FIRMS DataFrame (Petals has no
-    # download-by-country). Load it once, drop low-confidence noise, and trim to a
-    # buffer around the actual sites (the impact only reads fire near them, and
-    # this keeps Petals' clustering tractable). None -> the pack's wildfire layer
-    # is skipped per country, recorded in meta.
-    firms_df = None
-    if not args.no_fire:
-        firms = rw.resolve_firms(args.firms)
-        if firms:
-            try:
-                fdf = rw.filter_firms_confidence(rw.load_firms(firms))
-                firms_df = rw.filter_firms_near_sites(
-                    fdf, sites["latitude"].to_numpy(float),
-                    sites["longitude"].to_numpy(float))
-                LOG.info("FIRMS: %d detections near the %d portfolio site(s)",
-                         len(firms_df), len(sites))
-            except Exception as exc:
-                LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
-                firms_df = None
-
-    # Build the wildfire hazard ONCE: Petals' fire-season clustering depends only
-    # on the site-trimmed FIRMS data, which is identical for every country, so
-    # rebuilding it per country repeated the same expensive clustering.
-    wfire_haz, wfire_err = None, None
-    if not args.no_fire and firms_df is not None and len(firms_df):
-        try:
-            wfire_haz = rw.build_wildfire_hazard(firms_df)
-        except Exception as exc:
-            wfire_err = str(exc)[:300]
-            LOG.warning("Wildfire hazard build failed (%s); wildfire skipped.",
-                        wfire_err)
+    # Task 3.5: wildfire reads the USFS WRC rasters (local pre-downloaded
+    # files; the path is configuration so corporate SSL never blocks a
+    # rebuild). FIRMS no longer feeds burn probability anywhere.
+    if args.firms:
+        LOG.warning("--firms is DEPRECATED for the loss calculation and is "
+                    "ignored: burn probability now comes from the WRC point "
+                    "raster (--wrc-bp). FIRMS remains available as a "
+                    "historical-context export via refresh_wildfire.py "
+                    "--firms-context.")
+    wrc_bp, wrc_cfl = (None, None) if args.no_fire else \
+        rw.resolve_wrc(args.wrc_bp, args.wrc_cfl)
+    if wrc_bp and not wrc_cfl:
+        LOG.warning("No WRC CFL raster: the wildfire conditional damage side "
+                    "uses the INTERIM flat ratio %.2f (capped); the app "
+                    "labels it interim on the trust surface.",
+                    FIRE_COND_INTERIM)
 
     per_country, order = [], []
     calib_parts, matched_names = [], set()
@@ -1361,8 +1563,8 @@ def main(argv=None) -> int:
                                   not args.no_river, meta,
                                   fire_enabled=not args.no_fire,
                                   rain_enabled=not args.no_rain,
-                                  firms_df=firms_df, workers=workers,
-                                  wfire_haz=wfire_haz, wfire_err=wfire_err)
+                                  workers=workers,
+                                  wrc_bp=wrc_bp, wrc_cfl=wrc_cfl)
         values = sites_c["asset_value_usd"].to_numpy(float)
         vulns = [vuln_v2(r.construction, r.year_built, r.defended,
                          roof_type=r.roof_type, roof_year=r.roof_year,
@@ -1372,28 +1574,36 @@ def main(argv=None) -> int:
                  for r in sites_c.itertuples()]
         wm = np.array([v[0] for v in vulns])
         fbb = np.array([v[1] for v in vulns])
-        fcap = np.array([v[2] for v in vulns])
+        fcap_p = np.array([v[2] for v in vulns])
+        # archetype layer (profile schema v2): curve-level differentiation;
+        # the factor table above stays the mapping layer on top of it
+        vh, fb_add, cap_o = archetype_arrays(sites_c.to_dict("records"))
+        fbb = fbb + fb_add
+        fcap = compose_flood_cap(fcap_p, cap_o,
+                                 sites_c["equipment_elevated"].to_numpy(bool))
         fvuln = np.array([fire_vuln_of(r.roof_class_a, r.defensible_space_m)
                           for r in sites_c.itertuples()])
-        fb_coast = FB_COAST + fbb
-        fbp = np.full(len(sites_c), PRAIN_FB) + fbb
-        fb_river = FB_RIVER + fbb
+        fb_coast = np.maximum(FB_COAST + fbb, 0.0)
+        fbp = np.maximum(np.full(len(sites_c), PRAIN_FB) + fbb, 0.0)
+        fb_river = np.maximum(FB_RIVER + fbb, 0.0)
         scen = {}
         for app_key in rh.APP_SCENARIOS:
             r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river,
-                              flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln)
+                              flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln,
+                              v_half=vh, site_rp=True)
             if r is not None:
                 scen[app_key] = r
         base_keys = {"present"} | set(UNCERTAINTY_SCENARIOS)
         adaptation = run_adaptation(prep, values, wm, fb_coast, fb_river,
                                     {k: v for k, v in scen.items()
                                      if k in base_keys}, flood_cap=fcap,
-                                    fb_prain=fbp, fire_vuln=fvuln)
+                                    fb_prain=fbp, fire_vuln=fvuln, v_half=vh)
         uncertainty = run_uncertainty(prep, values, wm, fb_coast, fb_river,
                                       [k for k in UNCERTAINTY_SCENARIOS
                                        if k in scen],
                                       args.mc, args.seed, flood_cap=fcap,
-                                      fb_prain=fbp, fire_vuln=fvuln)
+                                      fb_prain=fbp, fire_vuln=fvuln,
+                                      v_half=vh)
         if backtest is not None and "present" in scen:
             mask = sites_c["name"].astype(str).isin(backtest.index).to_numpy()
             if mask.any():
@@ -1402,6 +1612,7 @@ def main(argv=None) -> int:
                     "wind": None if wp is None else
                         {"freq": wp["freq"], "int": wp["int"][:, mask]},
                     "values": values[mask], "wind_mult": wm[mask],
+                    "v_half": vh[mask],
                     "flood_fixed": float(sum(
                         np.asarray(scen["present"][z]["ead"])[mask].sum()
                         for z in ("cflood", "rflood", "prain", "wfire")
@@ -1410,7 +1621,7 @@ def main(argv=None) -> int:
         cat_section, cat_projects, cat_sc = run_catalog(
             prep, sites_c, values, wm, fb_coast, fb_river, fcap,
             {k: v for k, v in scen.items() if k in base_keys},
-            fb_prain=fbp, fire_vuln=fvuln)
+            fb_prain=fbp, fire_vuln=fvuln, v_half=vh)
         per_country.append({"scen": scen, "adaptation": adaptation,
                             "catalog": cat_section,
                             "cat_projects": cat_projects, "cat_sc": cat_sc,
@@ -1419,7 +1630,8 @@ def main(argv=None) -> int:
                             "names": list(sites_c["name"]), "values": values,
                             "named_insured": list(sites_c["named_insured"]),
                             "site_id": list(sites_c["site_id"]),
-                            "coverage": prep["_cov"]})
+                            "coverage": prep["_cov"],
+                            "flood_basis": prep["_flood_basis"]})
         order.extend(sites_c["name"])
 
     if not per_country or not any(c["scen"] for c in per_country):
@@ -1443,6 +1655,13 @@ def main(argv=None) -> int:
             "expansion is a step-2 item")
     coverage = {p: np.concatenate([c["coverage"][p] for c in per_country])
                 for p in ("tc", "cflood", "rflood", "prain", "wfire")}
+    flood_basis = np.concatenate([c["flood_basis"] for c in per_country])
+    meta["flood_depth_basis"] = {
+        "at_structure_sites": int(flood_basis.sum()),
+        "cell_average_sites": int((~flood_basis).sum()),
+        "note": "at-structure sites carry ground_elev_m + cell_ground_elev_m "
+                "(survey or enrich_sites.py); cell-average sites are flagged "
+                "modeled-coarse on the app's trust surface"}
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites,
@@ -1450,7 +1669,7 @@ def main(argv=None) -> int:
                                           for ni in c["named_insured"]],
                       site_ids=[sid for c in per_country
                                 for sid in c["site_id"]],
-                      site_coverage=coverage)
+                      site_coverage=coverage, site_flood_basis=flood_basis)
     if lead.get("catalog"):
         pack["measures_catalog"] = lead["catalog"]
     plan = build_capital_plan_v2(lead.get("cat_projects") or [],

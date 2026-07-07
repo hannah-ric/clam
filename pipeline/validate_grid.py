@@ -252,18 +252,34 @@ def main(path: str, meta_path: str | None = None,
     else:
         warn("no heat rows: heat layer absent (app uses its latitude formula)")
 
-    # G2. wildfire sanity (v10 = annual burn probability, percent) ---------------
+    # G2. wildfire sanity (v10 = point burn probability %, v25 = conditional
+    #     damage ratio % given fire; both per SITE-POINT since the WRC swap) --
     wf = df[df["hazard"] == "wfire"]
     if len(wf):
-        print("\nwfire layer (v10 = annual burn probability, percent):")
-        print(f"  mean {wf['v10'].mean():.2f}%  max {wf['v10'].max():.2f}%")
+        print("\nwfire layer (v10 = P[fire reaches the site point] %, "
+              "v25 = conditional damage % given fire):")
+        print(f"  burn p: mean {wf['v10'].mean():.3f}%  max {wf['v10'].max():.3f}%"
+              f"  |  cond dmg: mean {wf['v25'].mean():.0f}%  "
+              f"max {wf['v25'].max():.0f}%")
         if (wf["v10"] < 0).any() or (wf["v10"] > 100).any():
             hard |= fail("wfire burn probability outside 0..100 percent")
-        if (wf[["v25", "v50", "v100", "v250", "v500"]].to_numpy() != 0).any():
-            warn("wfire rows carry nonzero v25..v500: the encoding says 0")
-        if wf["v10"].max() > 5:
-            warn("burn probability above 5%/yr somewhere: plausible only in "
-                 "extreme WUI; inspect before shipping")
+        if (wf["v25"] < 0).any() or (wf["v25"] > 100).any():
+            hard |= fail("wfire conditional damage ratio outside 0..100 percent")
+        if (wf[["v50", "v100", "v250", "v500"]].to_numpy() != 0).any():
+            warn("wfire rows carry nonzero v50..v500: the encoding says 0")
+        present = wf[wf["scenario"] == "present"] if \
+            (wf["scenario"] == "present").any() else wf
+        if present["v10"].max() > 5:
+            warn("point burn probability above 5%/yr somewhere: plausible "
+                 "only in extreme WUI; a value near the old 13-18%/yr level "
+                 "means cell-occupancy inflation is back - inspect before "
+                 "shipping")
+        share_high = float((present["v10"] > 2).mean()) * 100
+        if share_high > 20:
+            warn(f"{share_high:.0f}% of sites above 2%/yr burn probability: "
+                 f"real burn-probability products put even high-risk WUI at "
+                 f"0.1-2%/yr, so a broad exceedance suggests a units or "
+                 f"sampling error")
 
     # G3. rainfall sanity (mm at return periods) ----------------------------------
     pr = df[df["hazard"] == "prain"]

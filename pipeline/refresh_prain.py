@@ -38,19 +38,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import assumptions
 import refresh_hazard as rh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 LOG = logging.getLogger("refresh_prain")
 
-# MIRRORS the app's WARMING table; change both.
-WARMING = {
-    "present": 0.0,
-    "ssp126_2030": 0.6, "ssp126_2050": 1.0, "ssp126_2080": 1.3,
-    "ssp245_2030": 0.7, "ssp245_2050": 1.4, "ssp245_2080": 2.3,
-    "ssp585_2030": 0.8, "ssp585_2050": 2.0, "ssp585_2080": 3.6,
-}
-PRAIN_CC_PER_C = 0.07           # Clausius-Clapeyron moisture scaling per deg C
+# Both scenario constants read from the single sourced registry
+# (assumptions.py: units, baseline period, and citation per entry).
+WARMING = assumptions.WARMING_TABLE
+PRAIN_CC_PER_C = assumptions.scalar("prain_cc_per_c")
 NB_SYNTH_TRACKS = 9             # perturbed trajectories per historical track
 COUNTRIES = ["USA", "PRI", "VIR"]
 # Rain DOMAINS: each pairs a centroid bbox (lon0, lat0, lon1, lat1) with the
