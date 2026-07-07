@@ -825,6 +825,110 @@ assert(INFO.namedInsured&&INFO.namedInsured.b.indexOf("who is impacted")>=0,
   "the named-insured surface carries an INFO popover");
 gridByHazard={};clearHazCache();
 
+/* ---------------- Task 6: the ranked decision view ---------------- */
+gridByHazard={};clearHazCache();hazardGrid=null;resultsPack=null;scenario="present";
+finAssume={revRatio:0.35,gopMargin:0.30,reopenMonths:12,heatDrop:0.12,corr:0.30,brandOverrides:{}};
+sites=[
+ {id:1,name:"Reef",brand:"A",latitude:25.8,longitude:-80.13,asset_value_usd:120e6,construction:"frame",year_built:1988},
+ {id:2,name:"Ridge",brand:"B",latitude:29.42,longitude:-98.49,asset_value_usd:60e6,construction:"masonry",year_built:2005},
+];
+const _af6=annuity(25,0.03);
+const dR=decisionRows(sites,"present",_af6);
+assert(dR.length===2&&dR.every(r=>r.id&&r.name&&r.dom),
+  "decision view: one row per site, each with a dominant peril");
+const _reefRow=dR.find(r=>r.name==="Reef");
+{ /* dominant peril = argmax of per-peril annual cost, BI and heat included */
+  const s=sites[0],fin=finSite(s,"present"),a=assumeFor(s);
+  let mx=-1,mk=null;
+  for(const hz of ACUTE){const r=hzSite(s,hz,"present");
+    const v=r.ead+fin.gop*(a.reopenMonths/12)*(r.eadPct/100);if(v>mx){mx=v;mk=hz;}}
+  if(fin.heatCost>mx){mx=fin.heatCost;mk="heat";}
+  assert(_reefRow.dom===mk&&Math.abs(_reefRow.domCost-mx)<1e-6,
+    "decision view: dominant peril is the argmax of per-peril annual cost (BI and heat included)");
+}
+{ /* dmg100 = the site's OWN 1-in-100 loss summed across acute perils */
+  const s=sites[0];let d=0;
+  for(const hz of ACUTE){const c=(hzSite(s,hz,"present").curve||[]).find(x=>x.rp===100);d+=c?c.loss:0;}
+  assert(Math.abs(_reefRow.dmg100-d)<1e-6,
+    "decision view: 1-in-100 damage is the site's own physical-units figure");
+}
+assert(_reefRow.depth100>0,"decision view: a coastal site reports its 1-in-100 flood depth in metres");
+assert(_reefRow.downtime100>0&&_reefRow.downtime100<=finAssume.reopenMonths/12*365,
+  "decision view: downtime scales with damage, capped at the full reopen period");
+const _bm6=bestMeasureFor(sites[0],"present",_af6);
+assert(_reefRow.measure===(_bm6?_bm6.name:null)&&(!_bm6||Math.abs(_reefRow.bcr-_bm6.bcr)<1e-9),
+  "decision view: top measure and BCR come from the shared bestMeasureFor helper");
+assert(dR.every(r=>r.trustTotal===HAZARDS.length&&r.trustModeled===0),
+  "decision view: with no grid, every row honestly reads 0 of 6 perils modeled");
+assert(INFO.decision&&INFO.decision.b.indexOf("physical units")>=0&&INFO.decision.b.indexOf("scorecard")>=0,
+  "the decision view carries an INFO popover (physical units, scorecard drill-down)");
+
+/* ---------------- Task 6: per-site confidence on the map ---------------- */
+const _g6=siteGroups([sites[0]])[0];
+const t6=groupTrust(_g6,"present");
+assert(t6.total===HAZARDS.length&&t6.modeled===0&&t6.degraded.length===HAZARDS.length,
+  "map confidence: no grid -> 0 of 6 modeled, every peril listed degraded");
+const _gm=siteGroups([
+  {id:9,name:"C1",latitude:25.8,longitude:-80.13,asset_value_usd:10e6,site_id:"X"},
+  {id:8,name:"C1",latitude:25.8,longitude:-80.13,asset_value_usd:90e6,site_id:"X"}])[0];
+assert(groupTrust(_gm,"present").target.id===8,
+  "map confidence: the badge reads the largest-value member (whose scorecard the marker opens)");
+const rows6=[];for(const sc of SCEN_KEYS)rows6.push({lat:25.8,lon:-80.1,scenario:sc,hazard:"tc",v10:20,v25:28,v50:36,v100:48,v250:60,v500:66});
+buildGridsFromRows(rows6);
+const t6b=groupTrust(siteGroups([sites[0]])[0],"present");
+assert(t6b.modeled===1&&t6b.degraded.indexOf("tropical cyclone")<0,
+  "map confidence: a peril grid that reaches the site counts as modeled");
+assert(groupTrust(siteGroups([sites[1]])[0],"present").modeled===0,
+  "map confidence: the same grid never turns green a site it did not reach");
+
+/* ---------------- Parallel swap: explicit not-modeled markers ---------------- */
+assert(NOT_MODELED.length===3&&NOT_MODELED.map(h=>h.key).join(",")==="hail,pluvial,drought",
+  "hail, non-TC pluvial, and drought are declared not modeled");
+const _nm6=notModeledChips();
+assert(NOT_MODELED.every(h=>_nm6.indexOf(h.short)>=0)&&_nm6.indexOf("NOT MODELED")>=0&&_nm6.indexOf("dashed")>=0,
+  "the not-modeled chips are explicit and visually distinct (dashed outline, never a band colour)");
+const strip6=siteTrustStrip(sites[0]);
+assert(strip6.indexOf("Ha")>=0&&strip6.indexOf("Pv")>=0&&strip6.indexOf("Dr")>=0&&strip6.indexOf("does not model")>=0,
+  "the per-site trust strip carries the not-modeled chips");
+hazardGrid={rows:rows6,meta:{name:"t6.csv",cells:rows6.length,scenarios:SCEN_KEYS.slice(),loaded:"x"}};
+renderHazProv();
+assert(document.getElementById("hazProv").innerHTML.indexOf("Not modeled")>=0,
+  "Method-tab provenance states the not-modeled perils WITH a grid loaded");
+hazardGrid=null;gridByHazard={};clearHazCache();
+renderHazProv();
+assert(document.getElementById("hazProv").innerHTML.indexOf("Not modeled")>=0,
+  "Method-tab provenance states the not-modeled perils on the interim model too");
+
+/* ------- Parallel swap: humid heat (feels-like) beside dry-bulb ------- */
+assert(heatIndexC(35,0.75)>heatIndexC(35,0.45)&&heatIndexC(35,0.45)>35,
+  "heat index rises with humidity and exceeds dry-bulb in warm air");
+assert(heatIndexC(35,0.75)>44&&heatIndexC(35,0.75)<60,
+  "35C at 75% RH reads as dangerous feels-like (NOAA regression, ~50C)");
+assert(warmSeasonRh(25.8,-80.13)>warmSeasonRh(29.42,-98.49),
+  "screening humidity: coastal Miami reads more humid than inland San Antonio");
+const _indC6=heatIndicators(25.8,-80.13,"present");
+assert(_indC6.daysHi35>=_indC6.daysOver35&&_indC6.hiT>_indC6.effT,
+  "humid-heat days are never fewer than dry-bulb days; feels-like exceeds dry-bulb");
+const _rowsH6=[];for(const sc of SCEN_KEYS)_rowsH6.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"heat",v10:120,v25:40,v50:2600,v100:0,v250:0,v500:0});
+buildGridsFromRows(_rowsH6);
+const _indG6=heatIndicators(29.45,-98.45,"present");
+assert(_indG6.source==="grid"&&_indG6.daysHi35>=_indG6.daysOver35&&_indG6.daysHi35<=_indG6.daysOver32,
+  "grid heat: humid-heat days interpolate between the grid's own 32C and 35C counts");
+gridByHazard={};clearHazCache();
+{ /* the money stays on dry-bulb: the comfort lens changes no figure */
+  const s={id:7,name:"H",latitude:25.8,longitude:-80.13,asset_value_usd:50e6};
+  const fh=finSite(s,"present"), ind=heatIndicators(25.8,-80.13,"present");
+  const gop=50e6*finAssume.revRatio*finAssume.gopMargin;
+  assert(Math.abs(fh.heatCost-(gop/365)*Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS)*finAssume.heatDrop)<1e-6,
+    "heat revenue-at-risk still prices dry-bulb days over 35C, not the feels-like count");
+}
+const _exH6=explainPeril(sites[0],"heat","present");
+assert(fmtVecLine(_exH6).indexOf("humid-heat")>=0,
+  "the score trace carries the humid-heat line beside dry-bulb");
+assert(INFO.heat.b.indexOf("feels-like")>=0&&INFO.heat.b.indexOf("dry-bulb")>=0,
+  "the heat INFO explains both lenses and which one carries the money");
+gridByHazard={};clearHazCache();hazardGrid=null;
+
 console.log("\\nALL FRONTEND FUNCTIONAL TESTS PASSED");
 """
 

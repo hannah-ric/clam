@@ -143,6 +143,13 @@
   .maplegend .lh{font-weight:600;color:var(--primary);margin-bottom:4px;font-size:11px}
   .maplegend .li{display:flex;align-items:center;gap:6px}
   .maplegend .li i{width:11px;height:11px;border-radius:3px;display:inline-block}
+  /* Task 6: the per-marker model-basis badge (a permanent Leaflet tooltip).
+     Plain text on white so confidence never rides on colour alone. */
+  .trustbadge{background:rgba(255,255,255,.92);border:1px solid #C6CFD6;border-radius:8px;
+    color:#243038;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;
+    font-weight:600;line-height:1;padding:2px 5px;box-shadow:none;pointer-events:none}
+  .trustbadge.degraded{border-color:#D9772F;color:#8A4A1B}
+  .trustbadge::before{display:none}
   .driverwrap{display:flex;flex-direction:column;gap:2px}
   .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
     border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;font-weight:700;
@@ -359,6 +366,11 @@
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
         <button class="lightbtn" id="scrubPlay">Play</button>
         <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
+      </div>
+      <div class="panel" id="decisionPanel">
+        <h3 style="margin:0 0 2px">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
+        <div class="hint">One row per site, ranked by expected annual damage: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
+        <div id="decisionHost" style="overflow-x:auto"></div>
       </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
@@ -1237,24 +1249,60 @@ function riverineFloodVector(la,lo,sc){
   const shape={10:0.30,25:0.55,50:0.80,100:1.0,250:1.30,500:1.55};
   const vec={};for(const rp of RPS)vec[rp]=base100*shape[rp]*uplift;return vec;
 }
+/* Parallel swap: HUMID heat (feels-like) beside dry-bulb. Dry-bulb stays the
+   structural and financial view (nothing downstream of daysOver35 moves);
+   the heat index is the guest-comfort, cooling-load, and outdoor-labor lens,
+   because 33C at 75% coastal humidity is dangerous where 33C dry desert air
+   is not. Humidity is a documented SCREENING proxy: warm-season RH decays
+   from a coastal 80% toward a 45% interior floor with distance from the
+   coast (this portfolio is beach-heavy, so coastal reads humid, Palm
+   Springs/San Antonio read dry). The feels-like temperature is the NOAA
+   Rothfusz heat-index regression on that RH. */
+const HEAT_RH_BASE=0.45, HEAT_RH_COAST=0.35, HEAT_RH_KM=60;
+function warmSeasonRh(la,lo){ return Math.min(0.80,HEAT_RH_BASE+HEAT_RH_COAST*Math.exp(-coastKm(la,lo)/HEAT_RH_KM)); }
+function heatIndexC(tC,rh){
+  const T=tC*9/5+32, R=rh*100;
+  let hi=0.5*(T+61+(T-68)*1.2+R*0.094);          // NWS simple form (already T-averaged)
+  if(hi>=80)
+    hi=-42.379+2.04901523*T+10.14333127*R-0.22475541*T*R-6.83783e-3*T*T
+       -5.481717e-2*R*R+1.22874e-3*T*T*R+8.5282e-4*T*R*R-1.99e-6*T*T*R*R;
+  return (hi-32)*5/9;
+}
+/* the dry-bulb temperature at which the heat index crosses `target` at this
+   RH: bisection is fine, heatIndexC is monotone in T */
+function hiDryBulbFor(target,rh){
+  let lo=15,hi=50;
+  for(let i=0;i<40;i++){const m=(lo+hi)/2;if(heatIndexC(m,rh)<target)lo=m;else hi=m;}
+  return (lo+hi)/2;
+}
 function heatIndicators(la,lo,sc){
   /* Phase 3: prefer the data-driven heat grid (observed daily climatology
      shifted by AR6-consistent warming; see refresh_heat.py), encoded as
      v10=days over 32C, v25=days over 35C, v50=cooling degree days. The
      latitude formula remains the fallback when no heat rows are loaded or
      a site sits outside grid coverage, so behaviour never degrades to zero. */
+  const rh=warmSeasonRh(la,lo);
+  /* humid-heat day count: days the FEELS-LIKE temperature exceeds 35C, i.e.
+     days dry-bulb exceeds the (lower, humidity-dependent) threshold t* where
+     the heat index crosses 35C. Never fewer than the dry-bulb count. */
+  const tStar=hiDryBulbFor(35,rh);
   const g=gridByHazard.heat;
   if(g){const r=g(la,lo,sc);
     if(!(r.meta&&r.meta.outside)){
       const d32=Math.round(r.vec[10]||0),d35=Math.round(r.vec[25]||0),cdd=Math.round(r.vec[50]||0);
       const p=Math.min(Math.max(d35,0.5),199.5)/200;
       const effT=+(35+1.6*Math.log(p/(1-p))).toFixed(1);
-      return {effT,daysOver32:d32,daysOver35:d35,cdd,source:"grid"};
+      /* the grid gives two points of the day-count curve (32C and 35C);
+         interpolate t* between them, clamped to what the data can support */
+      const dHi=tStar>=35?d35:(tStar<=32?d32:Math.round(d35+(d32-d35)*(35-tStar)/3));
+      return {effT,daysOver32:d32,daysOver35:d35,cdd,source:"grid",
+              rhWarm:rh,hiT:+heatIndexC(effT,rh).toFixed(1),daysHi35:Math.max(dHi,d35)};
     }}
   const baseT=34-0.35*(Math.abs(la)-18)+6*continentality(la,lo);
   const T=baseT+warming(sc);
   const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
-  return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
+  return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210),
+          rhWarm:rh,hiT:+heatIndexC(T,rh).toFixed(1),daysHi35:Math.max(daysOver(tStar),daysOver(35))};
 }
 // flood EAD, same frequency integration as siteEad (f descending, tail
 // closed, and Task 5's sub-1-in-10 extension included)
@@ -1411,6 +1459,33 @@ function siteTrustSummary(site,sc){
   const byHz={};let modeled=0;
   HAZARDS.forEach(h=>{const t=siteTrust(site,h.key,sc);byHz[h.key]=t;if(t.state==="modeled")modeled++;});
   return {modeled,total:HAZARDS.length,byHz};
+}
+/* Parallel swap: perils this tool does NOT model, stated on the trust
+   surface instead of left implicit. Hail, non-TC pluvial flooding, and
+   drought all cost hospitality portfolios real money; a reader must see
+   "not modeled" in gray, never infer it from absence. These carry no math:
+   they exist only so the trust surface tells the whole truth. */
+const NOT_MODELED=[
+  {key:"hail",   label:"Hail",             short:"Ha",
+   detail:"no hail or convective-storm model in this tool; carry that exposure via loss history and insurance, not this screen"},
+  {key:"pluvial",label:"Pluvial (non-TC)", short:"Pv",
+   detail:"only tropical-cyclone rainfall is modeled; ordinary cloudburst and drainage flooding is not"},
+  {key:"drought",label:"Drought",          short:"Dr",
+   detail:"no drought model; water-supply, landscaping, and amenity stress are outside this tool"},
+];
+function notModeledChips(dark){
+  return NOT_MODELED.map(h=>'<span class="pill mini" data-trust="notmodeled" '+
+    'style="background:#fff;border:1px dashed #98A6B0;color:#5B6770'+(dark?';background:transparent;color:#C6CFD6;border-color:#7A8893':'')+'" '+
+    'title="'+esc(h.label+": NOT MODELED. "+h.detail)+'">'+h.short+'</span>').join("");
+}
+/* Task 6: the map's per-site confidence. A group's members share one
+   location, so grid reach is identical across them; trust is read on the
+   largest-value member (the same record the marker's scorecard opens). */
+function groupTrust(g,sc){
+  const target=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0];
+  const t=siteTrustSummary(target,sc);
+  const degraded=HAZARDS.filter(h=>t.byHz[h.key].state!=="modeled").map(h=>h.label.toLowerCase());
+  return {target,modeled:t.modeled,total:t.total,degraded};
 }
 /* compact per-site source string for the CSV exports: states, per peril,
    whether this site's figure is grid-fed or degraded. Pipe-separated so it
@@ -1718,6 +1793,38 @@ function finDisclosure(sites,pathway){
       totalPct:f.aalPctValue,var100Pct:f.value?v100/f.value*100:0,
       tailBasis:f.jointTail?"joint event tail":"blend approximation"};});
 }
+/* Task 6: the ranked DECISION VIEW - the landing artifact. One row per
+   site: what drives it, what a 1-in-100 year does to it in PHYSICAL UNITS
+   (dollars of damage, metres of flood depth, days of downtime), what it
+   costs per year, the best in-scope measure and its BCR, and the site's
+   model confidence (n of 6 perils modeled). Everything else drills down
+   from a row: clicking opens the scorecard, whose why-these-numbers trace
+   is one interaction from every figure. Pure over the pinned math. */
+function decisionRows(sitesArr,sc,af){
+  return sitesArr.map(s=>{
+    const fin=finSite(s,sc), a=assumeFor(s);
+    const per={};let ead=0,dmg100=0,depth100=0;
+    ACUTE.forEach(hz=>{
+      const r=hzSite(s,hz,sc);
+      per[hz]=r.ead+fin.gop*(a.reopenMonths/12)*(r.eadPct/100);
+      ead+=r.ead;
+      const c=(r.curve||[]).find(x=>x.rp===100);dmg100+=c?c.loss:0;
+      if((hz==="cflood"||hz==="rflood"||hz==="prain")&&r.vec
+         &&(r.vec[100]||0)>depth100)depth100=r.vec[100]||0;
+    });
+    per.heat=fin.heatCost;
+    let dom="tc",dv=-Infinity;
+    Object.keys(per).forEach(k=>{if(per[k]>dv){dv=per[k];dom=k;}});
+    const downtime100=(a.reopenMonths/12*365)
+      *(s.asset_value_usd?dmg100/s.asset_value_usd:0);
+    const best=bestMeasureFor(s,sc,af);
+    const trust=siteTrustSummary(s,sc);
+    return {id:s.id,name:s.name,dom,domCost:dv,ead,dmg100,depth100,
+      downtime100,measure:best?best.name:null,bcr:best?best.bcr:0,
+      trustModeled:trust.modeled,trustTotal:trust.total};
+  });
+}
+
 /* Aggregate across every risk: one expected-annual-cost total, decomposed two
    consistent ways (by peril and by cost type), plus the portfolio band mix.
    This is the single all-risk picture the Summary tab is built on. */
@@ -1886,6 +1993,23 @@ function layerStatsCalc(varByRp,acuteAal){
    parity suite pins. finPortfolio, adaptedFinSite, and layerStatsCalc
    are called, never modified, so no existing number can change.
    ============================================================ */
+
+/* the best in-scope measure for one site at the current library settings:
+   the shared building block for the decision view, the adaptation
+   recommendations, and the tolerance lanes (one formula, three surfaces) */
+function bestMeasureFor(s,sc,af){
+  const sBase=adaptedFinSite(s,sc,{}).totalAal;
+  let best=null;
+  MEASURES.forEach(m=>{
+    if(!m.inScope(s,sc))return;
+    const st=adapt.m[m.key];
+    const averted=sBase-adaptedFinSite(s,sc,m.mods(st)).totalAal;
+    const cost=m.siteCost(s,st);
+    const bcr=cost>0?averted*af/cost:0;
+    if(!best||bcr>best.bcr)best={name:m.name,averted,cost,bcr};
+  });
+  return best;
+}
 
 /* R1: screen the portfolio against the operator's tolerance thresholds and
    route every breach to a decision lane: capex when a measure at that site
@@ -2261,7 +2385,9 @@ const INFO={
     "<p>It is among the least precise perils here and improves the most when a CLIMADA river-flood grid is loaded.</p>"},
   heat:{t:"Extreme heat",b:
     "<p>Reported as <b>indicators</b>, not a dollar loss: days per year over 32&deg;C and 35&deg;C, and cooling degree-days.</p>"+
-    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days.</p>"},
+    "<p>Two lenses on the same days. <b>Dry-bulb</b> temperature is the structural and financial view (equipment ratings, the heat revenue-at-risk math). The <b>feels-like heat index</b> is the guest-comfort, cooling-load, and outdoor-labor view: 33&deg;C at 75% coastal humidity is dangerous where 33&deg;C of dry desert air is not, and a beach portfolio lives on the humid side. Humid-heat days (feels-like over 35&deg;C) are counted with a documented screening humidity: warm-season RH decays from 80% at the coast toward 45% inland, then the NOAA heat-index regression. They are never fewer than the dry-bulb count.</p>"+
+    "<p>Heat's cost to a resort is mostly lost business and energy; the Financial impact tab prices it as heat revenue at risk on dangerous-heat days (dry-bulb, so the money is unchanged by the comfort lens).</p>",
+    s:"Heat index: NOAA/NWS Rothfusz regression; humidity is a coastal-proximity screening proxy, labeled as such."},
   scenShift:{t:"Present to 2080 shift",b:
     "<p>How this site's risk moves from present day to a high-emissions late-century world (SSP5-8.5, 2080), holding its location and value fixed.</p>"},
   value:{t:"Asset value",b:
@@ -2409,6 +2535,11 @@ const INFO={
     "<p>Every site-and-measure pair the model finds in scope, ranked by benefit-cost ratio. With a program budget set, funding fills from the top: nothing below breakeven is funded, and what does not fit is kept on the list as unfunded rather than dropped, the same defer-not-delete discipline the pipeline's capital plan uses.</p>"+
     "<p>Rows are appraised one measure at a time. The program roll-up recomputes the funded set jointly per site, so overlapping measures are never double-counted; the joint figure is the one to quote.</p>"+
     "<p>When a CLIMADA results pack is loaded, its capital plan is the canonical appraisal (full event sets, refurbishment-window phasing) and is shown beside this interactive queue and included in the export. Measure costs here are planning-grade defaults until replaced with engineering estimates; the export carries the assumptions so every number can be traced.</p>"},
+  decision:{t:"The decision view",b:
+    "<p>One row per site, ranked: the landing artifact. Read a row left to right and you have the decision: <b>what drives the site</b> (its dominant peril by expected annual cost, business interruption and heat included), what a <b>1-in-100 year does to it in physical units</b> (dollars of damage, metres of flood depth at the structure, days of downtime), what it costs <b>every year</b> (EAD), the <b>best in-scope measure</b> with its benefit-cost ratio, and how much of the model is real data (<b>n of 6 perils modeled</b>).</p>"+
+    "<p>Physical units lead; the qualitative bands stay on the ratings surfaces as the secondary read. Click any column header to re-rank, click a row to open the site's scorecard, where the <b>why-these-numbers trace</b> takes every figure back to its data source, one interaction away.</p>"+
+    "<p>Per-site 1-in-100 figures assume that site's own 1-in-100 intensity; they are not addable into a portfolio tail (the results pack's joint event curve is the canonical tail).</p>",
+    s:"A display ranking over the same pinned math as every other tab; it computes nothing new."},
   brokerPack:{t:"Broker evidence pack",b:
     "<p>A CSV built for the renewal submission: per site, the verified construction and protection attributes underwriters call secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes), plus this model's present-day damage view, so your broker can put a documented alternative view beside the insurer's model.</p>"+
     "<p>Documented attributes are the highest-return lever in renewal pricing: they change the insurer's modeled loss, not just the negotiation. Blank cells are honest blanks; fill them from surveys rather than guesses.</p>"+
@@ -2497,6 +2628,10 @@ function updateLegend(){
       d.innerHTML='<div class="lh">'+title+'</div>'+
         bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");
     }
+    /* Task 6: the confidence key, in every colour mode */
+    d.innerHTML+='<div class="lh" style="margin-top:6px">Model basis</div>'+
+      '<span class="li"><span class="mono" style="font-weight:600">n/6</span>&nbsp;perils modeled at the site</span>'+
+      '<span class="li"><i style="background:#fff;border:2px dashed #43535F"></i>any peril degraded</span>';
     return d;
   };
   legendCtl.addTo(map);
@@ -2532,12 +2667,22 @@ function drawMarkers(scored){
     const rad=7+16*Math.sqrt(Math.max(g.value,0)/maxV);
     const activeEad=g.perHaz[activeHazard]||0, activePct=g.value?activeEad/g.value*100:0;
     const activeBand=heat?heatBand(g.heatDays):bandOf(activePct);
+    /* Task 6: confidence ON the marker, not only in chip colour. A fully
+       modeled site keeps the solid white ring; any degraded peril switches
+       the ring to dashed slate, and every marker carries a permanent n/6
+       text badge, so the model basis reads at a glance (and survives
+       greyscale printing and colour-blind palettes). */
+    const tr=groupTrust(g,scenario);
+    const full=tr.modeled===tr.total;
     const m=L.circleMarker([g.latitude,g.longitude],{
-      radius:rad,color:"#fff",weight:1.5,fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
+      radius:rad,color:full?"#fff":"#43535F",weight:full?1.5:2,dashArray:full?null:"3 3",
+      fillColor:groupMarkerFill(g,colorMode,activeHazard),fillOpacity:.85
     }).addTo(map);
+    m.bindTooltip(tr.modeled+"/"+tr.total,{permanent:true,direction:"right",
+      offset:[rad-2,0],className:"trustbadge"+(full?"":" degraded")});
     const metric=heat ? g.heatDays+" days &gt;32&deg;C"
                       : fmt$(activeEad)+"/yr &middot; "+activePct.toFixed(2)+"%";
-    const targetId=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0].id;
+    const targetId=tr.target.id;
     const breakout=g.multi
       ? "<div style='margin-top:5px;border-top:1px solid #E3E8E5;padding-top:5px'><b>Named insured</b> ("+g.byInsured.length+")"+
         g.byInsured.map(r=>"<br>"+esc(r.insured)+": "+fmt$(r.value)+" val &middot; "+fmt$(r.ead)+"/yr ("+r.share.toFixed(0)+"%)").join("")+"</div>"
@@ -2545,6 +2690,8 @@ function drawMarkers(scored){
     m.bindPopup("<b>"+esc(g.name)+"</b>"+(g.multi?" <span class='mono'>("+g.members.length+" insured groups)</span>":"")+"<br>"+esc(g.brand||"")+
       "<br><span class='mono'>Site value "+fmt$(g.value)+"</span>"+
       "<br><span class='mono'>"+HAZARD_LABEL[activeHazard]+" &middot; "+metric+" &middot; "+activeBand+"</span>"+
+      "<br><span class='mono'>Model basis: "+tr.modeled+" of "+tr.total+" perils modeled"+
+        (tr.degraded.length?" &middot; degraded: "+esc(tr.degraded.join(", ")):"")+"</span>"+
       breakout+
       "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
     m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });
@@ -2645,6 +2792,7 @@ function render(){
   const scored=scoreHazard(sites,activeHazard,scenario);
   drawMarkers(scored);
   if(hasData){ renderOverview(scored); }
+  renderDecision();
   renderSummary();
   renderRiskMatrix();
   renderQuadrant();
@@ -2657,6 +2805,50 @@ function render(){
   renderBacktest();
   renderHazProv();
   renderResultsPack();
+}
+/* Task 6: the ranked decision view (the Summary tab's landing artifact).
+   Sortable by any column; a row click opens the scorecard, which carries the
+   why-these-numbers trace. Physical units lead; the qualitative bands stay
+   on the ratings surfaces. */
+let decisionSort={key:"ead",dir:-1};
+function renderDecision(){
+  const host=document.getElementById("decisionHost"); if(!host)return;
+  if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
+  const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
+  const rows=decisionRows(sites,scenario,tolAf());
+  const k=decisionSort.key,d=decisionSort.dir;
+  rows.sort((a,b)=>{const va=a[k],vb=b[k];
+    return (typeof va==="string"||typeof vb==="string")
+      ?d*String(va||"").localeCompare(String(vb||""))
+      :d*((va||0)-(vb||0));});
+  const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
+  const th=(label,key,num)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer" title="click to rank by '+label+'">'+label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
+  let h='<table class="tbl"><thead><tr>'+
+    th("Site","name")+th("Dominant peril","dom")+
+    th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
+    th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
+    th("Top measure","measure")+th("BCR","bcr",1)+
+    th("Basis","trustModeled",1)+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
+      '<td>'+esc(perilName(r.dom))+'</td>'+
+      '<td class="num mono">'+fmt$(r.dmg100)+'</td>'+
+      '<td class="num mono">'+fmt$(r.ead)+'</td>'+
+      '<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
+      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
+      '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
+      '<td class="num mono" style="color:'+(r.bcr>=1?"#2E8B6F":"#B23A32")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
+      '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
+  });
+  h+='</tbody></table>';
+  host.innerHTML=h;
+  host.querySelectorAll("th[data-dsort]").forEach(el=>el.onclick=()=>{
+    const key=el.dataset.dsort;
+    if(decisionSort.key===key)decisionSort.dir*=-1;
+    else decisionSort={key,dir:(key==="name"||key==="dom"||key==="measure")?1:-1};
+    renderDecision();
+  });
+  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 }
 function renderSummary(){
   const host=document.getElementById("sumKpis"); if(!host)return;
@@ -2896,8 +3088,8 @@ function renderOverview(scored){
     const avg=k=>scored.rows.reduce((a,r)=>a+(r.indicators?r.indicators[k]:0),0)/(scored.rows.length||1);
     cards=[
       ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
-      ["Avg days over 32\u00b0C",Math.round(avg("daysOver32"))+"/yr","portfolio mean","heat"],
-      ["Avg days over 35\u00b0C",Math.round(avg("daysOver35"))+"/yr","portfolio mean","heat"],
+      ["Avg days over 32\u00b0C",Math.round(avg("daysOver32"))+"/yr","portfolio mean, dry-bulb","heat"],
+      ["Avg days over 35\u00b0C",Math.round(avg("daysOver35"))+"/yr","dry-bulb \u00b7 feels-like &gt;35\u00b0C: "+Math.round(avg("daysHi35"))+"/yr","heat"],
       ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
     ];
   }else{
@@ -3031,8 +3223,8 @@ function siteTrustStrip(site){
   const t=siteTrustSummary(site,scenario);
   const bits=HAZARDS.map(h=>{const x=t.byHz[h.key];const on=x.state==="modeled";
     return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")"+(x.note?"; "+x.note:""):"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
-  return '<div class="ratecell" style="margin:2px 0 10px">'+bits+
-    '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'</span></div>';
+  return '<div class="ratecell" style="margin:2px 0 10px">'+bits+notModeledChips()+
+    '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'; dashed chips are perils this tool does not model at all</span></div>';
 }
 function renderDetail(r){
   if(!r){document.getElementById("detailBody").style.display="none";document.getElementById("detailHint").style.display="block";return;}
@@ -3053,10 +3245,12 @@ function renderDetail(r){
       '<div class="card"><div class="l">Value</div><div class="v" style="font-size:20px">'+fmt$(r.asset_value_usd)+'</div><div class="foot">days &gt;32&deg;C, present to 2080: '+nowS.indicators.daysOver32+' &rarr; '+lateS.indicators.daysOver32+infoBtn("scenShift")+'</div></div>'+
     '</div>';
     table='<table class="tbl"><thead><tr><th>Indicator</th><th class="num">Value / yr</th></tr></thead><tbody>'+
-      '<tr><td>Days over 32&deg;C</td><td class="num mono">'+ind.daysOver32+'</td></tr>'+
-      '<tr><td>Days over 35&deg;C</td><td class="num mono">'+ind.daysOver35+'</td></tr>'+
+      '<tr><td>Days over 32&deg;C (dry-bulb)</td><td class="num mono">'+ind.daysOver32+'</td></tr>'+
+      '<tr><td>Days over 35&deg;C (dry-bulb)</td><td class="num mono">'+ind.daysOver35+'</td></tr>'+
+      '<tr><td>Humid-heat days (feels-like &gt;35&deg;C)'+infoBtn("heat")+'</td><td class="num mono">'+ind.daysHi35+'</td></tr>'+
       '<tr><td>Cooling degree-days</td><td class="num mono">'+ind.cdd+'</td></tr>'+
-      '<tr><td>Effective warm-season index</td><td class="num mono">'+ind.effT+' &deg;C</td></tr></tbody></table>';
+      '<tr><td>Effective warm-season index (dry-bulb)</td><td class="num mono">'+ind.effT+' &deg;C</td></tr>'+
+      '<tr><td>Feels-like at that index (heat index, RH '+Math.round(ind.rhWarm*100)+'%)</td><td class="num mono">'+ind.hiT+' &deg;C</td></tr></tbody></table>';
   }else{
     const rpRows=RPS.map(rp=>{const c=r.curve.find(x=>x.rp===rp);return '<tr><td class="mono">1 in '+rp+'</td><td class="num mono">'+c.v.toFixed(hz==="tc"?0:2)+' '+H.unit+'</td><td class="num mono">'+fmt$(c.loss)+'</td></tr>';}).join("");
     mid='<div class="cards" style="grid-template-columns:1fr 1fr;margin-bottom:14px">'+
@@ -3181,20 +3375,11 @@ function renderAdaptation(){
     })();
   document.getElementById("layerChart").innerHTML=layerSvg(tailCurve,ls);
   document.getElementById("sweepHost").innerHTML=sweepTable(tailCurve,tailBase);
-  // per-site recommendations: best measure by site BCR
-  const rec=sites.map(s=>{
-    const sBase=adaptedFinSite(s,scenario,{}).totalAal;
-    let best=null;
-    MEASURES.forEach(m=>{
-      if(!m.inScope(s,scenario))return;
-      const st=adapt.m[m.key];
-      const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
-      const cost=m.siteCost(s,st);
-      const bcr=cost>0?averted*af/cost:0;
-      if(!best||bcr>best.bcr)best={name:m.name,averted,cost,bcr};
-    });
-    return {site:s.name,id:s.id,aal:sBase,best};
-  }).sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
+  // per-site recommendations: best measure by site BCR (shared helper)
+  const rec=sites.map(s=>({site:s.name,id:s.id,
+    aal:adaptedFinSite(s,scenario,{}).totalAal,
+    best:bestMeasureFor(s,scenario,af)}))
+    .sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
   document.getElementById("recBody").innerHTML=rec.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
     (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
@@ -3648,6 +3833,11 @@ function renderHazProv(){
   const auth=perilAuthority();
   const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"+(a.nSites?", "+a.sitesModeled+"/"+a.nSites+" sites within coverage":"")):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';
   const chips=auth.map(chip).join("");
+  /* Parallel swap: the perils this tool does NOT model, stated in gray on the
+     same surface that vouches for the ones it does. Same row in both branches:
+     absence of a model is a fact about the tool, not about the data loaded. */
+  const nmRow='<span class="k">Not modeled</span><span class="v">'+notModeledChips()+
+    ' hail, non-TC pluvial flooding, and drought are outside this tool’s scope entirely; no figure here includes them (hover a chip for what to do instead)</span>';
   const md=hazardMeta&&hazardMeta.data;
   if(hazardGrid){
     const nLive=auth.filter(a=>a.live).length;
@@ -3660,6 +3850,7 @@ function renderHazProv(){
     badge.title=md&&md.generated_utc?("Pipeline run "+String(md.generated_utc).slice(0,10)):"Per-peril detail on the Method tab";
     let kv=
       '<span class="k">Perils</span><span class="v">'+chips+(partial.length?' <small>amber: partial scenario or site coverage; green needs every scenario AND every site inside coverage</small>':'')+'</span>'+
+      nmRow+
       (uncovered.length?'<span class="k">Site coverage</span><span class="v">'+uncovered.map(a=>a.label.toLowerCase()+": "+a.sitesModeled+" of "+a.nSites+" sites within coverage").join(" \u00b7 ")+' <small>sites outside a peril\u2019s coverage show degraded on that peril, never a silent zero</small></span>':'')+
       /* Task 4: flood depth basis at a glance */
       ((sites.length&&(gridByHazard.cflood||gridByHazard.rflood))?(function(){
@@ -3691,6 +3882,7 @@ function renderHazProv(){
     badge.classList.remove("authoritative");text.textContent="Interim model";badge.title="";
     document.getElementById("hazProv").innerHTML=
       '<span class="k">Perils</span><span class="v">'+chips+' <small>all on the interim model until a grid is loaded</small></span>'+
+      nmRow+
       '<span class="k">Source</span><span class="v">Built-in interim model</span>'+
       '<span class="k">Basis</span><span class="v">Regional wind anchors, coast-distance flood proxies, latitude-and-continentality heat</span>'+
       '<span class="k">Status</span><span class="v">Exploration only, not for disclosure</span>';
@@ -3809,7 +4001,9 @@ function renderScrub(){
 /* ---- score tracing (scorecard) ---- */
 function fmtVecLine(ex){
   if(ex.inputs.kind==="indicators"){const d=ex.inputs.indicators||{};
-    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C, "+d.cdd+" cooling degree days";}
+    return d.daysOver32+" days over 32C, "+d.daysOver35+" over 35C (dry-bulb), "+
+      (d.daysHi35!=null?d.daysHi35+" humid-heat days (feels-like >35C at screening RH "+Math.round((d.rhWarm||0)*100)+"%), ":"")+
+      d.cdd+" cooling degree days";}
   if(ex.inputs.kind==="burn")return (+ex.inputs.burnPct).toFixed(2)+" % annual burn probability";
   const v=ex.inputs.vec||{};
   return RPS.map(rp=>"1-in-"+rp+": "+(+v[rp]||0).toFixed(ex.hz==="tc"?0:2)).join(" \u00b7 ")+" "+ex.unit;

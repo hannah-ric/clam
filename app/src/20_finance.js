@@ -85,6 +85,38 @@ function finDisclosure(sites,pathway){
       totalPct:f.aalPctValue,var100Pct:f.value?v100/f.value*100:0,
       tailBasis:f.jointTail?"joint event tail":"blend approximation"};});
 }
+/* Task 6: the ranked DECISION VIEW - the landing artifact. One row per
+   site: what drives it, what a 1-in-100 year does to it in PHYSICAL UNITS
+   (dollars of damage, metres of flood depth, days of downtime), what it
+   costs per year, the best in-scope measure and its BCR, and the site's
+   model confidence (n of 6 perils modeled). Everything else drills down
+   from a row: clicking opens the scorecard, whose why-these-numbers trace
+   is one interaction from every figure. Pure over the pinned math. */
+function decisionRows(sitesArr,sc,af){
+  return sitesArr.map(s=>{
+    const fin=finSite(s,sc), a=assumeFor(s);
+    const per={};let ead=0,dmg100=0,depth100=0;
+    ACUTE.forEach(hz=>{
+      const r=hzSite(s,hz,sc);
+      per[hz]=r.ead+fin.gop*(a.reopenMonths/12)*(r.eadPct/100);
+      ead+=r.ead;
+      const c=(r.curve||[]).find(x=>x.rp===100);dmg100+=c?c.loss:0;
+      if((hz==="cflood"||hz==="rflood"||hz==="prain")&&r.vec
+         &&(r.vec[100]||0)>depth100)depth100=r.vec[100]||0;
+    });
+    per.heat=fin.heatCost;
+    let dom="tc",dv=-Infinity;
+    Object.keys(per).forEach(k=>{if(per[k]>dv){dv=per[k];dom=k;}});
+    const downtime100=(a.reopenMonths/12*365)
+      *(s.asset_value_usd?dmg100/s.asset_value_usd:0);
+    const best=bestMeasureFor(s,sc,af);
+    const trust=siteTrustSummary(s,sc);
+    return {id:s.id,name:s.name,dom,domCost:dv,ead,dmg100,depth100,
+      downtime100,measure:best?best.name:null,bcr:best?best.bcr:0,
+      trustModeled:trust.modeled,trustTotal:trust.total};
+  });
+}
+
 /* Aggregate across every risk: one expected-annual-cost total, decomposed two
    consistent ways (by peril and by cost type), plus the portfolio band mix.
    This is the single all-risk picture the Summary tab is built on. */

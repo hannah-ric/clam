@@ -261,24 +261,60 @@ function riverineFloodVector(la,lo,sc){
   const shape={10:0.30,25:0.55,50:0.80,100:1.0,250:1.30,500:1.55};
   const vec={};for(const rp of RPS)vec[rp]=base100*shape[rp]*uplift;return vec;
 }
+/* Parallel swap: HUMID heat (feels-like) beside dry-bulb. Dry-bulb stays the
+   structural and financial view (nothing downstream of daysOver35 moves);
+   the heat index is the guest-comfort, cooling-load, and outdoor-labor lens,
+   because 33C at 75% coastal humidity is dangerous where 33C dry desert air
+   is not. Humidity is a documented SCREENING proxy: warm-season RH decays
+   from a coastal 80% toward a 45% interior floor with distance from the
+   coast (this portfolio is beach-heavy, so coastal reads humid, Palm
+   Springs/San Antonio read dry). The feels-like temperature is the NOAA
+   Rothfusz heat-index regression on that RH. */
+const HEAT_RH_BASE=0.45, HEAT_RH_COAST=0.35, HEAT_RH_KM=60;
+function warmSeasonRh(la,lo){ return Math.min(0.80,HEAT_RH_BASE+HEAT_RH_COAST*Math.exp(-coastKm(la,lo)/HEAT_RH_KM)); }
+function heatIndexC(tC,rh){
+  const T=tC*9/5+32, R=rh*100;
+  let hi=0.5*(T+61+(T-68)*1.2+R*0.094);          // NWS simple form (already T-averaged)
+  if(hi>=80)
+    hi=-42.379+2.04901523*T+10.14333127*R-0.22475541*T*R-6.83783e-3*T*T
+       -5.481717e-2*R*R+1.22874e-3*T*T*R+8.5282e-4*T*R*R-1.99e-6*T*T*R*R;
+  return (hi-32)*5/9;
+}
+/* the dry-bulb temperature at which the heat index crosses `target` at this
+   RH: bisection is fine, heatIndexC is monotone in T */
+function hiDryBulbFor(target,rh){
+  let lo=15,hi=50;
+  for(let i=0;i<40;i++){const m=(lo+hi)/2;if(heatIndexC(m,rh)<target)lo=m;else hi=m;}
+  return (lo+hi)/2;
+}
 function heatIndicators(la,lo,sc){
   /* Phase 3: prefer the data-driven heat grid (observed daily climatology
      shifted by AR6-consistent warming; see refresh_heat.py), encoded as
      v10=days over 32C, v25=days over 35C, v50=cooling degree days. The
      latitude formula remains the fallback when no heat rows are loaded or
      a site sits outside grid coverage, so behaviour never degrades to zero. */
+  const rh=warmSeasonRh(la,lo);
+  /* humid-heat day count: days the FEELS-LIKE temperature exceeds 35C, i.e.
+     days dry-bulb exceeds the (lower, humidity-dependent) threshold t* where
+     the heat index crosses 35C. Never fewer than the dry-bulb count. */
+  const tStar=hiDryBulbFor(35,rh);
   const g=gridByHazard.heat;
   if(g){const r=g(la,lo,sc);
     if(!(r.meta&&r.meta.outside)){
       const d32=Math.round(r.vec[10]||0),d35=Math.round(r.vec[25]||0),cdd=Math.round(r.vec[50]||0);
       const p=Math.min(Math.max(d35,0.5),199.5)/200;
       const effT=+(35+1.6*Math.log(p/(1-p))).toFixed(1);
-      return {effT,daysOver32:d32,daysOver35:d35,cdd,source:"grid"};
+      /* the grid gives two points of the day-count curve (32C and 35C);
+         interpolate t* between them, clamped to what the data can support */
+      const dHi=tStar>=35?d35:(tStar<=32?d32:Math.round(d35+(d32-d35)*(35-tStar)/3));
+      return {effT,daysOver32:d32,daysOver35:d35,cdd,source:"grid",
+              rhWarm:rh,hiT:+heatIndexC(effT,rh).toFixed(1),daysHi35:Math.max(dHi,d35)};
     }}
   const baseT=34-0.35*(Math.abs(la)-18)+6*continentality(la,lo);
   const T=baseT+warming(sc);
   const daysOver=thr=>Math.round(200/(1+Math.exp(-(T-thr)/1.6)));
-  return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210)};
+  return {effT:+T.toFixed(1),daysOver32:daysOver(32),daysOver35:daysOver(35),cdd:Math.round(Math.max(0,T-18)*210),
+          rhWarm:rh,hiT:+heatIndexC(T,rh).toFixed(1),daysHi35:Math.max(daysOver(tStar),daysOver(35))};
 }
 // flood EAD, same frequency integration as siteEad (f descending, tail
 // closed, and Task 5's sub-1-in-10 extension included)
@@ -435,6 +471,33 @@ function siteTrustSummary(site,sc){
   const byHz={};let modeled=0;
   HAZARDS.forEach(h=>{const t=siteTrust(site,h.key,sc);byHz[h.key]=t;if(t.state==="modeled")modeled++;});
   return {modeled,total:HAZARDS.length,byHz};
+}
+/* Parallel swap: perils this tool does NOT model, stated on the trust
+   surface instead of left implicit. Hail, non-TC pluvial flooding, and
+   drought all cost hospitality portfolios real money; a reader must see
+   "not modeled" in gray, never infer it from absence. These carry no math:
+   they exist only so the trust surface tells the whole truth. */
+const NOT_MODELED=[
+  {key:"hail",   label:"Hail",             short:"Ha",
+   detail:"no hail or convective-storm model in this tool; carry that exposure via loss history and insurance, not this screen"},
+  {key:"pluvial",label:"Pluvial (non-TC)", short:"Pv",
+   detail:"only tropical-cyclone rainfall is modeled; ordinary cloudburst and drainage flooding is not"},
+  {key:"drought",label:"Drought",          short:"Dr",
+   detail:"no drought model; water-supply, landscaping, and amenity stress are outside this tool"},
+];
+function notModeledChips(dark){
+  return NOT_MODELED.map(h=>'<span class="pill mini" data-trust="notmodeled" '+
+    'style="background:#fff;border:1px dashed #98A6B0;color:#5B6770'+(dark?';background:transparent;color:#C6CFD6;border-color:#7A8893':'')+'" '+
+    'title="'+esc(h.label+": NOT MODELED. "+h.detail)+'">'+h.short+'</span>').join("");
+}
+/* Task 6: the map's per-site confidence. A group's members share one
+   location, so grid reach is identical across them; trust is read on the
+   largest-value member (the same record the marker's scorecard opens). */
+function groupTrust(g,sc){
+  const target=g.members.slice().sort((a,b)=>b.asset_value_usd-a.asset_value_usd)[0];
+  const t=siteTrustSummary(target,sc);
+  const degraded=HAZARDS.filter(h=>t.byHz[h.key].state!=="modeled").map(h=>h.label.toLowerCase());
+  return {target,modeled:t.modeled,total:t.total,degraded};
 }
 /* compact per-site source string for the CSV exports: states, per peril,
    whether this site's figure is grid-fed or degraded. Pipe-separated so it
