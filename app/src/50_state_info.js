@@ -34,7 +34,11 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false,
+  /* v2.3.0 executive home: the full-bleed map with floating priority panels
+     is the default landing view; Analyst restores the classic tab workspace.
+     A pure display flag: it changes no computed figure. */
+  execMode:true};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -78,6 +82,15 @@ const INFO={
     "<p>Each row walks one peril's figure back to where it came from: the <b>data source</b> (a loaded CLIMADA grid with the distance to the nearest cell, a named interim screening model, or an honest zero when neither exists), the <b>intensities</b> at each return period, the <b>named factors</b> this building's profile applies, and the resulting expected annual damage.</p>"+
     "<p>If a number surprises you, the trace shows which ingredient drove it. A grid supersedes the interim model per peril; a zero always says why it is zero.</p>",
     s:"The trace reads the same functions that computed the score; it cannot diverge from them."},
+  execHome:{t:"The executive view",b:
+    "<p>Everything on this panel is the same model the analyst workspace runs, read at the scenario on the timeline below: the <b>headline</b> is the portfolio's expected annual climate cost (damage, business interruption, and heat together), the tiles carry the <b>1-in-100 year</b>, the <b>tolerance position</b>, and the <b>largest driver</b>, and the ranked plan lists the sites where the money concentrates: each with <b>what to do, the dollars (cost, averted loss, payback), and the act-by deadline</b>. Its own i button explains each basis.</p>"+
+    "<p>Click a priority to open the site's full scorecard, with the why-these-numbers trace. The <b>Analyst</b> switch in the top bar opens every specialist surface (perils, adaptation, insurance, uncertainty, method); <b>Export &amp; brief</b> carries the same figures out as a board one-pager or CSV artifacts.</p>",
+    s:"A display lens over the shared engine: it computes nothing new and changes no figure."},
+  execPlan:{t:"Top risks and the plan: how to read it",b:
+    "<p><b>Which sites:</b> ranked by all-in expected annual cost (physical damage, business interruption, and heat together), so the biggest climate risk sits at the top regardless of which peril drives it.</p>"+
+    "<p><b>What to do and the dollars:</b> each site shows its best value measure with the model's own figures: the one-time capital cost, the annual loss it averts, the share of that site's risk it removes, and the simple payback (cost divided by averted annual loss). Costs are planning-grade defaults from published mitigation studies scaled to the site's value and profile: firm enough to rank and budget, but replace them with engineering estimates before committing capital. Where no measure clears breakeven, the honest answer is shown instead: transfer the risk (insure) or accept it.</p>"+
+    "<p><b>By when:</b> the deadline is not a new model. It is the first horizon (Present, 2030, 2050, 2080, under the selected outlook) at which the site's annual cost crosses <b>your own risk tolerance</b>, set on the analyst Summary tab. Over it today reads act now, and each year of delay forfeits the measure's averted loss; never over it by 2080 reads monitor. When a CLIMADA results pack is loaded, its capital plan's phase (Y1, Y2, deferred) is shown beside the urgency as the canonical schedule.</p>",
+    s:"Same engine as the adaptation tab's action queue; the roll-up line never double-counts overlapping measures."},
   brief:{t:"The board brief",b:
     "<p>Builds a print-ready one-pager of the portfolio at the current scenario: headline figures, cost by peril, the most exposed sites, the trajectory to 2080, and the data provenance line, then opens your browser's print dialog. Choose <b>Save as PDF</b> to get the file.</p>"+
     "<p>The brief states its data basis (CLIMADA grid or interim screening) and carries the same disclosure caveats as the app; nothing is computed specially for it.</p>",
@@ -346,14 +359,20 @@ function showMapUnavailable(){
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
   try{
-    map=L.map("map",{scrollWheelZoom:true}).setView([27,-84],4);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    /* Voyager basemap (roads, water, terrain tinting) reads like a consumer
+       map product; zoom sits bottom-right so the executive panel never
+       covers it. Falls back exactly as before when tiles are unreachable. */
+    map=L.map("map",{scrollWheelZoom:true,zoomControl:false}).setView([27,-84],4);
+    L.control.zoom({position:"bottomright"}).addTo(map);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
       {attribution:"&copy; OpenStreetMap &copy; CARTO",subdomains:"abcd",maxZoom:19}).addTo(map);
     map.on("click",e=>{ openAdd(e.latlng.lat,e.latlng.lng); });
     mapOk=true;
   }catch(err){ showMapUnavailable(); }
 }
-const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+/* Band fills darkened in step with the --r-* CSS variables so white text on
+   any band clears 3:1; the band NAME always rides beside the colour. */
+const BAND_COLOR={Minimal:"#6E8494",Low:"#2E8B6F",Moderate:"#B07B10",High:"#C05F17",Severe:"#B23A32"};
 /* SVP review: what a map marker is coloured by (the map's "change views" lens).
    Pure, so the node tests can pin the two new modes. "peril" keeps the legacy
    behaviour (the selected peril's band); "combined" uses the all-perils band;
@@ -446,7 +465,10 @@ function drawMarkers(scored){
         (tr.degraded.length?" &middot; degraded: "+esc(tr.degraded.join(", ")):"")+"</span>"+
       breakout+
       "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
-    m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });
+    /* In the executive home the analyst tabs are hidden, so a marker click
+       keeps you on the map (the popup's scorecard button is the drill-down);
+       in the analyst workspace it jumps to the Sites tab as it always has. */
+    m.on("click",()=>{ selectedId=targetId; if(!(ui&&ui.execMode)){ switchTab("sites"); renderSites(); } });
     markers.push(m);
   });
   updateLegend();

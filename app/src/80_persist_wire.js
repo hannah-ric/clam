@@ -273,13 +273,28 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();}});
   // executive / simple view
   document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
   applySimpleView();
+  // v2.3.0 executive home: the mode switch, the map-hero overlays, and the
+  // consolidated Export menu (same handlers the old topbar buttons carried)
+  document.getElementById("modeExec").onclick=()=>setExecMode(true);
+  document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
+  document.getElementById("execSampleBtn").onclick=loadSample;
+  document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
+  const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
+  emBtn.onclick=e=>{e.stopPropagation();const open=!emBox.classList.contains("open");
+    emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap"))closeExportMenu();});
+  emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
+  document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
+  document.getElementById("menuActionBtn").onclick=exportActionList;
+  document.getElementById("menuTmplBtn").onclick=downloadTemplate;
+  applyExecMode();
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;
-  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);setExecMode(false);switchTab("method");};
   document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;

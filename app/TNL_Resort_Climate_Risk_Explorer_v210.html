@@ -15,7 +15,10 @@
     --ink:#15202B; --ink-2:#43535F; --muted:#7A8893;
     --line:#E4E7E2; --line-2:#EEF0EC;
     --primary:#0F3A4B; --primary-2:#12586F; --focus:#1E7FA6;
-    --r-min:#8AA0AC; --r-low:#2E8B6F; --r-mod:#E0A43B; --r-high:#D9772F; --r-sev:#B23A32;
+    /* Risk-band scale, darkened so white pill/cell text clears WCAG 3:1 on
+       every band (the old amber sat at 2.2:1). Bands never ride on colour
+       alone: the band name or value always accompanies the fill. */
+    --r-min:#6E8494; --r-low:#2E8B6F; --r-mod:#B07B10; --r-high:#C05F17; --r-sev:#B23A32;
     --shadow:0 1px 2px rgba(21,32,43,.05), 0 8px 24px rgba(21,32,43,.06);
     --radius:10px;
   }
@@ -83,6 +86,7 @@
   .haz-badge.authoritative .dot{background:#7FD0C4}
 
   /* map */
+  #mapwrap{position:relative;flex:none}
   #map{height:42vh;min-height:320px;width:100%;flex:none;z-index:1;background:#dfe6e2}
   .leaflet-popup-content{font-family:Inter,sans-serif;margin:12px 14px}
   .leaflet-popup-content b{font-family:Fraunces,serif}
@@ -153,7 +157,8 @@
   .driverwrap{display:flex;flex-direction:column;gap:2px}
   .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
     border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:10px;font-weight:700;
-    line-height:1;margin-left:5px;padding:0;cursor:pointer;vertical-align:middle;font-style:italic;font-family:Georgia,serif}
+    line-height:1;margin-left:5px;padding:0;cursor:pointer;vertical-align:middle;font-style:italic;font-family:Georgia,serif;
+    text-transform:none;letter-spacing:0}
   .info:hover,.info[aria-expanded="true"]{background:var(--primary);color:#fff;border-color:var(--primary)}
   .info.on-dark{border-color:#2a6076;background:#0c3242;color:#9fc3cd}
   .info.on-dark:hover,.info.on-dark[aria-expanded="true"]{background:#7FD0C4;color:#08323c;border-color:#7FD0C4}
@@ -247,6 +252,133 @@
   .mtxlegend i{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
   /* ---- SVP review: executive / simple view hides the specialist panels ---- */
   body.execview .pro-only{display:none!important}
+  /* ============================================================
+     Executive home (v2.3.0): a full-bleed map with floating panels,
+     Google-Maps-style. Pure presentation: body.execmode re-lays-out
+     the SAME app (the analyst tabs stay in the DOM, every ID keeps
+     its contract) and the overlays render figures the engine already
+     computed. Nothing here changes a number.
+     ============================================================ */
+  .modeswitch{display:inline-flex;border:1px solid #2a6076;border-radius:9px;overflow:hidden}
+  .modeswitch button{border:0;background:#0c3242;color:#cfe3e7;padding:8px 13px;font:inherit;font-size:13px;font-weight:500}
+  .modeswitch button:hover{background:#0f4256}
+  .modeswitch button[aria-pressed="true"]{background:#7FD0C4;color:#08323c;font-weight:600}
+  .exportwrap{position:relative}
+  .exportmenu{position:absolute;right:0;top:44px;z-index:1600;background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:308px;padding:6px;display:none}
+  .exportmenu.open{display:block;animation:fade .12s ease}
+  @media(prefers-reduced-motion:reduce){.exportmenu.open{animation:none}}
+  .exportmenu .mi{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;
+    border:0;background:none;border-radius:8px;padding:9px 11px;font:inherit}
+  .exportmenu .mi:hover{background:var(--surface-2)}
+  .exportmenu .mi b{font-size:13px;color:var(--primary);font-weight:600}
+  .exportmenu .mi small{font-size:11.5px;color:var(--muted)}
+
+  body.execmode{height:100vh;overflow:hidden}
+  body.execmode #mapwrap{flex:1;min-height:0}
+  body.execmode #map{height:100%;min-height:0}
+  body.execmode nav.tabs,body.execmode main,body.execmode .foot-legal{display:none}
+  body.execmode .analyst-only{display:none!important}
+  body:not(.execmode) .execui{display:none!important}
+  .execui{position:absolute;z-index:1050;font-size:13px}
+
+  #execPanel{top:16px;left:16px;bottom:88px;width:min(410px,calc(100vw - 32px));display:flex;flex-direction:column;
+    background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 16px 40px rgba(21,32,43,.16);overflow:hidden}
+  #execPanel .scrollbody{overflow-y:auto;padding:14px 18px 16px;flex:1;min-height:0}
+  .execkicker{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .exechero{font-family:Fraunces,serif;font-size:37px;font-weight:560;color:var(--primary);line-height:1.05;margin:2px 0 1px}
+  .exechero .unit{font-size:19px;color:var(--ink-2)}
+  .execsub{font-size:12.5px;color:var(--ink-2)}
+  .execdelta{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:4px 11px;border-radius:999px;
+    font-size:12px;font-weight:600;background:#F7EFE2;color:#7A4A08;border:1px solid #E7D4B2}
+  .execdelta.easing{background:#E9F4EF;color:#175E46;border-color:#BFDFD2}
+  .execbasis{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:10.5px;
+    font-weight:600;letter-spacing:.02em;text-transform:none;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2)}
+  .execbasis .dot{width:7px;height:7px;border-radius:50%;background:var(--r-mod)}
+  .execbasis.authoritative .dot{background:var(--r-low)}
+  .exectiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .exectile{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0}
+  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .exectile .v{font-family:Fraunces,serif;font-size:17.5px;font-weight:560;color:var(--primary);line-height:1.1}
+  .exectile .f{font-size:10.5px;color:var(--ink-2);margin-top:1px}
+  .exectile.alert{border-color:#E4B7B2;background:#FBF2F1}
+  .exectile.alert .v{color:var(--r-sev)}
+  .execsec{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    margin:16px 0 7px;display:flex;align-items:center;gap:6px}
+  .execnote{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .prio{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;counter-reset:prio}
+  .prio li{position:relative}
+  .priobtn{width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:12px;
+    padding:9px 38px 9px 40px;font:inherit;position:relative;display:block;transition:border-color .12s,background .12s}
+  .priobtn:hover{border-color:var(--focus);background:#F4F9FB}
+  .priobtn::before{counter-increment:prio;content:counter(prio);position:absolute;left:11px;top:11px;
+    width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  .priotop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .priotop .nm{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .priotop .cost{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--primary);white-space:nowrap}
+  .priometa{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;font-size:11.5px;color:var(--ink-2)}
+  .perildot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:4px}
+  .prioact{margin-top:4px;font-size:11.5px;color:var(--ink-2)}
+  .prioact b{color:#175E46;font-weight:600}
+  .prioplan{display:block;margin-top:6px;font-size:11.5px;color:var(--ink);line-height:1.45;
+    border-top:1px solid var(--line-2);padding-top:6px}
+  .prioplan b{color:var(--primary);font-weight:600}
+  .prionums{color:var(--ink-2)}
+  .prionums b{color:#175E46;font-weight:600}
+  .priowhen{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--ink-2)}
+  .whenchip{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;
+    font-size:10.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  .whenchip.now{background:#FBEBE9;color:#8F2119;border:1px solid #E4B7B2}
+  .whenchip.soon{background:#F7EFE2;color:#7A4A08;border:1px solid #E7D4B2}
+  .whenchip.monitor{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+  .execprog{margin-top:9px;font-size:12px;line-height:1.55;color:var(--ink-2);background:#F1F7F4;
+    border:1px solid #CFE3D9;border-left:3px solid #2E8B6F;border-radius:9px;padding:10px 12px}
+  .execprog b{color:#175E46}
+  .priolocate{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:13px;line-height:1;padding:0}
+  .priolocate:hover{border-color:var(--focus);color:var(--primary)}
+  .execactions{display:flex;gap:8px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--line-2);background:var(--surface-2)}
+
+  #execTimebar{bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 12px 30px rgba(21,32,43,.14);
+    padding:7px 10px;max-width:calc(100vw - 32px);flex-wrap:wrap;justify-content:center}
+  .timelabel{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding-left:6px;white-space:nowrap}
+  .timestep{border:0;background:transparent;border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;color:var(--ink-2)}
+  .timestep:hover{background:var(--surface-2);color:var(--ink)}
+  .timestep.cur{background:var(--primary);color:#fff;font-weight:600}
+  select.execsel{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
+    color:var(--ink);font:inherit;font-size:12px;max-width:170px}
+  .timeplay{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 13px;
+    font:inherit;font-size:12px;font-weight:600;color:var(--primary)}
+  .timeplay:hover{background:var(--surface-2)}
+
+  #execLayerbar{top:16px;right:16px;display:flex;gap:4px;align-items:center;background:var(--surface);
+    border:1px solid var(--line);border-radius:999px;padding:5px 7px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 12px 30px rgba(21,32,43,.14);max-width:calc(100vw - 32px);flex-wrap:wrap}
+  .layerchip{border:0;border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;color:var(--ink-2);background:transparent;white-space:nowrap}
+  .layerchip:hover{background:var(--surface-2);color:var(--ink)}
+  .layerchip[aria-pressed="true"]{background:var(--primary);color:#fff;font-weight:600}
+
+  #execEmpty{inset:0;display:flex;align-items:center;justify-content:center;background:rgba(245,246,243,.6);padding:16px}
+  .execempty-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 2px 6px rgba(21,32,43,.08),0 16px 40px rgba(21,32,43,.16);padding:28px 32px;max-width:520px;text-align:center}
+  .execempty-card h3{font-family:Fraunces,serif;font-weight:560;color:var(--primary);margin:0 0 8px;font-size:20px}
+  .execempty-card p{color:var(--ink-2);font-size:13.5px;line-height:1.55;margin:0 0 16px}
+  .execempty-card .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+  @media(max-width:760px){
+    #execPanel{top:auto;bottom:104px;left:10px;width:calc(100vw - 20px);max-height:44vh}
+    #execLayerbar{top:10px;right:10px;left:10px;justify-content:center;border-radius:14px}
+    #execTimebar{bottom:10px;left:10px;right:10px;transform:none;border-radius:14px}
+    #execTimebar .timelabel,#execLayerbar .timelabel{display:none}
+    .timestep{padding:6px 10px}
+    .exectile .l{white-space:normal}
+  }
+
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -268,6 +400,8 @@
   @media print{
     body.printbrief>*:not(#briefHost){display:none !important}
     body.printbrief #briefHost{display:block}
+    /* the executive layout pins the body to one viewport; printing needs flow */
+    body.printbrief{height:auto !important;overflow:visible !important}
   }
 </style>
 </head>
@@ -287,7 +421,7 @@
   <div class="toolbar">
     <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
     <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
-    <div class="hazgroup">
+    <div class="hazgroup analyst-only">
       <div class="seg"><label class="mini-l">Peril</label>
         <select class="scen" id="hazSel" title="Hazard" aria-label="Hazard">
           <option value="tc">Tropical cyclone</option>
@@ -327,17 +461,44 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
+    <button class="btn ghost analyst-only" id="simpleBtn" title="Toggle a cleaner analyst view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
+    <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
-    <button class="btn ghost" id="simpleBtn" title="Toggle a cleaner executive view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
-    <button class="btn ghost" id="sampleBtn">Load sample</button>
-    <button class="btn" id="exportBtn">Export CSV</button>
-    <button type="button" class="info on-dark" data-info="exportInfo" aria-label="What the export contains" aria-expanded="false">i</button>
-    <button class="btn" id="briefBtn">Board brief</button>
-    <button type="button" class="info on-dark" data-info="brief" aria-label="What the board brief is" aria-expanded="false">i</button>
+    <div class="modeswitch" role="group" aria-label="Choose how much detail the app shows">
+      <button type="button" id="modeExec" aria-pressed="true" title="The one-minute view: map, headline cost, and ranked priorities">Executive</button>
+      <button type="button" id="modeAnalyst" aria-pressed="false" title="The full workspace: every tab, model control, and specialist panel">Analyst</button>
+    </div>
+    <div class="exportwrap">
+      <button class="btn solid" id="exportMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export &amp; brief &#9662;</button>
+      <div class="exportmenu" id="exportMenu" role="menu" aria-label="Exports and briefings">
+        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>Print-ready portfolio one-pager with its data basis stated</small></button>
+        <button class="mi" role="menuitem" id="exportBtn"><b>Portfolio CSV</b><small>Full multi-hazard schema, feeds Power BI (frozen contract)</small></button>
+        <button class="mi" role="menuitem" id="menuBrokerBtn"><b>Broker evidence pack (CSV)</b><small>Secondary modifiers plus the modeled view, for the renewal submission</small></button>
+        <button class="mi" role="menuitem" id="menuActionBtn"><b>Adaptation action list (CSV)</b><small>Every ranked site-and-measure pair with the funding cutline</small></button>
+        <button class="mi" role="menuitem" id="menuTmplBtn"><b>Site CSV template</b><small>The columns for loading your own portfolio</small></button>
+      </div>
+    </div>
   </div>
 </header>
 
-<div id="map"></div>
+<div id="mapwrap">
+  <div id="map"></div>
+  <!-- Executive home overlays: floating panels over the full-bleed map.
+       Painted by renderExecHome(); visible only under body.execmode. -->
+  <section class="execui" id="execPanel" role="region" aria-label="Portfolio priorities at a glance"></section>
+  <div class="execui" id="execLayerbar" role="group" aria-label="What the map markers are coloured by"></div>
+  <div class="execui" id="execTimebar" role="group" aria-label="Climate timeline"></div>
+  <div class="execui" id="execEmpty" style="display:none">
+    <div class="execempty-card">
+      <h3>Your portfolio's climate priorities, in one minute</h3>
+      <p>Load the sample portfolio to explore, search a place in the top bar to add a site, or open the analyst workspace to drop in your own site list. Everything runs in your browser; nothing you load ever leaves the machine.</p>
+      <div class="row">
+        <button class="lightbtn primary" id="execSampleBtn">Load sample portfolio</button>
+        <button class="lightbtn" id="execAnalystBtn">Open analyst workspace</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <nav class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-tab="summary">Summary</button>
@@ -842,7 +1003,7 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.2.0 assembled from source &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.3.0 assembled from source &middot; executive home (map-first priorities, timeline, consolidated exports) &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>
@@ -1201,13 +1362,20 @@ function hasNamedInsured(rows){ return rows.some(s=>insuredOf(s)!=="Unspecified"
    an extended CLIMADA grid (with a `hazard` column) supersedes any peril
    per-hazard, exactly as the wind grid already supersedes the wind field.
    ============================================================ */
+/* Peril identity colours (v2.3.0): the old set carried four near-identical
+   blues that blurred under colour-vision deficiency (worst adjacent pair
+   delta-E 7). This set keeps the semantic anchors (floods cool, heat and
+   fire warm) and passes the full categorical check on a light surface:
+   lightness band, chroma floor, adjacent-pair CVD separation >= 12, and
+   3:1 contrast. Identity still never rides on colour alone: every surface
+   pairs the colour with the peril's name or letter. */
 const HAZARDS=[
-  {key:"tc",     label:"Tropical cyclone", short:"W", color:"#12586F", type:"damage",    unit:"m/s"},
-  {key:"cflood", label:"Coastal flood",    short:"F", color:"#2C7DA0", type:"damage",    unit:"m"},
-  {key:"rflood", label:"Riverine flood",   short:"R", color:"#6A8CAF", type:"damage",    unit:"m"},
-  {key:"heat",   label:"Extreme heat",     short:"H", color:"#C06B2E", type:"indicator", unit:"days"},
-  {key:"wfire",  label:"Wildfire",         short:"B", color:"#A6432E", type:"damage",    unit:"%/yr"},
-  {key:"prain",  label:"TC rainfall",      short:"P", color:"#4E7B8C", type:"damage",    unit:"m ponding"},
+  {key:"tc",     label:"Tropical cyclone", short:"W", color:"#0A8CA8", type:"damage",    unit:"m/s"},
+  {key:"cflood", label:"Coastal flood",    short:"F", color:"#2F5EC4", type:"damage",    unit:"m"},
+  {key:"rflood", label:"Riverine flood",   short:"R", color:"#0E9F6E", type:"damage",    unit:"m"},
+  {key:"heat",   label:"Extreme heat",     short:"H", color:"#C2410C", type:"indicator", unit:"days"},
+  {key:"wfire",  label:"Wildfire",         short:"B", color:"#9F1239", type:"damage",    unit:"%/yr"},
+  {key:"prain",  label:"TC rainfall",      short:"P", color:"#7C55D4", type:"damage",    unit:"m ponding"},
 ];
 const HAZARD_LABEL={};HAZARDS.forEach(h=>HAZARD_LABEL[h.key]=h.label);
 const HAZARD_BY={};HAZARDS.forEach(h=>HAZARD_BY[h.key]=h);
@@ -2282,7 +2450,11 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false};
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false,
+  /* v2.3.0 executive home: the full-bleed map with floating priority panels
+     is the default landing view; Analyst restores the classic tab workspace.
+     A pure display flag: it changes no computed figure. */
+  execMode:true};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -2326,6 +2498,15 @@ const INFO={
     "<p>Each row walks one peril's figure back to where it came from: the <b>data source</b> (a loaded CLIMADA grid with the distance to the nearest cell, a named interim screening model, or an honest zero when neither exists), the <b>intensities</b> at each return period, the <b>named factors</b> this building's profile applies, and the resulting expected annual damage.</p>"+
     "<p>If a number surprises you, the trace shows which ingredient drove it. A grid supersedes the interim model per peril; a zero always says why it is zero.</p>",
     s:"The trace reads the same functions that computed the score; it cannot diverge from them."},
+  execHome:{t:"The executive view",b:
+    "<p>Everything on this panel is the same model the analyst workspace runs, read at the scenario on the timeline below: the <b>headline</b> is the portfolio's expected annual climate cost (damage, business interruption, and heat together), the tiles carry the <b>1-in-100 year</b>, the <b>tolerance position</b>, and the <b>largest driver</b>, and the ranked plan lists the sites where the money concentrates: each with <b>what to do, the dollars (cost, averted loss, payback), and the act-by deadline</b>. Its own i button explains each basis.</p>"+
+    "<p>Click a priority to open the site's full scorecard, with the why-these-numbers trace. The <b>Analyst</b> switch in the top bar opens every specialist surface (perils, adaptation, insurance, uncertainty, method); <b>Export &amp; brief</b> carries the same figures out as a board one-pager or CSV artifacts.</p>",
+    s:"A display lens over the shared engine: it computes nothing new and changes no figure."},
+  execPlan:{t:"Top risks and the plan: how to read it",b:
+    "<p><b>Which sites:</b> ranked by all-in expected annual cost (physical damage, business interruption, and heat together), so the biggest climate risk sits at the top regardless of which peril drives it.</p>"+
+    "<p><b>What to do and the dollars:</b> each site shows its best value measure with the model's own figures: the one-time capital cost, the annual loss it averts, the share of that site's risk it removes, and the simple payback (cost divided by averted annual loss). Costs are planning-grade defaults from published mitigation studies scaled to the site's value and profile: firm enough to rank and budget, but replace them with engineering estimates before committing capital. Where no measure clears breakeven, the honest answer is shown instead: transfer the risk (insure) or accept it.</p>"+
+    "<p><b>By when:</b> the deadline is not a new model. It is the first horizon (Present, 2030, 2050, 2080, under the selected outlook) at which the site's annual cost crosses <b>your own risk tolerance</b>, set on the analyst Summary tab. Over it today reads act now, and each year of delay forfeits the measure's averted loss; never over it by 2080 reads monitor. When a CLIMADA results pack is loaded, its capital plan's phase (Y1, Y2, deferred) is shown beside the urgency as the canonical schedule.</p>",
+    s:"Same engine as the adaptation tab's action queue; the roll-up line never double-counts overlapping measures."},
   brief:{t:"The board brief",b:
     "<p>Builds a print-ready one-pager of the portfolio at the current scenario: headline figures, cost by peril, the most exposed sites, the trajectory to 2080, and the data provenance line, then opens your browser's print dialog. Choose <b>Save as PDF</b> to get the file.</p>"+
     "<p>The brief states its data basis (CLIMADA grid or interim screening) and carries the same disclosure caveats as the app; nothing is computed specially for it.</p>",
@@ -2594,14 +2775,20 @@ function showMapUnavailable(){
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
   try{
-    map=L.map("map",{scrollWheelZoom:true}).setView([27,-84],4);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    /* Voyager basemap (roads, water, terrain tinting) reads like a consumer
+       map product; zoom sits bottom-right so the executive panel never
+       covers it. Falls back exactly as before when tiles are unreachable. */
+    map=L.map("map",{scrollWheelZoom:true,zoomControl:false}).setView([27,-84],4);
+    L.control.zoom({position:"bottomright"}).addTo(map);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
       {attribution:"&copy; OpenStreetMap &copy; CARTO",subdomains:"abcd",maxZoom:19}).addTo(map);
     map.on("click",e=>{ openAdd(e.latlng.lat,e.latlng.lng); });
     mapOk=true;
   }catch(err){ showMapUnavailable(); }
 }
-const BAND_COLOR={Minimal:"#8AA0AC",Low:"#2E8B6F",Moderate:"#E0A43B",High:"#D9772F",Severe:"#B23A32"};
+/* Band fills darkened in step with the --r-* CSS variables so white text on
+   any band clears 3:1; the band NAME always rides beside the colour. */
+const BAND_COLOR={Minimal:"#6E8494",Low:"#2E8B6F",Moderate:"#B07B10",High:"#C05F17",Severe:"#B23A32"};
 /* SVP review: what a map marker is coloured by (the map's "change views" lens).
    Pure, so the node tests can pin the two new modes. "peril" keeps the legacy
    behaviour (the selected peril's band); "combined" uses the all-perils band;
@@ -2694,7 +2881,10 @@ function drawMarkers(scored){
         (tr.degraded.length?" &middot; degraded: "+esc(tr.degraded.join(", ")):"")+"</span>"+
       breakout+
       "<br><button class='lightbtn' style='margin-top:6px' onclick='openScorecard("+(+targetId)+")'>Open scorecard</button>");
-    m.on("click",()=>{ selectedId=targetId; switchTab("sites"); renderSites(); });
+    /* In the executive home the analyst tabs are hidden, so a marker click
+       keeps you on the map (the popup's scorecard button is the drill-down);
+       in the analyst workspace it jumps to the Sites tab as it always has. */
+    m.on("click",()=>{ selectedId=targetId; if(!(ui&&ui.execMode)){ switchTab("sites"); renderSites(); } });
     markers.push(m);
   });
   updateLegend();
@@ -2805,6 +2995,7 @@ function render(){
   renderBacktest();
   renderHazProv();
   renderResultsPack();
+  renderExecHome();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
@@ -2816,6 +3007,10 @@ function renderDecision(){
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
   const rows=decisionRows(sites,scenario,tolAf());
+  /* act-by (v2.3.0): the tolerance-crossing horizon, shared with the
+     executive plan so the two surfaces state the same deadline */
+  rows.forEach(r=>{const s=sites.find(x=>x.id===r.id);const u=execUrgency(s);
+    r.actBy=u.label;r.actByOrd=u.when==="now"?0:(u.horizon||9999);});
   const k=decisionSort.key,d=decisionSort.dir;
   rows.sort((a,b)=>{const va=a[k],vb=b[k];
     return (typeof va==="string"||typeof vb==="string")
@@ -2828,6 +3023,7 @@ function renderDecision(){
     th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
     th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
     th("Top measure","measure")+th("BCR","bcr",1)+
+    th("Act by","actByOrd",1)+
     th("Basis","trustModeled",1)+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
@@ -2838,6 +3034,7 @@ function renderDecision(){
       '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
       '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
       '<td class="num mono" style="color:'+(r.bcr>=1?"#2E8B6F":"#B23A32")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
+      '<td class="num"><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></td>'+
       '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
   });
   h+='</tbody></table>';
@@ -3980,15 +4177,19 @@ function scrubTo(i){
 function stopScrub(){
   if(scrubTimer){clearInterval(scrubTimer);scrubTimer=null;}
   const b=document.getElementById("scrubPlay"); if(b)b.textContent="Play";
+  const eb=document.getElementById("execPlay"); if(eb)eb.textContent="▶ Play";   // exec timeline pill stays in sync
 }
 function playScrub(){
   if(scrubTimer){stopScrub();return;}
   const b=document.getElementById("scrubPlay"); if(b)b.textContent="Stop";
-  let i=0; scrubTo(0);
+  /* start the timer before the first step so the exec timeline pill (rebuilt
+     by the render inside scrubTo) labels itself Stop from the first frame */
+  let i=0;
   scrubTimer=setInterval(()=>{i++;
     if(i>=scrubSteps().length){stopScrub();return;}
     scrubTo(i);
   },1500);
+  scrubTo(0);
 }
 function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
@@ -4092,6 +4293,352 @@ function openBrief(){
   h.innerHTML=briefHtml();
   document.body.classList.add("printbrief");
   setTimeout(()=>{try{window.print();}catch(e){}},60);
+}
+/* ============================================================
+   Executive home (v2.3.0): the one-minute view.
+   A full-bleed map, Google-Maps-style, with floating panels: the
+   headline annual climate cost, three decision tiles (tail, tolerance
+   position, largest driver), a cost trajectory, the peril mix, and the
+   ranked top priorities with their best value actions. A timeline pill
+   walks the whole app through Present to 2080; a colour bar switches
+   what the markers encode.
+
+   Pure display layer over the shared engine: every figure here is read
+   from functions the analyst workspace already runs (finPortfolio,
+   aggregatePortfolio, decisionRows, toleranceFlags, scorePhysTotal),
+   so the executive view can never disagree with the specialist tabs.
+   Drill-downs land on surfaces that already existed: the site
+   scorecard (with its why-these-numbers trace), the analyst tabs, and
+   the consolidated Export menu in the top bar.
+   ============================================================ */
+const EXEC_PATHWAY_NAME={ssp126:"low emissions",ssp245:"middle path",ssp585:"high emissions"};
+const EXEC_PERIL_SHORT={tc:"Wind",cflood:"Coastal flood",rflood:"River flood",heat:"Heat",wfire:"Wildfire",prain:"TC rain"};
+
+function execModeOn(){ return !!(ui&&ui.execMode); }
+function applyExecMode(){
+  document.body.classList.toggle("execmode",execModeOn());
+  const be=document.getElementById("modeExec"),ba=document.getElementById("modeAnalyst");
+  if(be&&be.setAttribute)be.setAttribute("aria-pressed",execModeOn()?"true":"false");
+  if(ba&&ba.setAttribute)ba.setAttribute("aria-pressed",execModeOn()?"false":"true");
+  // the map keeps its centre when the layout swaps between hero and inset
+  if(typeof map!=="undefined"&&map&&mapOk)setTimeout(()=>{try{map.invalidateSize();}catch(e){}},80);
+}
+function setExecMode(on){ ui.execMode=!!on; persist(); applyExecMode(); render(); }
+function closeExportMenu(){
+  const em=document.getElementById("exportMenu"),emb=document.getElementById("exportMenuBtn");
+  if(em&&em.classList)em.classList.remove("open");
+  if(emb&&emb.setAttribute)emb.setAttribute("aria-expanded","false");
+}
+
+/* zoom the hero map to one site; honours prefers-reduced-motion */
+function execFlyTo(id){
+  const s=sites.find(x=>x.id===id); if(!s||!mapOk)return;
+  const z=Math.max((map.getZoom&&map.getZoom())||4,11);
+  let reduce=false;
+  try{reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;}catch(e){}
+  try{ if(reduce)map.setView([s.latitude,s.longitude],z); else map.flyTo([s.latitude,s.longitude],z,{duration:1.1}); }catch(e){}
+}
+
+/* exec timeline controls: thin wrappers over the shared scrubber so the
+   top-bar selects, the Summary-tab scrubber, and this pill can never drift */
+function execScrubTo(i){ stopScrub(); scrubTo(i); }
+function execSetPathway(v){
+  stopScrub();
+  const ps=document.getElementById("pathSel"); if(ps)ps.value=v;
+  if(scenario!=="present"){
+    const hor=scenario.split("_")[1]||"2050";
+    scenario=v+"_"+hor;
+  }
+  persist(); if(scenHook)scenHook(); render();
+}
+function execSetMapColor(m){
+  ui.views.mapColor=m;
+  const sel=document.getElementById("mapColorSel"); if(sel)sel.value=m;
+  persist(); render();
+}
+function execSetHazard(v){
+  activeHazard=v;
+  const sel=document.getElementById("hazSel"); if(sel)sel.value=v;
+  persist(); render();
+}
+
+/* ---- the action plan: which sites, what to do at what cost, by when ----
+   execUrgency answers BY WHEN, honestly derived rather than invented: it
+   walks the site from Present through 2030/2050/2080 under the selected
+   pathway and reports the first horizon at which the site's all-in annual
+   cost crosses the operator's own tolerance line (set on the Summary tab).
+   Over it today: act now. Never over by 2080: monitor. The deadline is
+   therefore a restatement of the user's stated appetite, not a new model. */
+function execUrgency(s){
+  if(!s||!tolerance||!isFinite(tolerance.siteAalBps))return {when:"monitor",horizon:null,label:"Monitor",pathway:currentPathway()};
+  const p=currentPathway();
+  const steps=[["now","present"]].concat(HORIZONS.map(h=>[String(h),p+"_"+h]));
+  for(const [tag,sc] of steps){
+    const bps=s.asset_value_usd?finSite(s,sc).totalAal/s.asset_value_usd*1e4:0;
+    if(bps>tolerance.siteAalBps)
+      return {when:tag,horizon:tag==="now"?null:+tag,label:tag==="now"?"Act now":"Act by "+tag,pathway:p};
+  }
+  return {when:"monitor",horizon:null,label:"Monitor",pathway:p};
+}
+
+/* one row per site, biggest all-in annual cost first: the risk, the best
+   value measure with the engine's own dollars (one-time cost, averted
+   annual loss, share of the site's risk mitigated, simple payback), the
+   decision lane when no measure clears breakeven, the act-by urgency, and
+   the canonical capital-plan phase when a results pack is loaded. */
+function execActionRows(n){
+  const af=tolAf();
+  const f=finPortfolio(sites,scenario);
+  const dr={};decisionRows(sites,scenario,af).forEach(r=>{dr[r.id]=r;});
+  const bands={};scorePhysTotal(sites,scenario).rows.forEach(r=>{bands[r.id]=r.band;});
+  const plan={};
+  if(resultsPack&&resultsPack.data&&resultsPack.data.capital_plan&&Array.isArray(resultsPack.data.capital_plan.projects))
+    resultsPack.data.capital_plan.projects.forEach(pr=>{if(!(pr.site in plan))plan[pr.site]=pr;});
+  return f.rows.slice().sort((a,b)=>b.totalAal-a.totalAal).slice(0,n).map(r=>{
+    const s=sites.find(x=>x.id===r.id);
+    const d=dr[r.id]||{};
+    const best=s?bestMeasureFor(s,scenario,af):null;
+    const u=execUrgency(s);
+    const priced=!!(best&&best.cost>0&&best.averted>0);
+    const pk=plan[r.name]||null;
+    return {id:r.id,name:r.name,brand:r.brand,cost:r.totalAal,value:r.value,
+      pctValue:r.value?r.totalAal/r.value*100:0,
+      dom:d.dom||"tc",band:bands[r.id]||"Minimal",
+      trustModeled:d.trustModeled||0,trustTotal:d.trustTotal||HAZARDS.length,
+      measure:best?best.name:null,measureCost:best?best.cost:0,
+      averted:best?best.averted:0,bcr:best?best.bcr:0,
+      paybackYears:priced?best.cost/best.averted:null,
+      mitigatedPct:(priced&&r.totalAal>0)?best.averted/r.totalAal*100:0,
+      urgency:u,
+      lane:(u.when!=="monitor")?((best&&best.bcr>=1)?"capex":"transfer"):"monitor",
+      packYear:pk?(pk.deferred?"deferred":(pk.year!=null?pk.year:null)):null};
+  });
+}
+
+/* the whole program in one line: fund everything above breakeven (or within
+   the stated budget) and report the joint benefit, never double-counted */
+function execProgram(){
+  const q=actionQueue(sites,scenario,tolAf(),(adapt&&adapt.budget)?+adapt.budget:0);
+  return q.roll;
+}
+
+/* cost trajectory sparkline: Present to 2080 under the current pathway.
+   Single series, so no legend; the endpoints carry the only direct labels
+   and every step keeps a hover title. Baseline is zero (honest area). */
+function execSparkSvg(steps,vals,curIdx){
+  const W=374,H=98,padL=10,padR=10,padT=16,padB=24;
+  const maxV=Math.max(1,Math.max.apply(null,vals));
+  const X=i=>padL+22+(i/(Math.max(1,steps.length-1)))*(W-padL-padR-44);
+  const Y=v=>H-padB-(v/maxV)*(H-padB-padT);
+  let area="M"+X(0)+" "+(H-padB)+" ";
+  vals.forEach((v,i)=>{area+="L"+X(i)+" "+Y(v)+" ";});
+  area+="L"+X(vals.length-1)+" "+(H-padB)+" Z";
+  let line="";vals.forEach((v,i)=>{line+=(i?"L":"M")+X(i)+" "+Y(v)+" ";});
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMidYMid meet" role="img" '+
+    'aria-label="Expected annual cost from '+esc(steps[0].label)+' to '+esc(steps[steps.length-1].label)+': '+
+    fmt$(vals[0])+' rising to '+fmt$(vals[vals.length-1])+'">';
+  s+='<path d="'+area+'" fill="rgba(15,58,75,.09)"/>';
+  s+='<path d="'+line+'" fill="none" stroke="#0F3A4B" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  vals.forEach((v,i)=>{
+    const cur=i===curIdx;
+    s+='<circle cx="'+X(i)+'" cy="'+Y(v)+'" r="'+(cur?5:4)+'" fill="'+(cur?"#1E7FA6":"#0F3A4B")+'" stroke="#fff" stroke-width="2">'+
+       '<title>'+esc(steps[i].label)+': '+fmt$(v)+'/yr</title></circle>';
+    s+='<text x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="'+(cur?"#15202B":"#7A8893")+'"'+(cur?' font-weight="600"':'')+'>'+esc(steps[i].label)+'</text>';
+  });
+  // direct labels on the two endpoints only; the titles carry the rest
+  s+='<text x="'+X(0)+'" y="'+(Y(vals[0])-9)+'" text-anchor="start" font-size="10.5" fill="#43535F" class="mono">'+fmt$(vals[0])+'</text>';
+  s+='<text x="'+X(vals.length-1)+'" y="'+(Y(vals[vals.length-1])-9)+'" text-anchor="end" font-size="10.5" fill="#15202B" font-weight="600" class="mono">'+fmt$(vals[vals.length-1])+'</text>';
+  s+='</svg>';
+  return s;
+}
+
+/* peril mix: one part-to-whole bar (2px surface gaps between segments) plus
+   a legend naming every segment, so identity never rides on colour alone */
+function execMixHtml(byPeril,total){
+  const items=Object.keys(byPeril).map(k=>({k,v:byPeril[k]})).filter(i=>i.v>0).sort((a,b)=>b.v-a.v);
+  if(!items.length)return '<div class="execnote">No annual cost at this scenario.</div>';
+  const tot=items.reduce((a,i)=>a+i.v,0)||1;
+  let h='<div style="display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden" role="img" aria-label="'+
+    esc(items.map(i=>EXEC_PERIL_SHORT[i.k]+" "+(i.v/tot*100).toFixed(0)+"%").join(", "))+'">';
+  items.forEach(i=>{
+    h+='<div style="flex:'+(i.v/tot).toFixed(4)+' 1 0%;background:'+HAZARD_BY[i.k].color+'" title="'+
+      esc(HAZARD_LABEL[i.k])+': '+fmt$(i.v)+'/yr ('+(i.v/tot*100).toFixed(0)+'%)"></div>';
+  });
+  h+='</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-top:7px;font-size:11.5px;color:var(--ink-2)">';
+  items.forEach(i=>{
+    const pct=i.v/tot*100;
+    h+='<span><span class="perildot" style="background:'+HAZARD_BY[i.k].color+'"></span>'+
+      esc(EXEC_PERIL_SHORT[i.k])+' <span class="mono">'+(pct<0.5?"&lt;1":pct.toFixed(0))+'% · '+fmt$(i.v)+'</span></span>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function renderExecHome(){
+  const panel=document.getElementById("execPanel"); if(!panel)return;
+  if(!execModeOn())return;
+  const empty=document.getElementById("execEmpty"),layer=document.getElementById("execLayerbar"),time=document.getElementById("execTimebar");
+  const has=sites.length>0;
+  if(empty)empty.style.display=has?"none":"flex";
+  panel.style.display=has?"flex":"none";
+  if(layer)layer.style.display=has?"flex":"none";
+  if(time)time.style.display=has?"flex":"none";
+  if(!has)return;
+  let focusId=null;
+  try{focusId=(document.activeElement&&document.activeElement.id)||null;}catch(e){}
+
+  const af=tolAf();
+  const f=finPortfolio(sites,scenario);
+  const tf=toleranceFlags(sites,scenario,af);
+  const planRows=execActionRows(5);
+  const prog=execProgram();
+  const agg=aggregatePortfolio(sites,scenario);
+  const pathway=currentPathway();
+  const curLabel=SCEN_LABEL[scenario]||scenario;
+
+  /* headline delta: at Present, the projection to 2050 under the chosen
+     pathway; at a future scenario, the change against today */
+  let delta,deltaPct,deltaLabel;
+  if(scenario==="present"){
+    const ff=finPortfolio(sites,pathway+"_2050");
+    delta=ff.totalAal-f.totalAal;deltaPct=f.totalAal?delta/f.totalAal*100:0;
+    deltaLabel="by 2050, "+(EXEC_PATHWAY_NAME[pathway]||pathway);
+  }else{
+    const pf=finPortfolio(sites,"present");
+    delta=f.totalAal-pf.totalAal;deltaPct=pf.totalAal?delta/pf.totalAal*100:0;
+    deltaLabel="vs present day";
+  }
+  const easing=delta<0;
+  const deltaChip='<span class="execdelta'+(easing?" easing":"")+'" title="How the expected annual cost moves with warming">'+
+    (easing?"▼ ":"▲ +")+fmt$(Math.abs(delta))+"/yr ("+(easing?"":"+")+deltaPct.toFixed(0)+"%) "+esc(deltaLabel)+'</span>';
+
+  const live=hazardGrid?perilAuthority().filter(a=>a.live).length:0;
+  const basis=hazardGrid
+    ?'<button type="button" class="execbasis authoritative" id="execBasisBtn" title="Running on your loaded climate data. Click for the full provenance record."><span class="dot"></span>'+live+' of '+HAZARDS.length+' perils on loaded data</button>'
+    :'<button type="button" class="execbasis" id="execBasisBtn" title="Built-in screening estimates; good for exploration, not disclosure. Click to load climate data."><span class="dot"></span>Built-in estimates</button>';
+
+  const varRef=f.jointTail?f.jointTail.var100:f.var100;
+  const tailBasis=f.jointTail?"joint event tail":"upper-bound blend";
+  const nBr=tf.siteBreaches.length;
+  const tolTile=nBr
+    ?'<div class="exectile alert" title="'+esc(tf.siteBreaches.map(b=>b.name).join(", "))+'"><div class="l">Over tolerance</div><div class="v">'+nBr+' site'+(nBr>1?"s":"")+'</div><div class="f">past your stated line</div></div>'
+    :(tf.anyBreach
+      ?'<div class="exectile alert"><div class="l">Over tolerance</div><div class="v">Portfolio</div><div class="f">total past your stated line</div></div>'
+      :'<div class="exectile"><div class="l">Tolerance</div><div class="v">In position</div><div class="f">no thresholds breached</div></div>');
+  const perilArr=Object.keys(agg.byPeril).map(k=>[k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
+  const domK=perilArr[0][0], domShare=agg.total?perilArr[0][1]/agg.total*100:0;
+
+  const steps=scrubSteps(), vals=steps.map(st=>finPortfolio(sites,st.sc).totalAal), curIdx=scrubIndex();
+
+  let h='<div class="exechead">'+
+    '<div class="execkicker">Expected annual climate cost'+infoBtn("execHome")+' <span style="flex:1"></span>'+basis+'</div>'+
+    '<div class="exechero">'+fmt$(f.totalAal)+'<span class="unit">/yr</span></div>'+
+    '<div class="execsub">'+f.aalPctValue.toFixed(2)+'% of '+fmt$(f.value)+' insured value · '+sites.length+' site'+(sites.length>1?"s":"")+' · '+esc(curLabel)+'</div>'+
+    deltaChip+
+    '</div>';
+  h+='<div class="scrollbody">';
+  h+='<div class="exectiles">'+
+    '<div class="exectile" title="What a 1-in-100 year would cost the whole portfolio ('+esc(tailBasis)+')"><div class="l">1-in-100 year</div><div class="v">'+fmt$(varRef)+'</div><div class="f">'+(f.value?(varRef/f.value*100).toFixed(0):0)+'% of value · '+esc(tailBasis)+'</div></div>'+
+    tolTile+
+    '<div class="exectile" title="'+esc(HAZARD_LABEL[domK])+' drives '+domShare.toFixed(0)+'% of the expected annual cost"><div class="l">Largest driver</div><div class="v">'+esc(EXEC_PERIL_SHORT[domK]||domK)+'</div><div class="f">'+domShare.toFixed(0)+'% of annual cost</div></div>'+
+    '</div>';
+  /* THE PLAN: which sites (biggest all-in risk first), what to do with the
+     engine's own dollars, and by when (the tolerance-crossing horizon) */
+  h+='<div class="execsec">Top risks &amp; the plan'+infoBtn("execPlan")+'</div>';
+  h+='<ol class="prio">';
+  planRows.forEach(r=>{
+    const full=r.trustModeled===r.trustTotal;
+    const u=r.urgency;
+    const whenCls=u.when==="now"?"now":(u.when==="monitor"?"monitor":"soon");
+    const priced=r.paybackYears!=null;
+    let planLine;
+    if(priced&&r.lane!=="transfer"){
+      planLine='<span class="prioplan">Do: <b>'+esc(r.measure)+'</b><br>'+
+        '<span class="prionums">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
+    }else if(r.lane==="transfer"){
+      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
+        ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
+    }else{
+      planLine='<span class="prioplan">No priced measure in scope; the adaptation tab has the full library</span>';
+    }
+    let whenLine='<span class="priowhen"><span class="whenchip '+whenCls+'">'+esc(u.label)+'</span> ';
+    if(u.when==="now")whenLine+='over your tolerance today'+(priced?' · each year of delay forfeits '+fmt$(r.averted):'');
+    else if(u.when==="monitor")whenLine+='inside tolerance through 2080 · re-check at renewal';
+    else whenLine+='crosses your tolerance by '+esc(String(u.horizon))+' under the '+esc(EXEC_PATHWAY_NAME[u.pathway]||u.pathway);
+    if(r.packYear!=null)whenLine+=' · <span class="mono" title="Phase from the loaded CLIMADA capital plan (results pack)">plan: '+(r.packYear==="deferred"?"deferred":"Y"+r.packYear)+'</span>';
+    whenLine+='</span>';
+    h+='<li>'+
+      '<button type="button" class="priobtn" data-exfocus="'+(+r.id)+'" aria-label="Open the scorecard for '+esc(r.name)+'">'+
+      '<span class="priotop"><span class="nm">'+esc(r.name)+'</span><span class="cost">'+fmt$(r.cost)+'/yr</span></span>'+
+      '<span class="priometa">'+
+        '<span title="Dominant peril at this site"><span class="perildot" style="background:'+(HAZARD_BY[r.dom]?HAZARD_BY[r.dom].color:"#7A8893")+'"></span>'+esc(HAZARD_LABEL[r.dom]||r.dom)+'</span>'+
+        '<span class="pill mini '+esc(r.band)+'">'+esc(r.band)+'</span>'+
+        '<span class="mono" title="Annual climate cost as a share of this site\'s value">'+r.pctValue.toFixed(2)+'% of value</span>'+
+        '<span class="mono" style="font-size:10px;color:'+(full?"var(--ink-2)":"#8A4A1B")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site; the scorecard trust strip has the detail">'+r.trustModeled+'/'+r.trustTotal+' modeled</span>'+
+      '</span>'+
+      planLine+whenLine+
+      '</button>'+
+      '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Zoom the map to '+esc(r.name)+'" aria-label="Zoom the map to '+esc(r.name)+'">◎</button>'+
+      '</li>';
+  });
+  h+='</ol>';
+  if(prog&&prog.n>0){
+    h+='<div class="execprog">Funding all <b>'+prog.n+'</b> action'+(prog.n>1?"s":"")+' above breakeven'+
+      ((adapt&&adapt.budget>0)?' within the '+fmt$(adapt.budget)+' budget':'')+
+      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> (program BCR '+prog.bcr.toFixed(1)+'x, no double counting). '+
+      '<button type="button" class="lightbtn" id="execProgBtn" style="margin-top:6px">Open the capital plan</button></div>';
+  }
+  if(sites.length>planRows.length)h+='<div class="execnote">The '+planRows.length+' largest of '+sites.length+' sites by all-in annual cost (damage, interruption, heat); the analyst decision view ranks them all.</div>';
+  h+='<div class="execsec">How the cost grows · '+esc(PATHWAY_LABEL[pathway]||pathway)+'</div>'+execSparkSvg(steps,vals,curIdx);
+  h+='<div class="execsec">Where it comes from</div>'+execMixHtml(agg.byPeril,agg.total);
+  h+='<div class="execnote">'+(hazardGrid
+    ?"Running on your loaded CLIMADA data ("+live+" of "+HAZARDS.length+" perils); perils still on the built-in estimate are labelled wherever they appear."
+    :"Exploring with built-in screening estimates: good for a first look, not for disclosure. Load your climate data via the analyst workspace's Method &amp; data tab.")+
+    ' Measure costs and averted losses are planning-grade figures from published mitigation studies, scaled to each site\'s value and profile: firm for ranking, replace with engineering estimates before committing capital.</div>';
+  h+='</div>';
+  h+='<div class="execactions">'+
+    '<button type="button" class="lightbtn primary" id="execFullBtn">Open full analysis</button>'+
+    '<button type="button" class="lightbtn" id="execBriefBtn">Board brief (PDF)</button>'+
+    '</div>';
+  panel.innerHTML=h;
+  panel.querySelectorAll("[data-exfocus]").forEach(b=>b.onclick=()=>openScorecard(+b.dataset.exfocus));
+  panel.querySelectorAll("[data-exfly]").forEach(b=>b.onclick=()=>execFlyTo(+b.dataset.exfly));
+  const fb=document.getElementById("execFullBtn"); if(fb)fb.onclick=()=>setExecMode(false);
+  const bb=document.getElementById("execBriefBtn"); if(bb)bb.onclick=openBrief;
+  const eb=document.getElementById("execBasisBtn"); if(eb)eb.onclick=()=>{setExecMode(false);switchTab("method");};
+  const pg=document.getElementById("execProgBtn"); if(pg)pg.onclick=()=>{setExecMode(false);switchTab("adaptation");};
+
+  /* the timeline pill: Present to 2080 plus the emissions outlook */
+  if(time){
+    let t='<span class="timelabel">Timeline</span>';
+    t+=steps.map((st,i)=>'<button type="button" class="timestep'+(i===curIdx?" cur":"")+'" data-exscrub="'+i+'" aria-pressed="'+(i===curIdx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
+    t+='<select class="execsel" id="execPathSel" aria-label="Emissions outlook for the future steps" '+
+      'title="Which IPCC emissions future the 2030-2080 steps assume: low '+esc(PATHWAY_LABEL.ssp126)+', middle '+esc(PATHWAY_LABEL.ssp245)+', high '+esc(PATHWAY_LABEL.ssp585)+'">'+
+      ["ssp126","ssp245","ssp585"].map(k=>'<option value="'+k+'"'+(pathway===k?" selected":"")+'>'+esc(EXEC_PATHWAY_NAME[k].replace(/^./,c=>c.toUpperCase()))+'</option>').join("")+
+      '</select>';
+    t+='<button type="button" class="timeplay" id="execPlay" title="Walk the portfolio from Present to 2080">'+(scrubTimer?"■ Stop":"▶ Play")+'</button>';
+    time.innerHTML=t;
+    time.querySelectorAll("[data-exscrub]").forEach(b=>b.onclick=()=>execScrubTo(+b.dataset.exscrub));
+    const psel=document.getElementById("execPathSel"); if(psel)psel.onchange=e=>execSetPathway(e.target.value);
+    const pl=document.getElementById("execPlay"); if(pl)pl.onclick=playScrub;
+  }
+
+  /* the colour bar: what the markers encode */
+  if(layer){
+    const mode=ui.views.mapColor;
+    let l='<span class="timelabel">Colour</span>'+
+      [["combined","Combined risk"],["dominant","Dominant peril"],["peril","One peril"]].map(([k,lab])=>
+        '<button type="button" class="layerchip" data-exmap="'+k+'" aria-pressed="'+(mode===k?"true":"false")+'">'+lab+'</button>').join("");
+    if(mode==="peril"){
+      l+='<select class="execsel" id="execHazSel" aria-label="Which peril colours the markers">'+
+        HAZARDS.map(hz=>'<option value="'+hz.key+'"'+(activeHazard===hz.key?" selected":"")+'>'+esc(hz.label)+'</option>').join("")+'</select>';
+    }
+    layer.innerHTML=l;
+    layer.querySelectorAll("[data-exmap]").forEach(b=>b.onclick=()=>execSetMapColor(b.dataset.exmap));
+    const hsel=document.getElementById("execHazSel"); if(hsel)hsel.onchange=e=>execSetHazard(e.target.value);
+  }
+
+  if(focusId){try{const el=document.getElementById(focusId);if(el&&typeof el.focus==="function")el.focus();}catch(e){}}
 }
 /* ============================================================
    Data intake
@@ -4628,13 +5175,28 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();}});
   // executive / simple view
   document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
   applySimpleView();
+  // v2.3.0 executive home: the mode switch, the map-hero overlays, and the
+  // consolidated Export menu (same handlers the old topbar buttons carried)
+  document.getElementById("modeExec").onclick=()=>setExecMode(true);
+  document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
+  document.getElementById("execSampleBtn").onclick=loadSample;
+  document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
+  const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
+  emBtn.onclick=e=>{e.stopPropagation();const open=!emBox.classList.contains("open");
+    emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap"))closeExportMenu();});
+  emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
+  document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
+  document.getElementById("menuActionBtn").onclick=exportActionList;
+  document.getElementById("menuTmplBtn").onclick=downloadTemplate;
+  applyExecMode();
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;
-  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);switchTab("method");};
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);setExecMode(false);switchTab("method");};
   document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;
