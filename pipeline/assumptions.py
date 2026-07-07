@@ -205,7 +205,47 @@ SCALARS = {
         "baseline": "present-day interim wind field",
         "citation": "screening scalar consistent with AR6 assessed TC "
                     "intensity trends (~+5% per 2-3 degC)"},
+    "fire_cond_interim": {
+        "value": 0.35, "units": "conditional structure damage ratio GIVEN "
+                                "fire reaches the site point (interim flat "
+                                "ratio, capped)",
+        "baseline": "n/a",
+        "citation": "interim cap pending a conditional-flame-length layer; "
+                    "consistent with the expectation of the FIRE_CFL_DAMAGE "
+                    "mapping at moderate flame lengths (USFS Wildfire Risk "
+                    "to Communities, RDS-2020-0016). LABELED interim on the "
+                    "trust surface; replaced per site wherever the CFL "
+                    "raster is supplied"},
 }
+
+# Conditional flame length (ft, upper band edge) -> conditional structure
+# damage ratio given fire reaches the point. Screening-grade step mapping on
+# the standard fireline-intensity / suppression classes (Scott & Reinhardt
+# 2001; home-ignition-zone literature): surface fire barely threatens a
+# code-built resort structure, crowning fire mostly destroys it. This is the
+# intensity-conditioned replacement for the retired flat FIRE_MDD=0.6, which
+# stacked a near-total-loss assumption on top of cell-occupancy frequency.
+FIRE_CFL_DAMAGE = {
+    "bands_ft": [2.0, 4.0, 8.0, 12.0],
+    "ratios": [0.02, 0.10, 0.30, 0.55, 0.80],
+    "units": "conditional structure damage ratio by flame-length band (ft)",
+    "baseline": "n/a",
+    "citation": "flame-length suppression/intensity classes (Scott & "
+                "Reinhardt 2001) mapped to screening structure-loss ratios; "
+                "driven by the USFS WRC Conditional Flame Length layer "
+                "(RDS-2020-0016)",
+}
+
+
+def cfl_to_damage(cfl_ft):
+    """Conditional damage ratio(s) for flame length(s) in feet (vectorized).
+    Values at or below a band edge take that band's ratio; beyond the last
+    edge takes the top ratio."""
+    import numpy as np
+    cfl = np.asarray(cfl_ft, float)
+    idx = np.searchsorted(np.asarray(FIRE_CFL_DAMAGE["bands_ft"], float),
+                          cfl, side="left")
+    return np.asarray(FIRE_CFL_DAMAGE["ratios"], float)[idx]
 
 
 def scalar(key):
@@ -374,6 +414,10 @@ def to_app_js():
         "   // burn-probability uplift per deg C\n"
         f"const TC_UPLIFT_PER_C={_js(scalar('tc_intensity_uplift_per_c'))};"
         "     // interim TC field intensity uplift per deg C\n"
+        "// interim flat conditional damage ratio given fire reaches the\n"
+        "// site (capped; LABELED interim); a grid carrying flame-length-\n"
+        "// conditioned ratios in v25 supersedes it per site\n"
+        f"const FIRE_COND_INTERIM={_js(scalar('fire_cond_interim'))};\n"
     )
 
 

@@ -387,7 +387,7 @@ function namedInsuredDetail(record){
 function siteTrustStrip(site){
   const t=siteTrustSummary(site,scenario);
   const bits=HAZARDS.map(h=>{const x=t.byHz[h.key];const on=x.state==="modeled";
-    return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")":"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
+    return '<span class="pill mini" data-trust="'+(on?"modeled":"degraded")+'" style="background:'+(on?"var(--r-low)":"var(--r-min)")+(on?'':';opacity:0.8')+'" title="'+esc(h.label+": "+(on?"modeled at this site (grid"+(x.distKm!=null?", "+Math.round(x.distKm)+" km to cell":"")+")"+(x.note?"; "+x.note:""):"degraded: "+(x.detail||x.basis)))+'">'+h.short+'</span>';}).join("");
   return '<div class="ratecell" style="margin:2px 0 10px">'+bits+
     '<span class="hint" style="margin-left:8px">model basis at this site: '+t.modeled+' of '+t.total+' perils modeled'+(t.modeled<t.total?', the rest degraded (hover a chip for why)':'')+'</span></div>';
 }

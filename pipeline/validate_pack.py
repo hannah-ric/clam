@@ -129,6 +129,21 @@ def main(path: str, meta_path: str | None = None) -> int:
     else:
         ok("portfolio AAL reconciles with per-site and by-peril sums")
 
+    # D2. wildfire share sanity: this portfolio is not wildfire-led (coastal
+    # SE US / Gulf / Caribbean / Hawaii), so a large wildfire share of the
+    # acute AAL is the signature of the retired cell-occupancy inflation
+    if "present" in scen:
+        bp = scen["present"]["portfolio"].get("by_peril_aal_usd", {})
+        acute = sum(bp.values()) or 1.0
+        wf_share = bp.get("wfire", 0.0) / acute * 100
+        if wf_share > 25:
+            warn(f"wildfire is {wf_share:.0f}% of present-day acute AAL: "
+                 f"this portfolio is not wildfire-led; inspect the burn-"
+                 f"probability source before shipping")
+        else:
+            ok(f"wildfire share of acute AAL is {wf_share:.1f}% "
+               f"(not wildfire-led, as designed)")
+
     # E. climate signal ------------------------------------------------------------------
     if "present" in scen and "ssp585_2080" in scen:
         now = scen["present"]["portfolio"]["direct_aal_usd"]

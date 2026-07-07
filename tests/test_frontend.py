@@ -313,8 +313,9 @@ assert(hzSite(plain,"prain","present").ead===0,
   "MIGRATION SAFETY: rainfall scores zero without a grid (no interim model)");
 const wui={id:10,name:"Ridge",latitude:34.0,longitude:-116.5,asset_value_usd:50000000,wui_class:"intermix"};
 const wf0=hzSite(wui,"wfire","present");
-assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_MDD)<1e-6,
-  "wildfire interim: WUI class drives burn probability (0.6%/yr intermix)");
+assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_COND_INTERIM)<1e-6,
+  "wildfire interim: WUI point probability x the capped INTERIM conditional ratio (flat 0.6 retired)");
+assert(wf0.fireCondSource==="interim","the interim conditional side is labeled");
 const wf85=hzSite(wui,"wfire","ssp585_2080");
 assert(Math.abs(wf85.ead-wf0.ead*(1+FIRE_WARMING_UPLIFT*3.6))<1e-3,
   "wildfire interim scales with warming per scenario");
@@ -326,6 +327,8 @@ const sixRows=[];
 for(const sc of SCEN_KEYS){
   sixRows.push({lat:34.0,lon:-116.5,scenario:sc,hazard:"wfire",
     v10:+(1.2*(1+FIRE_WARMING_UPLIFT*(WARMING[sc]||0))).toFixed(3),v25:0,v50:0,v100:0,v250:0,v500:0});
+  sixRows.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"wfire",
+    v10:0.8,v25:30,v50:0,v100:0,v250:0,v500:0});
   sixRows.push({lat:29.5,lon:-98.5,scenario:sc,hazard:"prain",
     v10:200,v25:350,v50:550,v100:800,v250:1200,v500:1600});
 }
@@ -333,6 +336,13 @@ buildGridsFromRows(sixRows);
 const wfg=hzSite(wui,"wfire","present");
 assert(wfg.fireSource==="grid"&&Math.abs(wfg.burnPct-1.2)<1e-9,
   "wildfire grid supersedes the WUI interim (grid-first)");
+assert(wfg.fireCondSource==="interim"&&Math.abs(wfg.ead-50000000*0.012*FIRE_COND_INTERIM)<1e-3,
+  "a grid without v25 keeps the capped interim conditional ratio, labeled");
+assert(siteTrust(wui,"wfire","present").note.indexOf("interim")>=0,
+  "the per-site trust chip carries the interim-conditional label");
+const wfc=hzSite(plain,"wfire","present");
+assert(wfc.fireCondSource==="grid"&&Math.abs(wfc.ead-50000000*0.008*0.30)<1e-3,
+  "a grid v25 drives flame-length-conditioned damage: p x cond x value");
 const prg=hzSite(plain,"prain","present");
 assert(prg.ead>0,"rainfall grid lights the peril up");
 const d100=Math.max(0,800-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF;

@@ -27,3 +27,7 @@ const ARCHETYPES={"lowrise_timber":{"v_half_mult":1.0,"fb_add_m":0.0,"flood_cap"
 const DEFAULT_ARCHETYPE="lowrise_timber";
 const FIRE_WARMING_UPLIFT=0.14;   // burn-probability uplift per deg C
 const TC_UPLIFT_PER_C=0.02;     // interim TC field intensity uplift per deg C
+// interim flat conditional damage ratio given fire reaches the
+// site (capped; LABELED interim); a grid carrying flame-length-
+// conditioned ratios in v25 supersedes it per site
+const FIRE_COND_INTERIM=0.35;

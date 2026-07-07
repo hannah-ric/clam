@@ -259,21 +259,32 @@ function floodEad(vec,value,fb,dmgScale,cap){
 }
 function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate","High","Severe"];let i=0;while(i<t.length&&days32>t[i])i++;return n[i];}
 
-/* Increment 3: wildfire and TC-rainfall perils. MIRRORS the pipeline's
-   constants; change both sides. Migration safety: with no wfire grid and no
-   wui_class, burn probability is ZERO; rainfall has NO interim model at all
-   (a grid is required), so loading nothing reproduces the five-peril math. */
-const FIRE_MDD=0.6;                              // conditional damage ratio when a site burns
-const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual burn %, by WUI class
-/* FIRE_WARMING_UPLIFT lives in the generated 05_assumptions.js registry */
+/* Increment 3 / Task 3.5: wildfire and TC-rainfall perils. MIRRORS the
+   pipeline's constants; change both sides. Migration safety: with no wfire
+   grid and no wui_class, burn probability is ZERO; rainfall has NO interim
+   model at all (a grid is required).
+   Wildfire semantics after the structural fix: v10 is the annual
+   probability fire REACHES THE SITE POINT (USFS WRC burn probability,
+   point-sampled by the pipeline - never cell occupancy, never buffered),
+   and v25 is the conditional damage ratio given fire at the modeled flame
+   length. The retired flat FIRE_MDD=0.6 is replaced: where v25 is absent
+   (an older grid, or no CFL raster supplied) the capped INTERIM ratio
+   FIRE_COND_INTERIM applies and is LABELED interim on the trust surface. */
+const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual point-burn %, by WUI class
+/* FIRE_WARMING_UPLIFT and FIRE_COND_INTERIM live in 05_assumptions.js */
 const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;
   if(g){const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),source:"grid"};}
+    if(!(r.meta&&r.meta.outside)){
+      const v25=+r.vec[25]||0;
+      return {pct:Math.min(Math.max(+r.vec[10]||0,0),100),
+              cond:v25>0?Math.min(v25/100,1):FIRE_COND_INTERIM,
+              source:"grid",condSource:v25>0?"grid":"interim"};}}
   const wui=String(site.wui_class||"").toLowerCase();
   const base=FIRE_WUI_PBURN[wui]||0;
-  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),source:base?"interim":"none"};
+  return {pct:base*(1+FIRE_WARMING_UPLIFT*warming(sc)),cond:FIRE_COND_INTERIM,
+          source:base?"interim":"none",condSource:"interim"};
 }
 function fireVulnMult(site){
   let m=1;
@@ -361,8 +372,14 @@ function siteTrust(site,hz,sc){
   const g=gridByHazard[hz];
   if(g){
     const r=g(site.latitude,site.longitude,sc);
-    if(!(r.meta&&r.meta.outside))
-      return {state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+    if(!(r.meta&&r.meta.outside)){
+      const t={state:"modeled",basis:"grid",distKm:r.meta&&r.meta.dist};
+      /* the wildfire conditional-damage side stays LABELED interim until a
+         flame-length (CFL) value reaches this site (v25>0) */
+      if(hz==="wfire"&&!(+r.vec[25]>0))
+        t.note="conditional damage interim (flat "+FIRE_COND_INTERIM+", capped) until a flame-length layer is supplied";
+      return t;
+    }
     const fb=trustFallback(site,hz);
     return {state:"degraded",basis:fb.basis,distKm:r.meta.dist,
       detail:"outside grid coverage ("+Math.round(r.meta.dist)+" km to the nearest cell); "+fb.detail};
@@ -414,9 +431,10 @@ function hzSite(site,hz,sc){
   }
   if(hz==="wfire"){
     const b=fireBurnPct(site,sc), fv=fireVulnMult(site);
-    const frac=(b.pct/100)*FIRE_MDD*fv;
-    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*FIRE_MDD*fv:0}));
-    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,burnPct:b.pct,fireSource:b.source};
+    const frac=(b.pct/100)*b.cond*fv;
+    const curve=RPS.map(rp=>({rp,v:b.pct,loss:(b.pct>=100/rp)?val*b.cond*fv:0}));
+    return {ead:frac*val,eadPct:frac*100,band:bandOf(frac*100),curve,vec:null,
+            burnPct:b.pct,fireCond:b.cond,fireSource:b.source,fireCondSource:b.condSource};
   }
   if(hz==="prain"){
     const dvec=prainToDepth(hzVector("prain",la,lo,sc));
@@ -543,11 +561,14 @@ function explainPeril(site,hz,sc){
     if(b.source==="grid")out.source=gridSrc();
     else if(b.source==="interim")out.source={kind:"interim",
       detail:String(site.wui_class||"").toLowerCase()+" WUI class: "+
-        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base burn, +"+
+        (FIRE_WUI_PBURN[String(site.wui_class||"").toLowerCase()]||0)+"%/yr base point-burn probability, +"+
         Math.round(FIRE_WARMING_UPLIFT*100)+"% per degree of warming"};
     else out.source={kind:"none",detail:"no wildfire grid loaded and no wui_class on the site profile, so wildfire scores zero"};
     out.inputs={kind:"burn",burnPct:r.burnPct||0};
-    out.factors=[{name:"conditional damage when a site burns",mult:FIRE_MDD}];
+    out.factors=[b.condSource==="grid"
+      ?{name:"conditional damage at the modeled flame length (WRC CFL)",mult:b.cond}
+      :{name:"conditional damage given fire reaches the site: INTERIM flat ratio, capped",mult:b.cond}];
+    if(b.condSource!=="grid")out.notes.push("the conditional damage side is an interim flat ratio ("+FIRE_COND_INTERIM+", capped) until a flame-length (CFL) layer is supplied; labeled interim here and on the trust chips");
     if(site.roof_class_a)out.factors.push({name:"Class A fire-rated roof",mult:0.6});
     const dsm=+site.defensible_space_m;
     if(isFinite(dsm)&&dsm>=30)out.factors.push({name:"defensible space "+dsm+" m",mult:0.7});

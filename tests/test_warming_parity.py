@@ -99,6 +99,20 @@ def check_registry_self_consistency():
             f"{k}: fb_add below -0.3 would push effective freeboard negative"
         assert a["flood_cap"] is None or 0.0 < a["flood_cap"] <= 1.0, k
     print("ok  archetypes: neutral default, bounded curve shifts, all cited")
+    # wildfire conditional-damage assumptions (Task 3.5)
+    fci = A.SCALARS["fire_cond_interim"]
+    assert 0 < fci["value"] < 0.6, \
+        "the interim conditional ratio must sit below the retired flat 0.6"
+    assert "interim" in fci["citation"].lower()
+    m = A.FIRE_CFL_DAMAGE
+    assert len(m["ratios"]) == len(m["bands_ft"]) + 1 and m["citation"]
+    assert all(m["ratios"][i] < m["ratios"][i + 1]
+               for i in range(len(m["ratios"]) - 1)), \
+        "conditional damage must rise with flame length"
+    assert list(A.cfl_to_damage([1.0, 3.0, 6.0, 10.0, 40.0])) == m["ratios"], \
+        "the band lookup maps each flame-length class to its ratio"
+    print("ok  fire conditional damage: interim ratio capped below 0.6, "
+          "CFL bands monotone and cited")
 
 
 def check_producer_aliasing():
@@ -148,9 +162,11 @@ def check_app_sync(html):
 
 def check_vuln_constants(html):
     # vulnerability / damage constants shared with the results pack
+    assert not re.search(r"\bconst\s+FIRE_MDD\s*=", html), \
+        "the flat FIRE_MDD is retired; the app must not define it"
     for name, val in (("V_THRESH", ri.V_THRESH), ("V_HALF", ri.V_HALF),
                       ("FB_COAST", ri.FB_COAST), ("FB_RIVER", ri.FB_RIVER),
-                      ("FIRE_MDD", ri.FIRE_MDD),
+                      ("FIRE_COND_INTERIM", ri.FIRE_COND_INTERIM),
                       ("FIRE_WARMING_UPLIFT", rw.FIRE_WARMING_UPLIFT),
                       ("PRAIN_DRAIN_MM", ri.PRAIN_DRAIN_MM),
                       ("PRAIN_POND_COEFF", ri.PRAIN_POND_COEFF),

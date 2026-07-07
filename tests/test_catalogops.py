@@ -191,8 +191,11 @@ def test_run_catalog_end_to_end():
             "surge": {("rcp45_2040", "ssp245_2050"): {"int": np.array([[2.2, 0.0], [0.9, 0.0]])},
                       ("rcp45_2060", "ssp245_2050"): {"int": np.array([[2.3, 0.0], [0.95, 0.0]])}},
             "rflood": {},
-            "wfire": {"freq": np.full(10, 0.02),
-                      "hits": np.array([[False, True]] * 10)}}
+            # WRC point shape (Task 3.5): burn probability + conditional
+            # damage per site, not a FIRMS event set
+            "wfire": {"bp": np.array([0.0, 0.008]),
+                      "cond": np.array([ri.FIRE_COND_INTERIM,
+                                        ri.FIRE_COND_INTERIM])}}
     sites = pd.DataFrame([
         _site(name="Wet", keys=200, stories=2, roof_type="shingle",
               roof_year=2000, opening_protection="none"),

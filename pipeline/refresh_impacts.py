@@ -29,9 +29,10 @@ Scope, stated honestly
     - river flood is an independent catalog; its exceedance losses add to
       the wind+surge curve at equal return periods (comonotonic, an upper
       bound on that pairing only).
-    - TC rainfall and wildfire are independent catalogs (their own track
-      set and fire seasons); both add comonotonically, and wildfire's
-      warming signal scales the fire FREQUENCY, not the per-event loss.
+    - TC rainfall is an independent catalog per basin domain; wildfire is a
+      per-site occurrence process on the WRC point burn probability (Task
+      3.5). Both add comonotonically, and wildfire's warming signal scales
+      the arrival probability, not the loss given fire.
     - countries are independent catalogs; combined the same comonotonic way.
 * Impact arithmetic: per-event site losses = value x damage_fraction(nearest
   centroid intensity), exceedance from event losses and frequencies. For
@@ -121,8 +122,11 @@ MC_FACTORS = [               # jointly sampled; bounds mirror the app's tornado
 ]
 UNCERTAINTY_SCENARIOS = ["present", "ssp245_2050", "ssp585_2080"]
 
-# increment 3 damage constants. MIRROR the app's v1.12 values; change both.
-FIRE_MDD = 0.6                    # conditional damage ratio when a site burns
+# increment 3 damage constants. MIRROR the app's values; change both.
+# The flat FIRE_MDD=0.6 is RETIRED (Task 3.5): the conditional damage ratio
+# now comes per site from the WRC flame-length layer (or the registry's
+# capped interim ratio), carried in prep["wfire"]["cond"].
+FIRE_COND_INTERIM = assumptions.scalar("fire_cond_interim")
 FIRE_ROOF_A = 0.6                 # fire vulnerability factor: Class A roof
 FIRE_DEFENSIBLE = 0.7             # fire vulnerability factor: space >= 30 m
 PRAIN_DRAIN_MM = 150.0            # site drainage capacity per event
@@ -524,16 +528,21 @@ def eval_scenario(prep, app_key, values, wind_mult, fb_coast, fb_river,
     fire = None
     fw = prep.get("wfire")
     if fw is not None:
-        # true event math over the probabilistic fire seasons: per-event site
-        # losses are value x conditional damage x profile vulnerability, and
-        # warming scales the fire FREQUENCY (arrival rate), not the loss
+        # point-probability math (Task 3.5): each site's fire is its own
+        # arrival process at the WRC point burn probability, with loss given
+        # fire = value x flame-length-conditioned damage x profile
+        # vulnerability. Warming scales the arrival PROBABILITY (capped at
+        # 1), not the loss. The portfolio curve is the per-site occurrence
+        # exceedance over these independent arrivals (recorded in meta).
         fv = np.ones_like(vals) if fire_vuln is None else np.asarray(fire_vuln)
-        frac = np.minimum(FIRE_MDD * fv * dmg_scale * fire_mult, 1.0)
-        fl = fw["hits"].astype(float) * (frac * vals)[None, :]
-        freq_f = np.asarray(fw["freq"], float) * haz_mult             * (1.0 + rw.FIRE_WARMING_UPLIFT * warm)
-        fire = {"aal": float(site_ead(fl, freq_f).sum()),
-                "ep": ep_curve(fl.sum(axis=1), freq_f),
-                "ead": site_ead(fl, freq_f)}
+        p = np.minimum(np.asarray(fw["bp"], float) * haz_mult
+                       * (1.0 + rw.FIRE_WARMING_UPLIFT * warm), 1.0)
+        frac = np.minimum(np.asarray(fw["cond"], float) * fv * dmg_scale
+                          * fire_mult, 1.0)
+        loss_given_fire = frac * vals
+        fire = {"aal": float((p * loss_given_fire).sum()),
+                "ep": ep_curve(loss_given_fire, p),
+                "ead": p * loss_given_fire}
 
     if joint is None and river is None and rain is None and fire is None:
         return None
@@ -901,8 +910,8 @@ def fetch_river_flood_hazards(iso3, app_key, meta, cache=None):
 
 
 def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
-                       fire_enabled=True, rain_enabled=True, firms_df=None,
-                       workers=1, wfire_haz=None, wfire_err=None):
+                       fire_enabled=True, rain_enabled=True,
+                       workers=1, wrc_bp=None, wrc_cfl=None):
     """Fetch hazards once per country and reduce them to per-site intensity
     matrices (the pure structure eval_scenario consumes).
 
@@ -1058,40 +1067,37 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         prep["_cov"]["rflood"] = prep["_cov"]["tc"].copy()
 
     if fire_enabled:
-        # Petals' WildFire needs a FIRMS DataFrame, not a country code (see
-        # refresh_wildfire.build_wildfire_hazard). The fire-season clustering
-        # depends only on the (site-trimmed) FIRMS data, which is the same for
-        # every country, so the hazard is built ONCE by the caller and passed in
-        # as `wfire_haz`; here each country only snaps its own sites onto it.
-        # Without a --firms download the event-set wildfire layer is skipped,
-        # exactly as the grid producer does.
-        if firms_df is None or len(firms_df) == 0:
-            LOG.warning("Wildfire skipped %s: no FIRMS CSV supplied (--firms); "
-                        "download from https://firms.modaps.eosdis.nasa.gov/download/",
-                        iso3)
+        # Task 3.5: wildfire is the USFS WRC burn probability sampled AT the
+        # site point (30 m native), with the damage side conditioned on the
+        # WRC flame-length layer (or the capped interim ratio). No FIRMS, no
+        # cell occupancy, no spatial buffer. Sites the raster does not cover
+        # (confirm WRC coverage for Hawaii and the territories per release)
+        # are FLAGGED, never silently zeroed.
+        if wrc_bp is None:
+            LOG.warning("Wildfire skipped %s: no WRC burn-probability raster "
+                        "(--wrc-bp / %s / ./%s/); download once from "
+                        "wildfirerisk.org (USFS RDS-2020-0016).",
+                        iso3, rw.WRC_BP_ENV, rw.DEFAULT_WRC_DIR)
             meta["skipped"].append({"country": iso3, "layer": "wfire",
-                                    "reason": "no FIRMS CSV supplied (--firms)"})
-        elif wfire_haz is None:
-            LOG.warning("Wildfire unavailable %s: %s", iso3,
-                        wfire_err or "wildfire hazard build failed")
-            meta["skipped"].append({"country": iso3, "layer": "wfire",
-                                    "reason": wfire_err
-                                    or "wildfire hazard build failed"})
+                                    "reason": "no WRC BP raster (--wrc-bp / "
+                                              f"{rw.WRC_BP_ENV} / "
+                                              f"./{rw.DEFAULT_WRC_DIR}/)"})
         else:
             try:
-                fidx, fd = nearest_centroids(lat, lon, wfire_haz.centroids.lat,
-                                             wfire_haz.centroids.lon)
-                prep["wfire"] = {"freq": np.asarray(wfire_haz.frequency, float),
-                                 "hits": site_intensity(wfire_haz, fidx) > 0}
-                prep["_cov"]["wfire"] = fidx >= 0
-                for j in np.where(fidx < 0)[0]:
+                w = rw.wrc_at_points(lat, lon, wrc_bp, wrc_cfl)
+                prep["wfire"] = {"bp": w["bp"], "cond": w["cond"],
+                                 "cond_interim": w["cond_interim"]}
+                prep["_cov"]["wfire"] = w["covered"]
+                for j in np.where(~w["covered"])[0]:
                     meta["skipped"].append(
                         {"country": iso3, "layer": "wfire",
                          "site": str(sites_c.iloc[j]["name"]),
-                         "reason": f"outside coverage ({fd[j]:.0f} km to the "
-                                   f"nearest fire cell)"})
-                LOG.info("  wfire %s -> %d events x %d sites", iso3,
-                         *prep["wfire"]["hits"].shape)
+                         "reason": "outside WRC burn-probability raster "
+                                   "coverage (no valid value at the site "
+                                   "point)"})
+                LOG.info("  wfire %s -> %d of %d sites point-sampled "
+                         "(mean p %.3f%%)", iso3, int(w["covered"].sum()),
+                         len(sites_c), float(w["bp"].mean()) * 100)
             except Exception as exc:
                 LOG.warning("Wildfire unavailable %s: %s", iso3, str(exc)[:200])
                 meta["skipped"].append({"country": iso3, "layer": "wfire",
@@ -1268,18 +1274,24 @@ def pack_meta(pack, args, meta):
         "discount_rate": DISCOUNT_RATE,
         "horizon_years": HORIZON_YEARS,
         "vulnerability": {"wind": f"Emanuel cubic sigmoid, V_THRESH={V_THRESH}, "
-                                  f"V_HALF={V_HALF} m/s, x construction/age factor",
+                                  f"V_HALF={V_HALF} m/s (archetype-shifted per "
+                                  f"site), x construction/age factor",
                           "flood": "1-exp(-0.6 x depth over freeboard), cap 0.75; "
                                    f"freeboard cflood {FB_COAST} m / rflood "
-                                   f"{FB_RIVER} m, +0.5 m if defended"},
+                                   f"{FB_RIVER} m, +0.5 m if defended",
+                          "wildfire": "WRC point burn probability x flame-"
+                                      "length-conditioned damage (or the "
+                                      f"capped interim ratio "
+                                      f"{FIRE_COND_INTERIM}, labeled interim)"},
         "combination_rules": {
             "wind_surge": "per event (shared catalog, truly joint)",
             "river_flood": "comonotonic (exceedance losses add at equal RP)",
             "tc_rainfall": "comonotonic (own track catalog per basin domain; "
                            "domains add comonotonically; Clausius-Clapeyron "
                            "scenario scaling)",
-            "wildfire": "comonotonic (own fire seasons; warming scales the "
-                        "fire frequency, not the loss)",
+            "wildfire": "comonotonic (per-site occurrence exceedance over "
+                        "independent WRC point burn probabilities; warming "
+                        "scales the arrival probability, not the loss)",
             "countries": "comonotonic (exceedance losses add at equal RP)",
             "ep_tail": "flat beyond the largest simulated return period"},
         "layers": [{"scenario": k,
@@ -1343,11 +1355,20 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=None,
                     help="concurrent Data API wind fetches per country (default: "
                          "CLAM_WORKERS or 4; pass 1 for the exact serial run)")
+    ap.add_argument("--wrc-bp", default=None, metavar="TIF",
+                    help="USFS WRC burn-probability GeoTIFF for the wildfire "
+                         f"layer (or {rw.WRC_BP_ENV}, or ./{rw.DEFAULT_WRC_DIR}/); "
+                         "local pre-downloaded file, wildfirerisk.org")
+    ap.add_argument("--wrc-cfl", default=None, metavar="TIF",
+                    help="USFS WRC conditional flame length GeoTIFF (absent: "
+                         "the capped interim conditional ratio, labeled)")
     ap.add_argument("--firms", nargs="+", default=None,
-                    help="NASA FIRMS archive CSV(s) or a directory, for the "
-                         "wildfire layer (https://firms.modaps.eosdis.nasa.gov/download/)")
+                    help="DEPRECATED for loss: FIRMS no longer feeds burn "
+                         "probability (Task 3.5 structural fix). Use "
+                         "refresh_wildfire.py --firms-context for the "
+                         "historical-context export.")
     ap.add_argument("--no-fire", action="store_true",
-                    help="skip the wildfire event layer in the pack")
+                    help="skip the wildfire layer in the pack")
     ap.add_argument("--no-rain", action="store_true",
                     help="skip the TC rainfall event layer in the pack")
     ap.add_argument("--budget", type=float, default=None, metavar="USD",
@@ -1378,37 +1399,22 @@ def main(argv=None) -> int:
     meta = {"skipped": [], "wind_sources": {}, "_countries": set(),
             "fetch_workers": workers}
 
-    # Wildfire needs an operator-supplied FIRMS DataFrame (Petals has no
-    # download-by-country). Load it once, drop low-confidence noise, and trim to a
-    # buffer around the actual sites (the impact only reads fire near them, and
-    # this keeps Petals' clustering tractable). None -> the pack's wildfire layer
-    # is skipped per country, recorded in meta.
-    firms_df = None
-    if not args.no_fire:
-        firms = rw.resolve_firms(args.firms)
-        if firms:
-            try:
-                fdf = rw.filter_firms_confidence(rw.load_firms(firms))
-                firms_df = rw.filter_firms_near_sites(
-                    fdf, sites["latitude"].to_numpy(float),
-                    sites["longitude"].to_numpy(float))
-                LOG.info("FIRMS: %d detections near the %d portfolio site(s)",
-                         len(firms_df), len(sites))
-            except Exception as exc:
-                LOG.warning("Could not read FIRMS data (%s); wildfire skipped.", exc)
-                firms_df = None
-
-    # Build the wildfire hazard ONCE: Petals' fire-season clustering depends only
-    # on the site-trimmed FIRMS data, which is identical for every country, so
-    # rebuilding it per country repeated the same expensive clustering.
-    wfire_haz, wfire_err = None, None
-    if not args.no_fire and firms_df is not None and len(firms_df):
-        try:
-            wfire_haz = rw.build_wildfire_hazard(firms_df)
-        except Exception as exc:
-            wfire_err = str(exc)[:300]
-            LOG.warning("Wildfire hazard build failed (%s); wildfire skipped.",
-                        wfire_err)
+    # Task 3.5: wildfire reads the USFS WRC rasters (local pre-downloaded
+    # files; the path is configuration so corporate SSL never blocks a
+    # rebuild). FIRMS no longer feeds burn probability anywhere.
+    if args.firms:
+        LOG.warning("--firms is DEPRECATED for the loss calculation and is "
+                    "ignored: burn probability now comes from the WRC point "
+                    "raster (--wrc-bp). FIRMS remains available as a "
+                    "historical-context export via refresh_wildfire.py "
+                    "--firms-context.")
+    wrc_bp, wrc_cfl = (None, None) if args.no_fire else \
+        rw.resolve_wrc(args.wrc_bp, args.wrc_cfl)
+    if wrc_bp and not wrc_cfl:
+        LOG.warning("No WRC CFL raster: the wildfire conditional damage side "
+                    "uses the INTERIM flat ratio %.2f (capped); the app "
+                    "labels it interim on the trust surface.",
+                    FIRE_COND_INTERIM)
 
     per_country, order = [], []
     calib_parts, matched_names = [], set()
@@ -1419,8 +1425,8 @@ def main(argv=None) -> int:
                                   not args.no_river, meta,
                                   fire_enabled=not args.no_fire,
                                   rain_enabled=not args.no_rain,
-                                  firms_df=firms_df, workers=workers,
-                                  wfire_haz=wfire_haz, wfire_err=wfire_err)
+                                  workers=workers,
+                                  wrc_bp=wrc_bp, wrc_cfl=wrc_cfl)
         values = sites_c["asset_value_usd"].to_numpy(float)
         vulns = [vuln_v2(r.construction, r.year_built, r.defended,
                          roof_type=r.roof_type, roof_year=r.roof_year,

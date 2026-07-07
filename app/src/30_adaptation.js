@@ -89,7 +89,7 @@ function adaptedFinSite(s,sc,mods){
   const pv=floodEad(prainToDepth(scaleVec(hzVector("prain",s.latitude,s.longitude,sc))),value,Math.max(PRAIN_FB+vuln.fbBonus,0)+(mods.fbBonus||0),dmgK,vuln.floodCap);
   directEad+=pv.eadUsd; biEad+=gop*reopenShare*pv.eadFrac;
   const fb2=fireBurnPct(s,sc);
-  const fFrac=Math.min((fb2.pct/100)*haz,1)*FIRE_MDD*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);
+  const fFrac=Math.min((fb2.pct/100)*haz,1)*fb2.cond*fireVulnMult(s)*dmgK*(mods.fireMult==null?1:mods.fireMult);
   directEad+=fFrac*value; biEad+=gop*reopenShare*fFrac;
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);

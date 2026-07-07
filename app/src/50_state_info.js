@@ -119,9 +119,10 @@ const INFO={
     "<p>Records are grouped by <code>site_id</code> when present, otherwise by exact coordinates. A portfolio with neither draws one marker per record, exactly as before.</p>",
     s:"A display and rollup lens: it groups the same per-record figures, changing none of them."},
   wfire:{t:"Wildfire",b:
-    "<p>Wildfire uses an <b>annual burn probability</b>, not a return-period intensity: expected damage = value x burn probability x a "+(FIRE_MDD*100)+"% conditional damage ratio, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
-    "<p>The probability comes from a wfire grid when loaded, else from the site's <code>wui_class</code> (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
-    "<p><b>Honest limit:</b> at screening probabilities wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app (a burn probability below 1% never crosses the 100-year threshold). The results pack's event math carries the fire tail properly.</p>"},
+    "<p>Wildfire uses the <b>annual probability fire reaches the site point</b> (USFS Wildfire Risk to Communities burn probability, point-sampled by the pipeline at 30 m; never fire-anywhere-in-a-cell, never buffered): expected damage = value x point burn probability x a <b>conditional damage ratio given fire</b>, cut by a Class A roof (x0.6) and defensible space of 30 m or more (x0.7).</p>"+
+    "<p>The conditional ratio comes from the modeled <b>flame length</b> at the site (the grid's v25) where the WRC CFL layer was supplied; otherwise an <b>interim flat ratio ("+(FIRE_COND_INTERIM*100)+"%, capped)</b> applies and is labeled interim on the trust surface and the score trace.</p>"+
+    "<p>Without a wfire grid, the site's <code>wui_class</code> gives an interim point probability (interface "+FIRE_WUI_PBURN.interface+"%/yr, intermix "+FIRE_WUI_PBURN.intermix+"%/yr), scaled with warming. Without either, wildfire is zero by design.</p>"+
+    "<p><b>Honest limit:</b> at realistic point probabilities (roughly 0 to 2%/yr even in high-risk WUI) wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app. The results pack carries the fire tail as a per-site occurrence exceedance.</p>"},
   prain:{t:"TC rainfall",b:
     "<p>Event rainfall (mm at each return period, from a prain grid) becomes ponding depth through documented drainage constants: depth = max(0, rain - "+PRAIN_DRAIN_MM+" mm) x "+PRAIN_POND_COEFF+", then the flood damage curve with a "+PRAIN_FB+" m freeboard.</p>"+
     "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"},
@@ -176,7 +177,7 @@ const INFO={
     "<p>The bars reconcile exactly: today + growth + climate = future, and future - adaptation = residual.</p>"},
   mFire:{t:"Wildfire hardening",b:
     "<p>Defensible space and a Class A roof assembly cut the share of value lost when fire reaches the site. The slider is the burn-loss reduction; the measure applies only where the site has wildfire exposure (a wfire grid or a wui_class profile field).</p>"+
-    "<p>Wildfire uses an annual burn probability, not a return-period depth: expected damage = value x burn probability x conditional damage ratio ("+(FIRE_MDD*100)+"%), modified by roof_class_a and defensible_space_m.</p>"},
+    "<p>Wildfire uses the annual probability fire reaches the site point, not a return-period depth: expected damage = value x point burn probability x the conditional damage ratio given fire (flame-length-conditioned, or the "+(FIRE_COND_INTERIM*100)+"% interim cap), modified by roof_class_a and defensible_space_m.</p>"},
   layering:{t:"Risk layering & insurance",b:
     "<p>Standard catastrophe practice splits the loss curve into layers: <b>retain</b> frequent small losses, <b>transfer</b> the middle to insurance between an attachment and an exhaustion point, and hold the extreme tail beyond the limit.</p>"+
     "<p>Transferred expected loss is the slice of the diversified loss curve inside the layer, applied to acute expected loss so retained plus transferred always reconcile. Chronic heat cost is operational, not insurable here.</p>"},

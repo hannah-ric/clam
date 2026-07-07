@@ -85,19 +85,71 @@ def test_scenario_uplift():
 
 
 def test_wfire_rows_encoding():
+    # point semantics: rows AT the site coordinates, v10 = point burn
+    # probability %, v25 = conditional damage % given fire; co-located
+    # records dedupe; NO thinning, NO buffering
     lat = np.array([30.0, 30.0, 34.0])
-    lon = np.array([-98.5, -98.51, -116.5])
-    p = np.array([0.004, 0.006, 0.02])
-    rows = rw.wfire_rows(lat, lon, p)
+    lon = np.array([-98.5, -98.5, -116.5])          # first two co-located
+    p = np.array([0.004, 0.004, 0.015])
+    cond = np.array([0.35, 0.35, 0.55])
+    rows = rw.wfire_rows(lat, lon, p, cond)
     assert set(rows["scenario"]) == set(rw.WARMING)
     per_sc = rows.groupby("scenario").size()
-    assert per_sc.nunique() == 1, "one shared cell set across scenarios"
-    assert (rows[["v25", "v50", "v100", "v250", "v500"]].to_numpy() == 0).all()
+    assert per_sc.nunique() == 1 and per_sc.iloc[0] == 2, \
+        "one shared SITE-POINT set across scenarios, co-located rows deduped"
+    pres = rows[rows.scenario == "present"].sort_values("lon")
+    assert np.isclose(pres["v10"].to_numpy(), [0.4, 1.5]).all() or \
+        np.isclose(sorted(pres["v10"]), [0.4, 1.5]).all(), \
+        "v10 is the POINT probability in percent, exactly as sampled"
+    assert set(np.round(pres["v25"], 1)) == {35.0, 55.0}, \
+        "v25 carries the conditional damage ratio in percent"
+    assert (rows[["v50", "v100", "v250", "v500"]].to_numpy() == 0).all()
     now = rows[rows.scenario == "present"]["v10"].mean()
     fut = rows[rows.scenario == "ssp585_2080"]["v10"].mean()
     assert fut > now > 0
     assert rows["v10"].max() <= 100.0
-    ok("wfire_rows: indicator encoding, shared cells, rising signal, percent")
+    ok("wfire_rows: site-point encoding with conditional damage, "
+       "rising signal, percent")
+
+
+def test_cfl_mapping_and_wrc_sampling():
+    """The intensity-conditioned damage side: CFL bands map monotonically,
+    nodata flags coverage, and a non-probability BP raster is refused."""
+    import assumptions as A
+    got = A.cfl_to_damage([0.5, 3.0, 7.9, 11.0, 25.0])
+    assert list(got) == A.FIRE_CFL_DAMAGE["ratios"], got
+    calls = []
+    def fake_sample(path, lat, lon):
+        calls.append(str(path))
+        lat = np.asarray(lat, float)
+        if "bp" in str(path):
+            return np.where(lat < 20, -9999.0, 0.012), lat >= 20
+        return np.where(lat >= 30, 9.0, -9999.0), np.asarray(lat) >= 30
+    saved = rw.sample_raster_points
+    try:
+        rw.sample_raster_points = fake_sample
+        w = rw.wrc_at_points([19.6, 25.0, 34.0], [-155.9, -80.0, -116.5],
+                             "bp.tif", "cfl.tif")
+        assert w["covered"].tolist() == [False, True, True], \
+            "nodata at the point means NOT covered (flag, never zero)"
+        assert w["bp"][0] == 0.0 and np.isclose(w["bp"][1], 0.012)
+        assert np.isclose(w["cond"][2], 0.55), "9 ft flame length -> 0.55"
+        assert np.isclose(w["cond"][1], rw.FIRE_COND_INTERIM) \
+            and w["cond_interim"][1], \
+            "no CFL value -> the capped interim ratio, marked interim"
+        # a raster that is not a probability is refused, not rescaled
+        rw.sample_raster_points = lambda p, la, lo: (
+            np.full(len(la), 42.0), np.ones(len(la), bool))
+        try:
+            rw.wrc_at_points([25.0], [-80.0], "bp.tif")
+            refused = False
+        except ValueError:
+            refused = True
+        assert refused, "BP values above 1 must raise, not be guessed at"
+    finally:
+        rw.sample_raster_points = saved
+    ok("WRC sampling: coverage flags, CFL banding, interim marking, "
+       "unit-sanity refusal")
 
 
 def test_prain_scaling():
@@ -115,18 +167,6 @@ def test_prain_scaling():
 
 
 # --- producers end-to-end with mocked seams ------------------------------------
-
-class FakeFire:
-    def __init__(self):
-        class C:
-            lat = np.array([30.0, 30.2, 34.0, 34.2])
-            lon = np.array([-98.5, -98.6, -116.5, -116.6])
-        self.centroids = C()
-        self.frequency = np.full(20, 0.01)
-        rng = np.random.default_rng(5)
-        burn = rng.random((20, 4)) < np.array([0.05, 0.08, 0.30, 0.25])
-        self.intensity = burn.astype(float) * 320.0     # FIRMS-like Kelvin
-
 
 class FakeRainHaz:
     def __init__(self):
@@ -197,17 +237,42 @@ def test_firms_io():
         assert rw.resolve_sites(None) is None, "no sites.csv to discover"
         Path("sites.csv").write_text("latitude,longitude\n1,2\n")
         assert rw.resolve_sites(None) == "sites.csv", "sites.csv is discovered"
-        Path("sites.csv").unlink()
-        rc = rw.main(["--out", "wfire_nofirms.csv"])
-        assert rc == 1, "no FIRMS anywhere is a clean exit 1, not a crash"
-        meta = json.loads(Path("wfire_nofirms_meta.json").read_text())
-        assert meta["skipped"] and "FIRMS" in meta["skipped"][0]["reason"]
+        # WRC resolution: explicit wins, env second, ./wrc/ discovered, and
+        # graceful exit-1 guidance when the raster is absent
+        saved_bp = os.environ.pop(rw.WRC_BP_ENV, None)
+        saved_cfl = os.environ.pop(rw.WRC_CFL_ENV, None)
+        try:
+            assert rw.resolve_wrc("a.tif", "b.tif") == ("a.tif", "b.tif")
+            assert rw.resolve_wrc(None, None) == (None, None)
+            os.environ[rw.WRC_BP_ENV] = "env_bp.tif"
+            assert rw.resolve_wrc(None, None)[0] == "env_bp.tif", "env var wins"
+            del os.environ[rw.WRC_BP_ENV]
+            os.mkdir("wrc")
+            Path("wrc/BP_CONUS.tif").write_bytes(b"x")
+            Path("wrc/CFL_CONUS.tif").write_bytes(b"x")
+            bp, cfl = rw.resolve_wrc(None, None)
+            assert bp.endswith("BP_CONUS.tif") and cfl.endswith("CFL_CONUS.tif"), \
+                "./wrc/ folder is discovered"
+            shutil.rmtree("wrc")
+            rc = rw.main(["--out", "wfire_nofirms.csv"])
+            assert rc == 1, "no WRC raster is a clean exit 1, not a crash"
+            meta = json.loads(Path("wfire_nofirms_meta.json").read_text())
+            assert meta["skipped"] and "WRC" in meta["skipped"][0]["reason"]
+            Path("sites.csv").unlink()
+            rc = rw.main(["--out", "wfire_nofirms.csv"])
+            assert rc == 1, "no sites is a clean exit 1 with guidance"
+        finally:
+            if saved_bp is not None:
+                os.environ[rw.WRC_BP_ENV] = saved_bp
+            if saved_cfl is not None:
+                os.environ[rw.WRC_CFL_ENV] = saved_cfl
     finally:
         os.chdir(cwd)
         shutil.rmtree(tmp, ignore_errors=True)
         if saved_env is not None:
             os.environ["FIRMS_CSV"] = saved_env
-    ok("resolve_firms: explicit wins else FIRMS_CSV/./firms/; no FIRMS exits 1 cleanly")
+    ok("resolvers: FIRMS context + WRC rasters discovered; missing inputs "
+       "exit 1 cleanly")
 
 
 def test_petals_deprecation_filter():
@@ -256,9 +321,50 @@ def test_petals_deprecation_filter():
 
 
 def run():
-    # FIRMS input + the corrected seam: Petals is mocked (build_wildfire_hazard),
-    # but the real load_firms + filter_firms_to_regions + main plumbing run. The
-    # detections sit in the SW and SE/Gulf boxes (plus one outside, to be dropped).
+    # WRC input through the real main(): rasterio is mocked at the sampling
+    # seam; resolve_wrc, coverage flagging, encoding, and meta all run for
+    # real. The site list includes Kona, which the fake BP raster does not
+    # cover: it must be FLAGGED, never silently zeroed.
+    pd.DataFrame({"name": ["SW", "Gulf", "Kona"],
+                  "latitude": [34.0, 30.0, 19.64],
+                  "longitude": [-116.5, -98.5, -155.99],
+                  "asset_value_usd": [1e7, 1e7, 1e7]}
+                 ).to_csv("sim_firms_sites.csv", index=False)
+
+    def fake_sample(path, lat, lon):
+        lat = np.asarray(lat, float)
+        if "bp" in str(path):
+            vals = np.where(np.isclose(lat, 34.0), 0.015,
+                            np.where(np.isclose(lat, 30.0), 0.004, -9999.0))
+            return vals, lat > 20.0
+        vals = np.where(np.isclose(lat, 34.0), 9.0, -9999.0)
+        return vals, np.isclose(lat, 34.0)
+    rw.sample_raster_points = fake_sample
+    rc = rw.main(["--wrc-bp", "sim_bp.tif", "--wrc-cfl", "sim_cfl.tif",
+                  "--sites", "sim_firms_sites.csv",
+                  "--out", "sim_wfire_grid.csv"])
+    assert rc == 0
+    wf = pd.read_csv("sim_wfire_grid.csv")
+    assert set(wf["hazard"]) == {"wfire"} and set(wf["scenario"]) == set(rw.WARMING)
+    assert wf["v10"].between(0, 100).all() and wf["v25"].between(0, 100).all()
+    pres = wf[wf.scenario == "present"].sort_values("lon")
+    assert len(pres) == 2, "only the covered sites produce rows"
+    assert np.isclose(pres.iloc[0]["v10"], 1.5) \
+        and np.isclose(pres.iloc[0]["v25"], 55.0), \
+        "SW: point BP 1.5%, CFL 9 ft -> 55% conditional damage"
+    assert np.isclose(pres.iloc[1]["v10"], 0.4) and np.isclose(
+        pres.iloc[1]["v25"], rw.FIRE_COND_INTERIM * 100), \
+        "Gulf: no CFL value -> the capped interim conditional ratio"
+    wmeta = json.loads(Path("sim_wfire_grid_meta.json").read_text())
+    assert any(s.get("site") == "Kona" and "coverage" in s.get("reason", "")
+               for s in wmeta["skipped"]), \
+        "the uncovered Hawaii site is flagged by name in the meta sidecar"
+    assert wmeta["wrc"]["cond_interim_sites"] == 1
+    print("ok  wildfire producer: WRC point sampling through the real "
+          "main(), uncovered site flagged")
+
+    # the FIRMS historical-context export: separate file, separate columns,
+    # never a hazard layer
     firms = pd.DataFrame({
         "latitude":   [34.00, 34.05, 30.00, 12.00],
         "longitude":  [-116.50, -116.55, -98.50, 40.00],
@@ -269,19 +375,13 @@ def run():
         "bright_ti4": [np.nan, np.nan, 340.0, np.nan],
     })
     firms.to_csv("sim_firms.csv", index=False)
-    # explicit --sites (co-located with the detections) so the run is deterministic
-    # regardless of any real sites.csv the operator may have in pipeline/.
-    pd.DataFrame({"name": ["SW", "Gulf"], "latitude": [34.0, 30.0],
-                  "longitude": [-116.5, -98.5], "asset_value_usd": [1e7, 1e7]}
-                 ).to_csv("sim_firms_sites.csv", index=False)
-    rw.build_wildfire_hazard = lambda df, **kw: FakeFire()
-    rc = rw.main(["--firms", "sim_firms.csv", "--sites", "sim_firms_sites.csv",
-                  "--out", "sim_wfire_grid.csv"])
-    assert rc == 0
-    wf = pd.read_csv("sim_wfire_grid.csv")
-    assert set(wf["hazard"]) == {"wfire"} and set(wf["scenario"]) == set(rw.WARMING)
-    assert wf["v10"].between(0, 100).all()
-    print("ok  wildfire producer: mocked FIRMS seam through the real main()")
+    ctx = rw.write_firms_context(["sim_firms.csv"], "sim_firms_context.csv",
+                                 "sim_firms_sites.csv")
+    assert (ctx["kind"] == "firms_historical_context").all()
+    assert "hazard" not in ctx.columns and "v10" not in ctx.columns, \
+        "the context export must not look like a hazard layer"
+    assert ctx["detections"].sum() == 3, "the out-of-region detection drops"
+    print("ok  FIRMS context export: separated from the loss path entirely")
 
     fetched_domains = []
     def _fake_tracks(domain):
@@ -365,6 +465,7 @@ if __name__ == "__main__":
     test_burn_probability()
     test_scenario_uplift()
     test_wfire_rows_encoding()
+    test_cfl_mapping_and_wrc_sampling()
     test_prain_scaling()
     test_shared_regions()
     test_rain_domains()

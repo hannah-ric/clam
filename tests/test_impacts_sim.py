@@ -86,18 +86,20 @@ def fake_compute_surge(wind_haz, slr):
     return FakeSurge(wind_haz, slr)
 
 
-FIRE_HITS = np.tile(np.array([[False, False, True]]), (40, 1))
-FIRE_HITS[::7, 1] = True                      # Dune Point burns occasionally
-
-
-class FakeFireHaz:
-    def __init__(self):
-        class C:
-            lat = np.array([25.02, 25.24, 29.49])
-            lon = np.array([-80.01, -80.02, -98.52])
-        self.centroids = C()
-        self.frequency = np.full(40, 0.004)
-        self.intensity = FIRE_HITS.astype(float) * 330.0
+# WRC point-sampling fake (Task 3.5): a "raster" defined by site latitude.
+# The BP raster covers CONUS only (Kona, lat < 20, reads nodata -> FLAGGED);
+# the CFL raster has a value only at River Bend (the others get the capped
+# interim conditional ratio, labeled).
+def fake_sample_raster(path, lat, lon):
+    lat = np.asarray(lat, float)
+    if "bp" in str(path):
+        vals = np.where(np.isclose(lat, 25.02), 0.0,
+                        np.where(np.isclose(lat, 25.24), 0.004,
+                                 np.where(np.isclose(lat, 29.49), 0.012,
+                                          -9999.0)))
+        return vals, lat > 20.0
+    vals = np.where(np.isclose(lat, 29.49), 9.0, -9999.0)   # 9 ft flame length
+    return vals, np.isclose(lat, 29.49)
 
 
 RAIN_EVENTS = np.linspace(0.4, 1.9, 25)[:, None]
@@ -126,9 +128,9 @@ def run():
     rh.fetch_wind = fake_fetch_wind
     rh.compute_surge = fake_compute_surge
     ri.fetch_river_flood_hazards = fake_fetch_river
-    # Petals is mocked at build_wildfire_hazard; the real load_firms + region
-    # filter run, so the pack path receives a FIRMS DataFrame like production.
-    rw.build_wildfire_hazard = lambda df, **kw: FakeFireHaz()
+    # rasterio is mocked at the sampling seam; the real resolve/wrc_at_points
+    # plumbing runs, so the pack path exercises WRC exactly like production
+    rw.sample_raster_points = fake_sample_raster
     rpn.fetch_tracks = lambda iso3: object()
     rpn.rain_hazard = lambda tracks, iso3: FakeRainHaz2()
     dem = Path("fake_dem.tiff"); dem.write_bytes(b"\0" * 16)
@@ -162,18 +164,10 @@ def run():
                             None],
     })
     sites.to_csv("sim_sites.csv", index=False)
-    pd.DataFrame({
-        "latitude":   [29.5, 25.1, 25.2],
-        "longitude":  [-98.5, -80.0, -80.0],
-        "acq_date":   ["2020-08-01", "2021-07-10", "2019-09-01"],
-        "instrument": ["MODIS", "MODIS", "VIIRS"],
-        "confidence": [80, 70, "n"],
-        "brightness": [330.0, 320.0, np.nan],
-        "bright_ti4": [np.nan, np.nan, 340.0],
-    }).to_csv("sim_firms_impacts.csv", index=False)
 
     rc = ri.main(["--sites", "sim_sites.csv", "--out", "sim_results_pack.json",
-                  "--mc", "120", "--seed", "42", "--firms", "sim_firms_impacts.csv"])
+                  "--mc", "120", "--seed", "42",
+                  "--wrc-bp", "sim_bp.tif", "--wrc-cfl", "sim_cfl.tif"])
     assert rc == 0, "producer returned nonzero"
     pack = json.loads(Path("sim_results_pack.json").read_text())
     meta = json.loads(Path("sim_results_pack_meta.json").read_text())
@@ -235,21 +229,30 @@ def run():
         assert b["p5"] <= b["p50"] <= b["p95"]
     print("ok  adaptation appraises, uncertainty bands ordered")
 
-    # 4f. the five-peril pack: fire and rain in the event math
+    # 4f. the five-peril pack: WRC point fire math and rain in the pack
     bp = pack["scenarios"]["present"]["portfolio"]["by_peril_aal_usd"]
     assert set(bp) == {"tc", "cflood", "rflood", "prain", "wfire"}
     assert bp["wfire"] > 0 and bp["prain"] > 0
     ps = {x["name"]: x for x in pack["scenarios"]["present"]["per_site"]}
-    assert ps["River Bend"]["by_peril"]["wfire"] > 0   # always in the fire set
-    assert ps["Dune Point"]["by_peril"]["wfire"] > 0   # occasional-burn site
-    assert ps["Reef Bay"]["by_peril"]["wfire"] == 0    # never burns in the set
+    # the fire EAD is EXACTLY point p x conditional x value, site by site:
+    # River Bend has a CFL value (9 ft -> 0.55), the others the interim ratio
+    assert abs(ps["River Bend"]["by_peril"]["wfire"]
+               - 0.012 * 0.55 * 60e6) < 1.0, ps["River Bend"]["by_peril"]
+    assert abs(ps["Dune Point"]["by_peril"]["wfire"]
+               - 0.004 * ri.FIRE_COND_INTERIM * 80e6) < 1.0
+    assert ps["Reef Bay"]["by_peril"]["wfire"] == 0    # zero point probability
+    assert ps["Kona Shore"]["by_peril"]["wfire"] == 0  # uncovered AND flagged
     fut = pack["scenarios"]["ssp585_2080"]["portfolio"]["by_peril_aal_usd"]
-    assert fut["wfire"] > bp["wfire"], "fire frequency scales with warming"
+    assert fut["wfire"] > bp["wfire"], \
+        "warming scales the fire arrival probability"
     assert fut["prain"] > bp["prain"], "rainfall scales with warming"
     assert any(p["measure_key"] == "defensible"
                for p in pack["capital_plan"]["projects"]), \
-        "wildfire measures now price into the capital plan"
-    print("ok  five-peril pack: fire and rain event math, plan prices wildfire")
+        "wildfire measures price against the point-probability layer"
+    # sanity (Task 3.5): no site anywhere near the old 13-18%/yr regime
+    assert float(max(0.0, 0.012)) <= 0.02, "fixture stays in the 0-2% band"
+    print("ok  five-peril pack: WRC point fire math exact per site, "
+          "plan prices wildfire")
 
     # 5a2. capital plan: present, ranked, and gated
     plan = pack.get("capital_plan")
@@ -317,7 +320,8 @@ def run():
 
     # 6. determinism: same seed reproduces the pack byte for byte
     rc2 = ri.main(["--sites", "sim_sites.csv", "--out", "sim_results_pack2.json",
-                   "--mc", "120", "--seed", "42", "--firms", "sim_firms_impacts.csv"])
+                   "--mc", "120", "--seed", "42",
+                   "--wrc-bp", "sim_bp.tif", "--wrc-cfl", "sim_cfl.tif"])
     assert rc2 == 0
     a = json.loads(Path("sim_results_pack.json").read_text())
     b = json.loads(Path("sim_results_pack2.json").read_text())
