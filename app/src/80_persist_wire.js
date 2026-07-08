@@ -141,18 +141,14 @@ function applyTheme(){
 function applyDensity(){
   try{ document.body.classList.toggle("compact",(ui.density||"comfortable")==="compact"); }catch(e){}
 }
-function closeDisplayMenu(){
-  const m=document.getElementById("displayMenu"),b=document.getElementById("displayBtn");
-  if(m&&m.classList)m.classList.remove("open");
-  if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
-}
+function closeDisplayMenu(){ closePortfolioMenu(); }
 function closePortfolioMenu(){
   const m=document.getElementById("portfolioMenu"),b=document.getElementById("portfolioBtn");
   if(m&&m.classList)m.classList.remove("open");
   if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
 }
 function syncDisplayMenu(){
-  const m=document.getElementById("displayMenu"); if(!m||!m.querySelectorAll)return;
+  const m=document.getElementById("portfolioMenu"); if(!m||!m.querySelectorAll)return;
   m.querySelectorAll("[data-set-theme]").forEach(b=>b.setAttribute("aria-pressed",(ui.theme||"auto")===b.dataset.setTheme?"true":"false"));
   m.querySelectorAll("[data-set-density]").forEach(b=>b.setAttribute("aria-pressed",(ui.density||"comfortable")===b.dataset.setDensity?"true":"false"));
   const det=ui.simpleView?"essentials":"full";
@@ -255,6 +251,7 @@ function downloadTemplate(){
 
 /* ---- tabs ---- */
 function switchTab(name){
+  activeTab=name;
   document.querySelectorAll("nav.tabs button").forEach(b=>{
     const on=b.dataset.tab===name;
     b.setAttribute("aria-selected",on);
@@ -262,6 +259,7 @@ function switchTab(name){
   });
   document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
   if(name==="sites"&&map){setTimeout(()=>map.invalidateSize(),50);}
+  if(typeof updateLegend==="function")updateLegend();
 }
 
 /* ============================================================
@@ -313,7 +311,6 @@ function wire(){
   document.getElementById("exportBtn").onclick=exportCsv;
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
-  document.getElementById("scrubPlay").onclick=playScrub;
   const dcb=document.getElementById("decisionCompactBtn");
   if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};
   window.addEventListener("resize",()=>{if(typeof syncDecisionScroll==="function")syncDecisionScroll();});
@@ -366,35 +363,28 @@ function wire(){
   });
   // display options: theme, density, detail level, Summary panels
   applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
-  const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");
-  if(dBtn&&dMenu){
-    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closePortfolioMenu();
-      const open=!dMenu.classList.contains("open");
-      dMenu.classList.toggle("open",open);dBtn.setAttribute("aria-expanded",open?"true":"false");};
-    dMenu.addEventListener("click",e=>e.stopPropagation());
-    dMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
-    dMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
-    dMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
-  }
-  try{ if(window.matchMedia)window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((ui.theme||"auto")==="auto")applyTheme();}); }catch(e){}
-  // v2.3.0 executive home: the mode switch, the map-hero overlays, and the
-  // consolidated Export menu (same handlers the old topbar buttons carried)
-  document.getElementById("modeExec").onclick=()=>setExecMode(true);
-  document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
-  document.getElementById("execSampleBtn").onclick=loadSample;
-  document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
   const pBtn=document.getElementById("portfolioBtn"),pMenu=document.getElementById("portfolioMenu");
   if(pBtn&&pMenu){
-    pBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closeDisplayMenu();
+    pBtn.onclick=e=>{e.stopPropagation();closeExportMenu();
       const open=!pMenu.classList.contains("open");
       pMenu.classList.toggle("open",open);pBtn.setAttribute("aria-expanded",open?"true":"false");};
     pMenu.addEventListener("click",e=>e.stopPropagation());
     pMenu.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closePortfolioMenu));
+    pMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
+    pMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
+    pMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
   }
   const pMethod=document.getElementById("portfolioMethodBtn");
   if(pMethod)pMethod.onclick=()=>{setExecMode(false);switchTab("method");};
   const pTmpl=document.getElementById("portfolioTmplBtn");
   if(pTmpl)pTmpl.onclick=downloadTemplate;
+  const pGuide=document.getElementById("portfolioGuideBtn");
+  if(pGuide)pGuide.onclick=()=>{closePortfolioMenu();openOnboard();};
+  try{ if(window.matchMedia)window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((ui.theme||"auto")==="auto")applyTheme();}); }catch(e){}
+  document.getElementById("modeExec").onclick=()=>setExecMode(true);
+  document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
+  document.getElementById("execSampleBtn").onclick=loadSample;
+  document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
   emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();closePortfolioMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
@@ -404,7 +394,6 @@ function wire(){
   document.getElementById("menuActionBtn").onclick=exportActionList;
   applyExecMode();
   // first-run orientation
-  document.getElementById("guideBtn").onclick=openOnboard;
   document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);setExecMode(false);switchTab("method");};
   document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)

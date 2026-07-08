@@ -28,6 +28,7 @@ let sortKey="ead", sortDir=-1;
 let nextId=1;
 let brandFilter="";        // map-only brand filter (session, not persisted)
 let _lastBrandKey="";      // rebuilt brand options only when the brand set changes
+let activeTab="summary";   // analyst tab driving contextual map legend visibility
 let scenHook=null;         // wire() installs the topbar-select sync for the scrubber
 let scrubTimer=null;       // scenario scrubber playback
 /* View/UI preferences (persisted, defensively merged like finAssume). Holds the
@@ -411,18 +412,23 @@ function markerFill(r,mode,sc,perilBand){
   return BAND_COLOR[perilBand!=null?perilBand:hzSite(r,activeHazard,sc).band];
 }
 let legendCtl=null;
+function legendShouldShow(){
+  if(ui&&ui.execMode)return true;
+  return activeTab==="overview"||activeTab==="sites";
+}
 function updateLegend(){
   if(!mapOk)return;
-  if(legendCtl){try{map.removeControl(legendCtl);}catch(e){}}
+  if(legendCtl){try{map.removeControl(legendCtl);}catch(e){} legendCtl=null;}
+  if(!legendShouldShow())return;
   legendCtl=L.control({position:"bottomright"});
   legendCtl.onAdd=function(){
     const d=L.DomUtil.create("div","maplegend");
     const mode=ui.views.mapColor;
     if(mode==="dominant"){
-      d.innerHTML='<div class="lh">Dominant peril</div>'+
+      d.innerHTML='<div class="lh">Main driver</div>'+
         ACUTE.map(hz=>'<span class="li"><i style="background:'+HAZARD_BY[hz].color+'"></i>'+HAZARD_LABEL[hz]+'</span>').join("");
     }else{
-      const title=(mode==="combined")?"Combined risk":(HAZARD_LABEL[activeHazard]+" rating");
+      const title=(mode==="combined")?"All hazards combined":(HAZARD_LABEL[activeHazard]+" rating");
       const bands=["Minimal","Low","Moderate","High","Severe"];
       d.innerHTML='<div class="lh">'+title+'</div>'+
         bands.map(b=>'<span class="li"><i style="background:'+BAND_COLOR[b]+'"></i>'+b+'</span>').join("");

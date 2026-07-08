@@ -391,8 +391,8 @@
   .exportmenu .mi b{font-size:13px;color:var(--heading);font-weight:600}
   .exportmenu .mi small{font-size:11.5px;color:var(--muted)}
 
-  /* ---- Display options menu (theme, density, detail, panels) ---- */
-  #displayMenu{left:0;right:auto;max-height:min(70vh,560px);overflow-y:auto}
+  /* ---- Portfolio menu (load, display, guide) ---- */
+  #portfolioMenu{left:0;right:auto;max-height:min(70vh,560px);overflow-y:auto}
   .dm-sec{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:10px 11px 4px;font-weight:600}
   .dm-seg{display:flex;gap:4px;padding:0 11px 4px;flex-wrap:wrap}
   .dm-seg button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;flex:1;white-space:nowrap}
@@ -470,11 +470,10 @@
   .prionums{color:var(--ink-2)}
   .prionums b{color:var(--ok-ink);font-weight:600}
   .priowhen{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--ink-2)}
-  .whenchip{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;
-    font-size:10.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
-  .whenchip.now{background:var(--alert-bg);color:var(--alert-ink);border:1px solid var(--alert-line)}
-  .whenchip.soon{background:var(--warn-bg);color:var(--warn-ink);border:1px solid var(--warn-line)}
-  .whenchip.monitor{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+  .whenchip{display:inline;font-size:inherit;font-weight:600;white-space:nowrap;background:none;border:none;padding:0;border-radius:0}
+  .whenchip.now{color:var(--alert-ink)}
+  .whenchip.soon{color:var(--warn-ink)}
+  .whenchip.monitor{color:var(--muted);font-weight:500}
   .execprog{margin-top:9px;font-size:12px;line-height:1.55;color:var(--ink-2);background:var(--ok-bg);
     border:1px solid var(--ok-line);border-left:3px solid var(--good);border-radius:9px;padding:10px 12px}
   .execprog b{color:var(--ok-ink)}
@@ -569,17 +568,13 @@
       <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
     </span>
     <div class="exportwrap">
-      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Load, replace, or template your site list">Portfolio &#9662;</button>
-      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio actions" style="width:288px">
+      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Portfolio, display options, and guide">Portfolio &#9662;</button>
+      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio, display, and guide" style="width:300px">
+        <button class="mi" role="menuitem" id="portfolioGuideBtn"><b>Guide</b><small>What this tool does and how to read it</small></button>
         <button class="mi" role="menuitem" id="sampleBtn"><b>Load sample portfolio</b><small>12 illustrative resorts to explore the tool</small></button>
         <button class="mi" role="menuitem" id="portfolioMethodBtn"><b>Upload your site list</b><small>Opens Method &amp; data to drop in a CSV</small></button>
         <button class="mi" role="menuitem" id="portfolioTmplBtn"><b>Download site template</b><small>Required columns and optional profile fields</small></button>
-      </div>
-    </div>
-    <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
-    <div class="exportwrap">
-      <button class="btn ghost" id="displayBtn" aria-haspopup="true" aria-expanded="false" aria-controls="displayMenu" title="Theme, density, detail level, and which Summary panels show">Display</button>
-      <div class="exportmenu" id="displayMenu" aria-label="Display options" style="width:272px">
+        <div class="dm-sep" style="height:1px;background:var(--line);margin:8px 11px"></div>
         <div class="dm-sec">Theme</div>
         <div class="dm-seg" role="group" aria-label="Theme">
           <button type="button" data-set-theme="light">Light</button>
@@ -671,8 +666,8 @@
   <div class="seg"><label class="mini-l" for="mapColorSel">Map colour</label>
     <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
       <option value="peril">Selected peril</option>
-      <option value="combined">Combined risk</option>
-      <option value="dominant">Dominant peril</option>
+      <option value="combined">All hazards combined</option>
+      <option value="dominant">Main driver</option>
     </select>
   </div>
   <button type="button" class="info" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
@@ -707,7 +702,6 @@
           <option value="ssp245">Middle path (SSP2-4.5)</option>
           <option value="ssp585">High emissions (SSP5-8.5)</option>
         </select>
-        <button class="lightbtn" id="scrubPlay">Play</button>
         <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
         <p class="scrub-hint">Timeline controls the whole app: every tab recomputes at the step you pick.</p>
       </div>
@@ -716,7 +710,6 @@
           <h3 style="margin:0">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
           <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Hide flood depth and downtime columns">Fewer columns</button>
         </div>
-        <div class="hint">One row per site, ranked by expected annual cost: the main driver, what a rare extreme year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard.</div>
         <div id="decisionHost"></div>
       </div>
       <div class="cards" id="sumKpis"></div>
@@ -725,7 +718,6 @@
       </div>
       <div class="panel" id="scenPanel">
         <h3>Future pathways<button type="button" class="info" data-info="scenarios" aria-label="How future pathways are compared" aria-expanded="false">i</button></h3>
-        <div class="hint">Combined physical risk across emissions pathways from present day through 2080.</div>
         <div class="cards" id="scenCards"></div>
         <div class="grid2">
           <div>
@@ -742,7 +734,6 @@
       </div>
       <div class="panel" id="tolPanel" style="display:none">
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
-        <div class="hint">Your stated line between monitor and act. Edit the thresholds; they persist and become the documented basis for every breach flag. Breaches route to a decision lane: harden, or transfer and accept.</div>
         <div id="tolBody"></div>
       </div>
       <div class="panel" id="matrixPanel">
@@ -765,53 +756,44 @@
             </label>
           </div>
         </div>
-        <div class="hint">Every row against every peril at the selected scenario, coloured by risk band. Read across a row for one site's whole profile, down a column for the portfolio's exposure to a single peril. Switch the view to regroup by brand or change what each cell shows.</div>
         <div id="riskMatrix" style="overflow-x:auto"></div>
       </div>
       <div class="panel" id="quadrantPanel">
         <h3>Risk vs value<button type="button" class="info" data-info="riskValue" aria-label="How to read the risk-versus-value chart" aria-expanded="false">i</button></h3>
-        <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
         <div id="riskValue" style="overflow-x:auto"></div>
       </div>
       <div class="grid2" id="sumMixRow">
         <div class="panel">
           <h3>Cost by peril<button type="button" class="info" data-info="aggPeril" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">Every peril in one currency: expected annual cost across all six hazards, damage plus interruption.</div>
           <div id="sumByPeril"></div>
         </div>
         <div class="panel">
           <h3>Cost by type<button type="button" class="info" data-info="aggType" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">The same total split into physical damage, business interruption, and heat.</div>
           <div id="sumByType"></div>
         </div>
       </div>
       <div class="grid2" id="sumTrajRow">
         <div class="panel">
           <h3>Trajectory<button type="button" class="info" data-info="aggTraj" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">Expected annual cost today and under the selected pathway. This is the delta that climate adds.</div>
           <div id="sumTraj"></div>
         </div>
         <div class="panel">
           <h3>Portfolio risk mix<button type="button" class="info" data-info="aggBands" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">How many sites sit in each combined physical-risk band at the selected scenario.</div>
           <div id="sumBands"></div>
         </div>
       </div>
       <div class="grid2" id="sumTopRow">
         <div class="panel">
           <h3>Most exposed sites<button type="button" class="info" data-info="aggSites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">Where the expected annual cost concentrates.</div>
           <div id="sumTopSites"></div>
         </div>
         <div class="panel">
           <h3>By brand<button type="button" class="info" data-info="aggBrand" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-          <div class="hint">Expected annual cost rolled up to each brand.</div>
           <div id="sumByBrand"></div>
         </div>
       </div>
       <div class="panel" id="sumInsuredPanel" style="display:none">
         <h3>By named insured<button type="button" class="info" data-info="namedInsured" aria-label="How named-insured aggregation works" aria-expanded="false">i</button></h3>
-        <div class="hint">Expected annual damage rolled up to each named insured across the portfolio (HOA, operating company, and so on), so exposure can be owned and managed by insured party as well as by site. Shown when the portfolio carries a named insured.</div>
         <div id="sumByInsured"></div>
       </div>
       <div class="note" id="sumNote"></div>
@@ -843,7 +825,6 @@
       </div>
       <div class="panel">
         <h3>Risk drivers<button type="button" class="info" data-info="drivers" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">Which perils drive portfolio expected annual damage at the selected horizon. Heat is tracked as indicators, not direct damage.</div>
         <div id="riskDrivers"></div>
       </div>
       <div class="panel">
@@ -893,7 +874,6 @@
     <div class="grid2" style="grid-template-columns:0.8fr 1.2fr">
       <div class="panel">
         <h3>Appraisal settings<button type="button" class="info" data-info="levers" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">Shared by every measure. Everything recomputes live.</div>
         <div class="field">
           <label>Appraisal horizon (years) <span class="mono" id="horizonVal">25</span></label>
           <input type="range" id="horizon" min="5" max="40" step="5" value="25">
@@ -910,14 +890,12 @@
       </div>
       <div class="panel">
         <h3>Measure library<button type="button" class="info" data-info="measLib" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">Check a measure to add it to the adaptation portfolio. Each declares which perils and cost types it reduces.</div>
         <div id="measuresHost"></div>
       </div>
     </div>
     <div class="grid2">
       <div class="panel">
         <h3>Adaptation cost curve<button type="button" class="info" data-info="costCurve" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">Bar width is averted annual cost, height is the benefit-cost ratio. Fund left to right while bars clear the 1.0 line.</div>
         <div id="costCurve"></div>
       </div>
       <div class="panel">
@@ -928,18 +906,17 @@
     </div>
     <div class="panel">
       <h3>Risk layering &amp; insurance<button type="button" class="info" data-info="layering" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-      <div class="hint">The acute loss curve split into what you retain, what a policy transfers, and the tail beyond the limit. Chronic heat is not insurable here and sits outside this panel.</div>
       <div class="grid2" style="grid-template-columns:0.8fr 1.2fr">
         <div>
           <div class="field">
-            <label>Attachment point (return period)</label>
+            <label>Cover start (return period)</label>
             <select class="scen" id="attachSel" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);width:100%">
               <option value="10">1-in-10</option><option value="25" selected>1-in-25</option>
               <option value="50">1-in-50</option><option value="100">1-in-100</option>
             </select>
           </div>
           <div class="field">
-            <label>Exhaustion point (return period)</label>
+            <label>Cover limit (return period)</label>
             <select class="scen" id="exhaustSel" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);width:100%">
               <option value="50">1-in-50</option><option value="100">1-in-100</option>
               <option value="250" selected>1-in-250</option><option value="500">1-in-500</option>
@@ -966,7 +943,6 @@
     </div>
     <div class="panel">
       <h3>Where to act first<button type="button" class="info" data-info="recommend" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-      <div class="hint">Each site's best single measure by benefit-cost ratio at the selected scenario.</div>
       <table class="tbl" id="recTbl">
         <thead><tr><th>Site</th><th class="num">Climate cost $/yr</th><th>Best measure</th>
         <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">Pays back</th></tr></thead>
@@ -975,7 +951,6 @@
     </div>
     <div class="panel">
       <h3>Action queue &amp; funding cutline<button type="button" class="info" data-info="queue" aria-label="How the queue is built" aria-expanded="false">i</button></h3>
-      <div class="hint">Every in-scope site-and-measure pair, ranked by benefit-cost ratio. Set a program budget to draw the funding cutline: greedy fill from the top, nothing below breakeven, nothing dropped. The export is the capital-committee artifact.</div>
       <div class="field" style="max-width:340px">
         <label>Program budget (USD; blank funds everything above breakeven)</label>
         <input type="number" id="budgetIn" min="0" step="500000" placeholder="no budget cap">
@@ -1000,12 +975,10 @@
     <div class="grid2">
       <div class="panel">
         <h3>Where the cost comes from<button type="button" class="info" data-info="costsplit" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">Expected annual cost split into direct damage, business interruption, and heat revenue at risk.</div>
         <div id="finBreakdown"></div>
       </div>
       <div class="panel">
-        <h3>Acute vs chronic<button type="button" class="info" data-info="acuteChronic" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
-        <div class="hint">TCFD and ISSB separate event-driven (acute) from gradual (chronic) physical risk.</div>
+        <h3>Storms &amp; floods vs heat<button type="button" class="info" data-info="acuteChronic" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
         <div id="finAcuteChronic"></div>
       </div>
     </div>
@@ -1064,7 +1037,7 @@
       <h3>Most exposed sites<button type="button" class="info" data-info="finsites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">Ranked by total expected annual climate cost at the selected scenario.</div>
       <table class="tbl" id="finSiteTbl">
-        <thead><tr><th>Site</th><th class="num">Value</th><th class="num">Revenue</th><th class="num">Direct</th><th class="num">Business interruption</th><th class="num">Heat</th><th class="num">Total $/yr</th><th class="num">% rev</th></tr></thead>
+        <thead><tr><th>Site</th><th class="num">Value</th><th class="num">Revenue</th><th class="num">Direct</th><th class="num">Lost operating profit</th><th class="num">Heat</th><th class="num">Total $/yr</th><th class="num">% rev</th></tr></thead>
         <tbody id="finSiteBody"></tbody>
       </table>
     </div>
