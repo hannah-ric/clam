@@ -473,7 +473,7 @@
   .layerchip:hover{background:var(--surface-2);color:var(--ink)}
   .layerchip[aria-pressed="true"]{background:var(--primary);color:#fff;font-weight:600}
 
-  #execEmpty{inset:0;display:flex;align-items:center;justify-content:center;background:rgba(245,246,243,.6);padding:16px}
+  #execEmpty{inset:0;display:flex;align-items:center;justify-content:center;background:rgba(245,246,243,.6);background:color-mix(in srgb,var(--bg) 62%,transparent);padding:16px}
   .execempty-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
     box-shadow:0 2px 6px rgba(21,32,43,.08),0 16px 40px rgba(21,32,43,.16);padding:28px 32px;max-width:520px;text-align:center}
   .execempty-card h3{font-family:var(--font-display);font-weight:560;color:var(--heading);margin:0 0 8px;font-size:20px}
@@ -508,6 +508,7 @@
   #briefHost td.num{text-align:right}
   #briefHost .bprov{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;font-size:10.5px;color:#444}
   @media print{
+    body{background:#fff !important;color:#111}
     body.printbrief>*:not(#briefHost){display:none !important}
     body.printbrief #briefHost{display:block}
     /* the executive layout pins the body to one viewport; printing needs flow */
@@ -566,7 +567,7 @@
     <div class="exportwrap">
       <button class="btn solid" id="exportMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export &amp; brief &#9662;</button>
       <div class="exportmenu" id="exportMenu" role="menu" aria-label="Exports and briefings">
-        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>Print-ready portfolio one-pager with its data basis stated</small></button>
+        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>Opens your print dialog; choose Save as PDF. One page, data basis stated.</small></button>
         <button class="mi" role="menuitem" id="exportBtn"><b>Portfolio CSV</b><small>Full multi-hazard schema, feeds Power BI (frozen contract)</small></button>
         <button class="mi" role="menuitem" id="menuBrokerBtn"><b>Broker evidence pack (CSV)</b><small>Secondary modifiers plus the modeled view, for the renewal submission</small></button>
         <button class="mi" role="menuitem" id="menuActionBtn"><b>Adaptation action list (CSV)</b><small>Every ranked site-and-measure pair with the funding cutline</small></button>
@@ -1148,7 +1149,7 @@
 
 <div class="foot-legal">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v2.3.0 assembled from source &middot; executive home (map-first priorities, timeline, consolidated exports) &middot; scenario timeline, score tracing, board brief &middot; decision layer: risk tolerance &amp; lanes, action queue &amp; cutline, renewal workbench (quote benchmark, retention sweep, broker evidence pack) &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat, wildfire, TC rainfall &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v2.4.0</span>, assembled from source. Executive home, scenario timeline, score tracing, board brief, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>
