@@ -237,7 +237,7 @@ renderResultsPack();
 assert(panel.innerHTML.indexOf("Layer benchmark")>=0&&panel.innerHTML.indexOf("technical premium")>=0,
   "pack panel carries the technical-premium layer benchmark");
 assert(panel.innerHTML.indexOf("Top capital projects")>=0&&panel.innerHTML.indexOf("Reef Bay")>=0
-  &&panel.innerHTML.indexOf("BCR 5.804")>=0,"pack panel ranks the capital plan");
+  &&panel.innerHTML.indexOf("5.804× pays back")>=0,"pack panel ranks the capital plan");
 assert(panel.innerHTML.indexOf("ssp585_2080 appraisal")>=0,
   "capital plan states its appraisal scenario");
 

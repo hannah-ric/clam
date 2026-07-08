@@ -242,7 +242,7 @@ function renderExecHome(){
     '</div>';
   h+='<div class="scrollbody">';
   h+='<div class="exectiles">'+
-    '<div class="exectile" title="What a 1-in-100 year would cost the whole portfolio ('+esc(tailBasis)+')"><div class="l">1-in-100 year</div><div class="v">'+fmt$(varRef)+'</div><div class="f">'+(f.value?(varRef/f.value*100).toFixed(0):0)+'% of value · '+esc(tailBasis)+'</div></div>'+
+    '<div class="exectile" title="What a rare extreme year (~1% annual chance) would cost the whole portfolio ('+esc(tailBasis)+')"><div class="l">Rare extreme year</div><div class="v">'+fmt$(varRef)+'</div><div class="f">'+(f.value?(varRef/f.value*100).toFixed(0):0)+'% of value · '+esc(tailBasis)+'</div></div>'+
     tolTile+
     '<div class="exectile" title="'+esc(HAZARD_LABEL[domK])+' drives '+domShare.toFixed(0)+'% of the expected annual cost"><div class="l">Largest driver</div><div class="v">'+esc(EXEC_PERIL_SHORT[domK]||domK)+'</div><div class="f">'+domShare.toFixed(0)+'% of annual cost</div></div>'+
     '</div>';
@@ -260,7 +260,7 @@ function renderExecHome(){
       planLine='<span class="prioplan"><span class="plan-action">Do: <b>'+esc(r.measure)+'</b></span>'+
         '<span class="plan-metrics">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
     }else if(r.lane==="transfer"){
-      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
+      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', '+r.bcr.toFixed(1)+'× pays back)':'')+
         ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
     }else{
       planLine='<span class="prioplan">No priced measure in scope; the adaptation tab has the full library</span>';
@@ -289,7 +289,7 @@ function renderExecHome(){
   if(prog&&prog.n>0){
     h+='<div class="execprog">Funding all <b>'+prog.n+'</b> action'+(prog.n>1?"s":"")+' above breakeven'+
       ((adapt&&adapt.budget>0)?' within the '+fmt$(adapt.budget)+' budget':'')+
-      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> (program BCR '+prog.bcr.toFixed(1)+'x, no double counting). '+
+      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> ('+prog.bcr.toFixed(1)+'× pays back, no double counting). '+
       '<button type="button" class="lightbtn" id="execProgBtn" style="margin-top:6px">Open the capital plan</button></div>';
   }
   if(sites.length>planRows.length)h+='<div class="execnote">The '+planRows.length+' largest of '+sites.length+' sites by all-in annual cost (damage, interruption, heat); the analyst decision view ranks them all.</div>';

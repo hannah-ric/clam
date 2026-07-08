@@ -2,7 +2,10 @@
    over panels the renderers still fully paint; ui.panels[key]===false hides,
    anything else leaves the renderer's own display state alone. */
 const SUMMARY_PANELS=[
+  {key:"kpis",id:"sumKpis",label:"Summary metric cards"},
+  {key:"readout",id:"sumReadoutPanel",label:"Narrative readout"},
   {key:"decision",id:"decisionPanel",label:"Decision view"},
+  {key:"scenarios",id:"scenPanel",label:"Future pathways"},
   {key:"tolerance",id:"tolPanel",label:"Position vs tolerance"},
   {key:"matrix",id:"matrixPanel",label:"Risk matrix"},
   {key:"quadrant",id:"quadrantPanel",label:"Risk vs value"},
@@ -10,6 +13,12 @@ const SUMMARY_PANELS=[
   {key:"traj",id:"sumTrajRow",label:"Trajectory and risk mix"},
   {key:"top",id:"sumTopRow",label:"Most exposed and by brand"},
 ];
+const SUMMARY_PANEL_DEFAULTS={kpis:false,readout:true,decision:true,scenarios:false,tolerance:false,matrix:false,quadrant:false,mix:true,traj:false,top:false};
+function ensurePanelDefaults(){
+  if(!ui.panels||!Object.keys(ui.panels).length){
+    ui.panels=Object.assign({},SUMMARY_PANEL_DEFAULTS);
+  }
+}
 function applyPanelPrefs(){
   const p=(ui&&ui.panels)||{};
   SUMMARY_PANELS.forEach(x=>{
@@ -23,9 +32,8 @@ function applyPanelPrefs(){
 function emptyStateHtml(msg){
   return '<div style="text-align:center;padding:26px 16px">'+
     '<div style="font-weight:600;color:var(--heading);margin-bottom:4px;font-size:15px">Start with your portfolio</div>'+
-    '<div class="hint" style="margin-bottom:12px">'+msg+'</div>'+
-    '<button class="lightbtn primary" onclick="loadSample()">Load sample portfolio</button> '+
-    '<button class="lightbtn" onclick="switchTab(\'method\')">Load your own sites</button></div>';
+    '<div class="hint" style="margin-bottom:4px">'+msg+'</div>'+
+    '<div class="hint">Use <b>Portfolio</b> in the top bar to load the sample or upload your site list.</div></div>';
 }
 function render(){
   hideInfo();
@@ -51,6 +59,7 @@ function render(){
   renderHazProv();
   renderResultsPack();
   renderExecHome();
+  ensurePanelDefaults();
   applyPanelPrefs();
   renderPortfolioLabel();
 }
@@ -87,11 +96,11 @@ function renderDecision(){
     +label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
   let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead><tr>'+
     th("Site","name")+th("Dominant peril","dom")+
-    th("1-in-100 damage","dmg100",1,"Loss at a 1-in-100 year return period")+
+    th("Rare extreme year damage","dmg100",1,"Loss at a ~1% annual chance return period (1-in-100)")+
     th("Expected annual cost ($/yr)","ead",1,"Average yearly climate cost at this scenario")+
-    (compact?"":th("Flood depth @100 (m)","depth100",1,"Flood depth at the 1-in-100 year event"))+
-    (compact?"":th("Downtime @100 (days)","downtime100",1,"Business interruption days at the 1-in-100 year event"))+
-    th("Top measure","measure")+th("Benefit-cost ratio","bcr",1,"Averted loss divided by upfront cost; above 1.0 pays back")+
+    (compact?"":th("Flood depth @ rare year (m)","depth100",1,"Flood depth at the rare extreme year event"))+
+    (compact?"":th("Downtime @ rare year (days)","downtime100",1,"Business interruption days at the rare extreme year event"))+
+    th("Top measure","measure")+th("Pays back","bcr",1,"Averted loss divided by upfront cost; above 1.0× pays back")+
     th("Act by","actByOrd",1,"When this site crosses your stated risk tolerance")+
     th("Data basis","trustModeled",1,"How many perils are modeled vs interim at this site")+'</tr></thead><tbody>';
   rows.forEach(r=>{
@@ -114,8 +123,8 @@ function renderDecision(){
       '<div class="dmeta"><span>'+esc(perilName(r.dom))+'</span>'+
       '<span class="pill mini '+esc(r.band||"")+'">'+(r.band||"")+'</span>'+
       '<span class="mono">'+r.trustModeled+'/'+r.trustTotal+' modeled</span></div>'+
-      '<div class="drow"><span>1-in-100 damage</span><b class="mono">'+fmt$(r.dmg100)+'</b></div>'+
-      (r.measure?('<div class="drow"><span>Top measure</span><b>'+esc(r.measure)+' · BCR '+r.bcr.toFixed(1)+'x</b></div>'):'')+
+      '<div class="drow"><span>Rare extreme year damage</span><b class="mono">'+fmt$(r.dmg100)+'</b></div>'+
+      (r.measure?('<div class="drow"><span>Top measure</span><b>'+esc(r.measure)+' · '+r.bcr.toFixed(1)+'× pays back</b></div>'):'')+
       '<div class="drow"><span>Act by</span><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></div>'+
       '</div>';
   });
@@ -145,12 +154,22 @@ function renderSummary(){
   const db=document.getElementById("dataBanner");
   if(db){
     if(hazardGrid){
+      ui.dismissedInterimBanner=false;
       const live=perilAuthority().filter(a=>a.live).length;
+      db.style.display="";
       db.style.borderLeftColor="var(--good)";
-      db.innerHTML="<b>Running on your loaded climate data</b> ("+live+" of "+HAZARDS.length+" perils authoritative). These figures are disclosure-grade for those perils; any peril still on the built-in estimate is labelled where it appears.";
+      db.innerHTML="<b>Running on your loaded climate data</b> ("+live+" of "+HAZARDS.length+" perils authoritative). Disclosure-grade for those perils; interim estimates are labelled where they remain.";
+    }else if(ui.dismissedInterimBanner){
+      db.style.display="none";
+      db.innerHTML="";
     }else{
+      db.style.display="";
       db.style.borderLeftColor="var(--r-mod)";
-      db.innerHTML="<b>You are exploring with built-in estimates.</b> Good for a first look, not for disclosure. To sharpen every number, load your climate data on the Method and data tab (or ask your analytics team for the CLIMADA grid).";
+      db.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">'+
+        '<span><b>Built-in screening estimates.</b> Good for a first look, not for disclosure. Load climate data on the <b>Method &amp; data</b> tab when you are ready.</span>'+
+        '<button type="button" class="lightbtn" id="dismissBanner" style="flex:none">Dismiss</button></div>';
+      const btn=document.getElementById("dismissBanner");
+      if(btn&&!btn._wired){btn._wired=true;btn.onclick=()=>{ui.dismissedInterimBanner=true;persist();renderSummary();};}
     }
   }
   const card=(l,v,foot,info)=>'<div class="card"><div class="l">'+l+(info?infoBtn(info):"")+'</div><div class="v" style="font-size:22px">'+v+'</div><div class="foot">'+foot+'</div></div>';
@@ -159,17 +178,17 @@ function renderSummary(){
     card("Insured value",fmt$(f.value),sites.length+" site"+(sites.length>1?"s":""),"")+
     card("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high),"totalAal")+
     (f.jointTail
-      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),(f.value?f.jointTail.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_JOINT_LABEL+" · live blend incl. BI: "+fmt$(f.var100),"var100")
-      :card("1-in-100 Value at Risk",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_BOUND_LABEL,"var100"))+
+      ?card("Rare extreme year (~1%)",fmt$(f.jointTail.var100),(f.value?f.jointTail.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_JOINT_LABEL+" · live blend incl. BI: "+fmt$(f.var100),"var100")
+      :card("Rare extreme year (~1%)",fmt$(f.var100),(f.value?f.var100/f.value*100:0).toFixed(1)+"% of value · "+TAIL_BOUND_LABEL,"var100"))+
     card("Climate premium","+"+fmt$(premium)+"/yr","by "+esc(futLabel)+", "+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"% vs today","premium");
   const perilName={tc:"Tropical cyclone wind",cflood:"Coastal flood",rflood:"Riverine flood",heat:"Extreme heat",wfire:"Wildfire",prain:"TC rainfall"};
   const perilArr=Object.keys(agg.byPeril).map(k=>[k,agg.byPeril[k]]).sort((a,b)=>b[1]-a[1]);
   const dom=perilArr[0], domShare=agg.total?dom[1]/agg.total*100:0;
   const highSevere=(agg.bands.High||0)+(agg.bands.Severe||0);
   document.getElementById("sumReadout").innerHTML=
-    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A 1-in-100 year would cost about <b>"+fmt$(f.jointTail?f.jointTail.var100:f.var100)+"</b> ("+(f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(0)+"% of value; "+(f.jointTail?"joint event tail":"blend approximation, not the joint tail")+"). "+
+    "At "+esc(curLabel)+", the portfolio's expected annual climate cost is <b>"+fmt$(f.totalAal)+"</b> ("+f.aalPctValue.toFixed(2)+"% of value, "+f.aalPctRev.toFixed(1)+"% of revenue). A rare extreme year (~1% annual chance) would cost about <b>"+fmt$(f.jointTail?f.jointTail.var100:f.var100)+"</b> ("+(f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(0)+"% of value; "+(f.jointTail?"joint event tail":"blend approximation, not the joint tail")+"). "+
     "<b>"+perilName[dom[0]]+"</b> is the largest driver at "+domShare.toFixed(0)+"% of the annual cost. "+
-    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the 1-in-100 to <b>"+fmt$(ff.jointTail?ff.jointTail.var100:ff.var100)+"</b>. "+
+    "By "+esc(futLabel)+", warming lifts the annual cost to <b>"+fmt$(ff.totalAal)+"</b> ("+(premiumPct>=0?"+":"")+premiumPct.toFixed(0)+"%) and the rare extreme year to <b>"+fmt$(ff.jointTail?ff.jointTail.var100:ff.var100)+"</b>. "+
     (highSevere?("<b>"+highSevere+"</b> of "+sites.length+" sites sit in High or Severe combined physical risk."):("No sites sit in High or Severe combined physical risk at this scenario."));
   document.getElementById("sumByPeril").innerHTML=barsSvg(perilArr.map(([k,v])=>({label:perilName[k],ead:v})),"ead","label","#0F3A4B");
   document.getElementById("sumByType").innerHTML=barsSvg([
@@ -323,14 +342,14 @@ function renderTolerance(){
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
     fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
-    fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, 1-in-100 loss")+
+    fld("varPctValue","Tail threshold",tolerance.varPctValue,1,"% of value, rare extreme year loss")+
     '</div><div class="kv" style="margin-top:8px">'+
     line("Portfolio expected cost",t.portPct.toFixed(2)+"%",tolerance.portAalPct+"%",t.portBreach)+
-    line("1-in-100 Value at Risk ("+t.tailBasis+")",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
+    line("Rare extreme year ("+t.tailBasis+")",t.varPct.toFixed(1)+"%",tolerance.varPctValue+"%",t.varBreach)+
     '<span class="k">Sites above threshold</span><span class="v mono">'+t.siteBreaches.length+' of '+sites.length+'</span>'+
     '</div>';
   if(t.siteBreaches.length){
-    h+='<table class="tbl" style="margin-top:8px"><thead><tr><th>Site</th><th class="num">Cost $/yr</th><th class="num">bps of value</th><th>Best in-scope measure</th><th class="num">BCR</th><th>Lane</th></tr></thead><tbody>'+
+    h+='<table class="tbl" style="margin-top:8px"><thead><tr><th>Site</th><th class="num">Cost $/yr</th><th class="num">% of value</th><th>Best in-scope measure</th><th class="num">Pays back</th><th>Lane</th></tr></thead><tbody>'+
       t.siteBreaches.map(b=>'<tr class="rowclick" data-focus="'+b.id+'"><td>'+esc(b.name)+'</td><td class="num mono">'+fmt$(b.aal)+'</td>'+
         '<td class="num mono">'+b.bps.toFixed(0)+'</td><td>'+(b.bestMeasure?esc(b.bestMeasure):'<span class="hint">none in scope</span>')+'</td>'+
         '<td class="num mono" style="color:'+(b.bestBcr>=1?"var(--good)":"var(--bad)")+'">'+b.bestBcr.toFixed(2)+'x</td>'+
@@ -377,7 +396,7 @@ function renderOverview(scored){
     cards=[
       ["Total insured value",fmt$(scored.tiv),sites.length+" sites","tiv"],
       ["Expected annual damage",fmt$(scored.ead)+"/yr",scored.eadPct.toFixed(2)+"% of value","ead"],
-      ["1-in-100 portfolio loss",fmt$(scored.rpLoss[100]),"sum across sites at equal RP: an upper bound, not the joint tail","rp100"],
+      ["Rare extreme year portfolio loss",fmt$(scored.rpLoss[100]),"sum across sites at equal rarity: an upper bound, not the joint tail","rp100"],
       ["High or Severe sites",String(highSev),"of "+sites.length,"bands"],
     ];
   }
@@ -608,7 +627,7 @@ function renderAdaptation(){
     }).join("");
     return '<div class="measure" style="'+(a.st.on?"":"opacity:.62")+'">'+
       '<div class="mh"><span class="nm"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-mtoggle="'+a.m.key+'" '+(a.st.on?"checked":"")+'> '+esc(a.m.name)+infoBtn(a.m.info)+'</label></span>'+
-      '<span class="bcr" style="color:'+(a.bcr>=1?"var(--good)":"var(--bad)")+'">BCR '+a.bcr.toFixed(2)+'x</span></div>'+
+      '<span class="bcr" style="color:'+(a.bcr>=1?"var(--good)":"var(--bad)")+'">'+a.bcr.toFixed(2)+'× pays back</span></div>'+
       '<div class="hint" style="margin:0 0 8px">Targets: '+a.m.target+' · applies to '+a.scopeN+' of '+sites.length+' sites</div>'+
       sliders+
       '<div class="stat"><span>Cost <b>'+fmt$(a.cost)+'</b></span><span>Averted <b>'+fmt$(a.averted)+'/yr</b></span><span>Benefit ('+horizon+'y) <b>'+fmt$(a.benefit)+'</b></span></div></div>';
@@ -627,7 +646,7 @@ function renderAdaptation(){
   const combCost=enabled.reduce((s,a)=>s+a.cost,0);
   const combBcr=combCost>0?combAverted*af/combCost:0;
   document.getElementById("portfolioSummary").innerHTML=enabled.length?
-    "<b>Selected portfolio ("+enabled.length+" measure"+(enabled.length>1?"s":"")+"):</b> averts <b>"+fmt$(combAverted)+"/yr</b> of "+fmt$(base.totalAal)+" ("+(base.totalAal?combAverted/base.totalAal*100:0).toFixed(0)+"%) for "+fmt$(combCost)+" upfront. Portfolio BCR <b>"+combBcr.toFixed(2)+"x</b>. Combined benefit is computed jointly, so overlapping measures are never double-counted.":
+    "<b>Selected portfolio ("+enabled.length+" measure"+(enabled.length>1?"s":"")+"):</b> averts <b>"+fmt$(combAverted)+"/yr</b> of "+fmt$(base.totalAal)+" ("+(base.totalAal?combAverted/base.totalAal*100:0).toFixed(0)+"%) for "+fmt$(combCost)+" upfront. Portfolio pays back <b>"+combBcr.toFixed(2)+"×</b>. Combined benefit is computed jointly, so overlapping measures are never double-counted.":
     "No measures selected. Check measures in the library to build the adaptation portfolio.";
 
   // adaptation cost curve
@@ -674,7 +693,7 @@ function renderAdaptation(){
     .sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
   document.getElementById("recBody").innerHTML=rec.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
-    (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"var(--good)":"var(--bad)")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
+    (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"var(--good)":"var(--bad)")+'">'+r.best.bcr.toFixed(2)+'×</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
   document.querySelectorAll("#recBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 
   // Wave 1 R3: the action queue with its funding cutline
@@ -683,8 +702,7 @@ function renderAdaptation(){
   document.getElementById("queueRoll").innerHTML=q.items.length?
     "<b>Program:</b> "+q.roll.n+" funded project"+(q.roll.n===1?"":"s")+", cost "+fmt$(q.roll.cost)+
     (adapt.budget>0?" of the "+fmt$(adapt.budget)+" budget":"")+
-    ", jointly averting <b>"+fmt$(q.roll.averted)+"/yr</b> (program BCR "+q.roll.bcr.toFixed(2)+
-    "x; the roll-up is computed jointly per site, so overlapping measures never double-count)."+
+    ", jointly averting <b>"+fmt$(q.roll.averted)+"/yr</b> ("+q.roll.bcr.toFixed(2)+"× pays back; the roll-up is computed jointly per site, so overlapping measures never double-count)."+
     (unf.length?" <b>"+unf.length+"</b> project"+(unf.length===1?"":"s")+" above breakeven sit"+(unf.length===1?"s":"")+
       " unfunded ("+fmt$(unf.reduce((a,i)=>a+i.cost,0))+"): deferred by the budget, not dropped.":"")+
     " Nothing below breakeven is ever funded.":
@@ -693,14 +711,14 @@ function renderAdaptation(){
   document.getElementById("queueBody").innerHTML=q.items.slice(0,QSHOW).map((it,i)=>
     '<tr class="rowclick" data-focus="'+it.id+'"><td class="mono">'+(i+1)+'</td><td>'+esc(it.site)+'</td><td>'+esc(it.measure)+'</td>'+
     '<td class="num mono">'+fmt$(it.averted)+'</td><td class="num mono">'+fmt$(it.cost)+'</td>'+
-    '<td class="num mono" style="color:'+(it.bcr>=1?"var(--good)":"var(--bad)")+'">'+it.bcr.toFixed(2)+'x</td>'+
+    '<td class="num mono" style="color:'+(it.bcr>=1?"var(--good)":"var(--bad)")+'">'+it.bcr.toFixed(2)+'×</td>'+
     '<td style="color:'+(it.funded?"var(--good)":"var(--muted)")+';font-weight:600">'+(it.funded?"funded":"unfunded")+'</td></tr>').join("");
   document.getElementById("queueMore").textContent=q.items.length>QSHOW?
     ("Top "+QSHOW+" of "+q.items.length+" pairs shown; the export carries the full list."):"";
   const pkq=resultsPack&&resultsPack.data;
   document.getElementById("queuePack").innerHTML=(pkq&&pkq.capital_plan&&pkq.capital_plan.projects&&pkq.capital_plan.projects.length)?
     '<div class="note" style="margin-top:10px"><b>Canonical plan (CLIMADA results pack):</b><br>'+
-    pkq.capital_plan.projects.slice(0,5).map(cp=>(cp.year!=null?"Y"+esc(cp.year):"deferred")+" · "+esc(cp.site)+" · "+esc(cp.measure)+" · BCR "+esc(cp.bcr)).join("<br>")+
+    pkq.capital_plan.projects.slice(0,5).map(cp=>(cp.year!=null?"Y"+esc(cp.year):"deferred")+" · "+esc(cp.site)+" · "+esc(cp.measure)+" · "+esc(cp.bcr)+"× pays back").join("<br>")+
     '<br><small>Event-set appraisal at '+esc(pkq.capital_plan.scenario||"")+
     (pkq.capital_plan.budget_annual_usd?', '+fmt$(pkq.capital_plan.budget_annual_usd)+'/yr budget':'')+
     '. This is the authoritative ranking; the interactive queue above is the live estimate. Both go into the export.</small></div>':"";
@@ -737,7 +755,7 @@ function costCurveSvg(appraised){
   items.forEach((a,i)=>{
     const w=(a.averted/totAvert)*(W-padL-14);
     const y=Y(a.bcr), h=(H-padB)-y;
-    s+='<rect x="'+X(x)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" style="fill:'+colors[i%colors.length]+';opacity:'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
+    s+='<rect x="'+X(x)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" style="fill:'+colors[i%colors.length]+';opacity:'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': '+a.bcr.toFixed(2)+'× pays back, averts '+fmt$(a.averted)+'/yr</title></rect>';
     legend+='<span style="margin-right:12px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+colors[i%colors.length]+';margin-right:5px;vertical-align:middle;opacity:'+(a.st.on?1:0.4)+'"></span>'+esc(a.m.name.split("(")[0].trim())+' '+a.bcr.toFixed(1)+'x</span>';
     x+=a.averted;
   });
@@ -807,9 +825,13 @@ function layerSvg(varByRp,ls){
   s+="</svg>";return s;
 }
 function renderScenarios(){
+  const panel=document.getElementById("scenPanel");
+  if(panel&&!sites.length){panel.style.display="none";return;}
+  if(panel)panel.style.display="";
   if(!sites.length){
-    document.getElementById("scenCards").innerHTML=emptyStateHtml("This tab compares the portfolio's combined physical risk across emissions pathways, present through 2080.");
-    document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
+    const cards=document.getElementById("scenCards"); if(cards)cards.innerHTML="";
+    const bars=document.getElementById("scenBars"); if(bars)bars.innerHTML="";
+    const mig=document.getElementById("bandMig"); if(mig)mig.innerHTML="";return;}
   const hz=+(document.getElementById("horSel").value||2050);
   const keys=["present","ssp126_"+hz,"ssp245_"+hz,"ssp585_"+hz];
   const runs=keys.map(sc=>({sc,r:scorePhysTotal(sites,sc)}));
@@ -898,9 +920,9 @@ function renderFinance(){
     card("Expected annual cost",fmt$(f.totalAal)+"/yr","range "+fmt$(u.low)+" to "+fmt$(u.high)+" \u00b7 "+f.aalPctValue.toFixed(2)+"% of value","totalAal")+
     card("Indirect share",(f.totalAal?indirect/f.totalAal*100:0).toFixed(0)+"%",fmt$(f.biEad)+" BI + "+fmt$(f.heatCost)+" heat","indirect")+
     (f.jointTail
-      ?card("1-in-100 Value at Risk",fmt$(f.jointTail.var100),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var100),"var100")+
+      ?card("Rare extreme year (~1%)",fmt$(f.jointTail.var100),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var100),"var100")+
        card("1-in-250 Value at Risk",fmt$(f.jointTail.var250),TAIL_JOINT_LABEL+" \u00b7 live blend incl. BI: "+fmt$(f.var250),"var250")
-      :card("1-in-100 Value at Risk",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult)+" \u00b7 "+TAIL_BOUND_LABEL,"var100")+
+      :card("Rare extreme year (~1%)",fmt$(f.var100),"range "+fmt$(f.var100*u.varLoMult)+" to "+fmt$(f.var100*u.varHiMult)+" \u00b7 "+TAIL_BOUND_LABEL,"var100")+
        card("1-in-250 Value at Risk",fmt$(f.var250),(f.value?f.var250/f.value*100:0).toFixed(1)+"% of value \u00b7 "+TAIL_BOUND_LABEL,"var250"));
   document.getElementById("finBreakdown").innerHTML=barsSvg([
     {label:"Direct damage",ead:f.directEad},
@@ -919,7 +941,7 @@ function renderFinance(){
     '<span class="k">Plausible low</span><span class="v mono">'+fmt$(u.low)+'/yr</span>'+
     '<span class="k">Plausible high</span><span class="v mono">'+fmt$(u.high)+'/yr</span>'+
     '<span class="k">Largest driver</span><span class="v">'+esc(u.factors[0].label)+'</span>'+
-    '<span class="k">1-in-100 VaR band</span><span class="v mono">'+fmt$(f.var100*u.varLoMult)+' to '+fmt$(f.var100*u.varHiMult)+'</span>';
+    '<span class="k">Rare extreme year band</span><span class="v mono">'+fmt$(f.var100*u.varLoMult)+' to '+fmt$(f.var100*u.varHiMult)+'</span>';
   document.getElementById("uncNote").innerHTML="Deltas are combined by root-sum-square assuming independent inputs, a screening stand-in for CLIMADA's unsequa Monte Carlo. The band widens upward because damage curves are convex. Better data on the top bar buys the most accuracy.";
   const disc=finDisclosure(sites,currentPathway());
   document.getElementById("finDiscBody").innerHTML=disc.map(r=>
@@ -1002,7 +1024,7 @@ function renderScorecard(s){
       card("Climate cost",fmt$(fin.totalAal)+"/yr",(fin.revenue?fin.totalAal/fin.revenue*100:0).toFixed(1)+"% of revenue \u00b7 "+(physPct*100).toFixed(2)+"% of value")+
       card("Portfolio share",costShare.toFixed(0)+"%","of climate cost on "+valShare.toFixed(0)+"% of value")+
       card("Combined physical band",combined.band,pills)+
-      card("1-in-100 loss",fmt$(phys+bi100),fmt$(phys)+" damage + "+fmt$(bi100)+" BI")+
+      card("Rare extreme year loss",fmt$(phys+bi100),fmt$(phys)+" damage + "+fmt$(bi100)+" lost operating profit")+
     '</div>'+
     '<div class="grid2">'+
       '<div class="panel" style="margin-bottom:14px"><h3>Cost by peril</h3><div class="hint">Direct damage plus attributed interruption; heat is its revenue at risk.</div>'+
@@ -1020,7 +1042,7 @@ function renderScorecard(s){
         '</tbody></table></div>'+
     '</div>'+
     '<div class="panel" style="margin-bottom:14px"><h3>Best actions for this site</h3><div class="hint">Top in-scope measures at current library settings.</div>'+
-      '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
+      '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">Pays back</th></tr></thead><tbody>'+
       (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"var(--good)":"var(--bad)")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
       '</tbody></table></div>'+
     namedInsuredDetail(s)+
@@ -1229,7 +1251,7 @@ function renderResultsPack(){
     row("Scenario",esc(scLabel)+(sc!==scenario?" (pack has no "+esc(scenario)+")":""))+
     row("Direct AAL",fmt$(p.direct_aal_usd||0),
         live?fmt$(live.directEad)+" direct EAD":null)+
-    row("1-in-100 loss",fmt$(+ep["100"]||0),
+    row("Rare extreme year loss",fmt$(+ep["100"]||0),
         live?fmt$(live.var100)+" diversified acute (upper-bound blend)":null)+
     row("Loss exceedance",RPS.map(rp=>rp+"y "+fmt$(+ep[String(rp)]||0)).join(" \u00b7 "))+
     row("By peril",Object.keys(p.by_peril_aal_usd||{}).map(z=>z+" "+fmt$(p.by_peril_aal_usd[z]||0)).join(" \u00b7 "))+
@@ -1243,7 +1265,7 @@ function renderResultsPack(){
     (pk.capital_plan&&pk.capital_plan.projects&&pk.capital_plan.projects.length?
       row("Top capital projects",pk.capital_plan.projects.slice(0,5).map(cp=>
         (cp.year!=null?"Y"+esc(cp.year)+" \u00b7 ":(("year" in cp)?"deferred \u00b7 ":""))+
-        esc(cp.site)+" \u00b7 "+esc(cp.measure)+" \u00b7 BCR "+esc(cp.bcr)+
+        esc(cp.site)+" \u00b7 "+esc(cp.measure)+" \u00b7 "+esc(cp.bcr)+"× pays back"+
         " ("+fmt$(cp.averted_direct_aal_usd)+"/yr averted, "+fmt$(cp.cost_usd)+
         (cp.renovation_synergy?", refurbishment-phased":"")+")"
       ).join("<br>")+"<br><small>ranked by canonical benefit-cost ratio, "+
@@ -1392,7 +1414,7 @@ function briefHtml(){
     '<div class="bkpis">'+
       kpi("Insured value",fmt$(f.value),"")+
       kpi("Expected annual cost",fmt$(f.totalAal)+"/yr",f.aalPctValue.toFixed(2)+"% of value \u00b7 range "+fmt$(u.low)+" to "+fmt$(u.high))+
-      kpi("1-in-100 Value at Risk",fmt$(f.jointTail?f.jointTail.var100:f.var100),
+      kpi("Rare extreme year (~1%)",fmt$(f.jointTail?f.jointTail.var100:f.var100),
           (f.value?(f.jointTail?f.jointTail.var100:f.var100)/f.value*100:0).toFixed(1)+"% of value · "+
           (f.jointTail?"joint event tail (results pack, direct damage)":"blend approximation, not the joint tail"))+
       kpi("Climate premium","+"+fmt$(ff.totalAal-pf.totalAal)+"/yr","by "+esc(SCEN_LABEL[futureSc]||futureSc))+
@@ -1405,7 +1427,7 @@ function briefHtml(){
     '</div></div>'+
     (pk&&pk.capital_plan&&pk.capital_plan.projects&&pk.capital_plan.projects.length?
       '<h2>Top capital projects (CLIMADA appraisal)</h2><table>'+pk.capital_plan.projects.slice(0,5).map(cp=>
-        '<tr><td>'+esc(cp.site)+' \u00b7 '+esc(cp.measure)+'</td><td class="num mono">BCR '+esc(cp.bcr)+' \u00b7 '+
+        '<tr><td>'+esc(cp.site)+' \u00b7 '+esc(cp.measure)+'</td><td class="num mono">'+esc(cp.bcr)+'× pays back \u00b7 '+
         fmt$(cp.averted_direct_aal_usd)+'/yr averted \u00b7 '+fmt$(cp.cost_usd)+'</td></tr>').join("")+'</table>':'')+
     '<div class="bprov"><b>Data basis:</b> '+(hazardGrid
       ?("CLIMADA hazard grid ("+esc(hazardGrid.meta.name)+"), "+nLive+" of "+HAZARDS.length+" perils grid-driven; the rest use the interim screening model.")

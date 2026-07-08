@@ -45,7 +45,7 @@ let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",s
      compact), and per-panel visibility on the Summary tab (panels[key]=false
      hides; anything else shows). simpleView above remains the detail-level
      flag (true = essentials). */
-  theme:"auto",density:"comfortable",panels:{},decisionCompact:false};
+  theme:"auto",density:"comfortable",panels:{},decisionCompact:false,dismissedInterimBanner:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -136,8 +136,8 @@ const INFO={
   eadPct:{t:"EAD as a share of value",b:
     "<p>Expected annual damage divided by the site's insured value. A site at <code>0.50%</code> loses, on average, half a percent of its value to this peril each year.</p>"+
     "<p>It puts sites of very different sizes on the same footing.</p>"},
-  rp100:{t:"1-in-100 loss",b:
-    "<p>Per site, this is that site's own loss at the 1-in-100-year intensity, straight from its damage curve: a physical-units figure to read beside the expected annual damage.</p>"+
+  rp100:{t:"Rare extreme year loss",b:
+    "<p>Per site, this is that site's own loss at the rare extreme year intensity (~1% annual chance, often called 1-in-100), straight from its damage curve: a physical-units figure to read beside the expected annual damage.</p>"+
     "<p>At portfolio level we add each site's 1-in-100 loss, which assumes the peril strikes every site at once. Real events rarely hit the whole portfolio together, so the portfolio figure is an <b>upper bound, never the joint tail</b>: the results pack's per-event math carries the canonical joint curve, and every surface states which one it shows.</p>"},
   bands:{t:"Risk bands",b:
     "<p>Five plain-language bands from the annual loss ratio, so you can sort and communicate without reading every number:</p>"+
@@ -246,8 +246,8 @@ const INFO={
   indirect:{t:"Indirect share",b:
     "<p>The part of the annual cost that is not physical damage: business interruption while a site is closed, plus heat's drag on revenue.</p>"+
     "<p>Indirect losses are often overlooked and can rival the damage bill for a hospitality portfolio.</p>"},
-  var100:{t:"1-in-100 Value at Risk",b:
-    "<p>The tail-risk yardstick: what a 1-in-100-year year would cost the portfolio.</p>"+
+  var100:{t:"Rare extreme year (~1%)",b:
+    "<p>The tail-risk yardstick: what a rare extreme year (~1% annual chance each year) would cost the portfolio.</p>"+
     "<p><b>Which curve you are seeing is stated on every surface.</b> When a results pack is loaded, the CANONICAL figure is its <b>joint event tail</b>: per-event losses summed across sites first (wind and surge share events), direct damage only. Without a pack, the app shows its live construction: per-site return-period losses blended through a correlation assumption (direct + business interruption) - a co-occurrence <b>approximation, never presented as the joint tail</b>.</p>"},
   var250:{t:"1-in-250 Value at Risk",b:
     "<p>The same tail measure at a rarer 1-in-250-year severity, a common capital and stress-test threshold.</p>"+

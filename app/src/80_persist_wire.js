@@ -269,6 +269,7 @@ function switchTab(name){
    ============================================================ */
 function wire(){
   restore();
+  ensurePanelDefaults();
   initMap();
   wireInfo();
   const tabBtns=Array.from(document.querySelectorAll("nav.tabs button"));
@@ -309,9 +310,6 @@ function wire(){
   pathSel.onchange=composeScenario;
   horSel.onchange=composeScenario;
   document.getElementById("sampleBtn").onclick=loadSample;
-  document.getElementById("sampleBtn2").onclick=loadSample;
-  document.getElementById("sampleBtn3").onclick=loadSample;
-  document.getElementById("sampleBtn4").onclick=loadSample;
   document.getElementById("exportBtn").onclick=exportCsv;
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
@@ -404,7 +402,6 @@ function wire(){
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;
-  document.getElementById("menuTmplBtn").onclick=downloadTemplate;
   applyExecMode();
   // first-run orientation
   document.getElementById("guideBtn").onclick=openOnboard;

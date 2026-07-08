@@ -613,7 +613,6 @@
         <button class="mi" role="menuitem" id="exportBtn"><b>Portfolio CSV</b><small>Full multi-hazard schema, feeds Power BI (frozen contract)</small></button>
         <button class="mi" role="menuitem" id="menuBrokerBtn"><b>Broker evidence pack (CSV)</b><small>Secondary modifiers plus the modeled view, for the renewal submission</small></button>
         <button class="mi" role="menuitem" id="menuActionBtn"><b>Adaptation action list (CSV)</b><small>Every ranked site-and-measure pair with the funding cutline</small></button>
-        <button class="mi" role="menuitem" id="menuTmplBtn"><b>Site CSV template</b><small>The columns for loading your own portfolio</small></button>
       </div>
     </div>
   </div>
@@ -684,7 +683,6 @@
   <button role="tab" aria-selected="false" data-tab="overview">By peril</button>
   <button role="tab" aria-selected="false" data-tab="sites">Sites</button>
   <button role="tab" aria-selected="false" data-tab="adaptation">Adaptation</button>
-  <button role="tab" aria-selected="false" data-tab="scenarios">Scenarios</button>
   <button role="tab" aria-selected="false" data-tab="finance">Financial impact</button>
   <button role="tab" aria-selected="false" data-tab="method">Method &amp; data</button>
 </nav>
@@ -694,8 +692,8 @@
   <section class="tabpane active" id="tab-summary" role="tabpanel" aria-label="Summary">
     <div id="sumEmpty" class="panel" style="text-align:center;padding:40px">
       <h3>Start with your portfolio</h3>
-      <p class="sub" style="margin:6px 0 16px">Load the sample to explore, drop in a site CSV, or search a place above to add sites. The app scores every peril immediately with a built-in interim model and sharpens to CLIMADA when you load a hazard grid.</p>
-      <button class="btn solid" id="sampleBtn4" style="color:var(--on-accent)">Load sample portfolio</button>
+      <p class="sub" style="margin:6px 0 8px">Use <b>Portfolio</b> in the top bar to load the sample or upload your site list, or search a place above to add sites one at a time.</p>
+      <p class="hint" style="margin:0">The app scores every peril immediately with built-in estimates and sharpens when you load a CLIMADA hazard grid.</p>
     </div>
     <div id="summaryBody" style="display:none">
       <h2 class="sec">Portfolio climate risk at a glance</h2>
@@ -718,12 +716,29 @@
           <h3 style="margin:0">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
           <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Hide flood depth and downtime columns">Fewer columns</button>
         </div>
-        <div class="hint">One row per site, ranked by expected annual cost: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
+        <div class="hint">One row per site, ranked by expected annual cost: the main driver, what a rare extreme year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard.</div>
         <div id="decisionHost"></div>
       </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
         <div id="sumReadout" style="font-size:14px;line-height:1.6"></div>
+      </div>
+      <div class="panel" id="scenPanel">
+        <h3>Future pathways<button type="button" class="info" data-info="scenarios" aria-label="How future pathways are compared" aria-expanded="false">i</button></h3>
+        <div class="hint">Combined physical risk across emissions pathways from present day through 2080.</div>
+        <div class="cards" id="scenCards"></div>
+        <div class="grid2">
+          <div>
+            <h3 style="margin-top:14px">Expected annual damage by pathway</h3>
+            <div class="hint">Wind and both floods summed, current adaptation posture.</div>
+            <div id="scenBars"></div>
+          </div>
+          <div>
+            <h3 style="margin-top:14px">Band migration</h3>
+            <div class="hint">How many sites sit in each combined-risk band under each pathway.</div>
+            <div id="bandMig"></div>
+          </div>
+        </div>
       </div>
       <div class="panel" id="tolPanel" style="display:none">
         <h3>Position vs risk tolerance<button type="button" class="info" data-info="tolerance" aria-label="What a risk tolerance is" aria-expanded="false">i</button></h3>
@@ -807,8 +822,8 @@
   <section class="tabpane" id="tab-overview" role="tabpanel" aria-label="By peril">
     <div id="emptyState" class="panel" style="text-align:center;padding:40px">
       <h3>Start with your portfolio</h3>
-      <p class="sub" style="margin:6px 0 16px">Load the sample to explore, drop in a site CSV, or search a place above to add sites one at a time. No setup needed: the app scores risk immediately with a built-in interim hazard model, and sharpens to CLIMADA when you load a hazard grid.</p>
-      <button class="btn solid" id="sampleBtn2" style="color:var(--on-accent)">Load sample portfolio</button>
+      <p class="sub" style="margin:6px 0 8px">Use <b>Portfolio</b> in the top bar to load the sample or upload your site list.</p>
+      <p class="hint" style="margin:0">Peril detail appears here once sites are loaded.</p>
     </div>
     <div id="overviewBody" style="display:none">
       <h2 class="sec">Portfolio risk overview</h2>
@@ -857,7 +872,7 @@
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="ead">Expected annual cost ($/yr)<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="eadPct">Annual cost %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="rp100">1-in-100 loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="rp100">Rare extreme year loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
           <tbody id="siteBody"></tbody>
@@ -954,7 +969,7 @@
       <div class="hint">Each site's best single measure by benefit-cost ratio at the selected scenario.</div>
       <table class="tbl" id="recTbl">
         <thead><tr><th>Site</th><th class="num">Climate cost $/yr</th><th>Best measure</th>
-        <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">BCR</th></tr></thead>
+        <th class="num">Averted $/yr</th><th class="num">Site cost</th><th class="num">Pays back</th></tr></thead>
         <tbody id="recBody"></tbody>
       </table>
     </div>
@@ -968,31 +983,12 @@
       <div class="note" id="queueRoll" style="margin-bottom:10px"></div>
       <table class="tbl" id="queueTbl">
         <thead><tr><th>#</th><th>Site</th><th>Measure</th><th class="num">Averted $/yr</th>
-        <th class="num">Cost</th><th class="num">BCR</th><th>Status</th></tr></thead>
+        <th class="num">Cost</th><th class="num">Pays back</th><th>Status</th></tr></thead>
         <tbody id="queueBody"></tbody>
       </table>
       <div class="hint" id="queueMore" style="margin-top:6px"></div>
       <div id="queuePack"></div>
       <div style="margin-top:10px"><button class="lightbtn" id="actionBtn">Export action list (CSV)</button></div>
-    </div>
-  </section>
-
-  <!-- SCENARIOS -->
-  <section class="tabpane" id="tab-scenarios" role="tabpanel" aria-label="Scenarios">
-    <h2 class="sec">Climate horizons<button type="button" class="info" data-info="scenarios" aria-label="How this is calculated" aria-expanded="false">i</button></h2>
-    <p class="sub">Combined physical risk across all modeled perils, from present day through the SSP pathways at the horizon selected in the top bar.</p>
-    <div class="cards" id="scenCards"></div>
-    <div class="grid2">
-      <div class="panel">
-        <h3>Expected annual damage by pathway</h3>
-        <div class="hint">Wind and both floods summed, current adaptation posture.</div>
-        <div id="scenBars"></div>
-      </div>
-      <div class="panel">
-        <h3>Band migration</h3>
-        <div class="hint">How many sites sit in each combined-risk band under each pathway.</div>
-        <div id="bandMig"></div>
-      </div>
     </div>
   </section>
 
@@ -1059,7 +1055,7 @@
       <h3>Climate-related financial disclosure<button type="button" class="info" data-info="disclosure" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">TCFD and ISSB (IFRS S2) physical-risk summary, present through the selected pathway. All figures are a share of asset value.</div>
       <table class="tbl" id="finDisclosure">
-        <thead><tr><th>Horizon</th><th class="num">Acute AAL</th><th class="num">Chronic AAL</th><th class="num">Total AAL</th><th class="num">1-in-100 VaR</th></tr></thead>
+        <thead><tr><th>Horizon</th><th class="num">Acute AAL</th><th class="num">Chronic AAL</th><th class="num">Total AAL</th><th class="num">Rare extreme year</th></tr></thead>
         <tbody id="finDiscBody"></tbody>
       </table>
       <div class="note" id="finDiscNote"></div>
@@ -1119,8 +1115,8 @@
         <input type="file" id="siteFile" accept=".csv" hidden>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="lightbtn" id="tmplBtn">Download site template</button>
-          <button class="lightbtn" id="sampleBtn3">Load sample portfolio</button>
         </div>
+        <p class="hint" style="margin-top:10px">To load the sample portfolio, use <b>Portfolio</b> in the top bar.</p>
       </div>
       <div class="panel">
         <h3><span class="stepnum">2</span>Hazard source</h3>
