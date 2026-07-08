@@ -50,7 +50,7 @@ function geocodeInto(q,box,onPick){
 function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
 /* ---- add / edit site form (SVP review) ---- */
-let _editId=null;
+let _editId=null,_formReturn=null;
 function openForm(mode,site){
   const g=id=>document.getElementById(id), s=site||{};
   const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
@@ -72,10 +72,16 @@ function openForm(mode,site){
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  try{_formReturn=document.activeElement;}catch(e){_formReturn=null;}
   g("addModal").classList.add("open");
+  const nm=g("mName"); if(nm&&nm.focus)try{nm.focus();}catch(e){}
 }
 function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
-function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function closeAdd(){
+  document.getElementById("addModal").classList.remove("open");_editId=null;
+  if(_formReturn&&_formReturn.focus)try{_formReturn.focus();}catch(e){}
+  _formReturn=null;
+}
 function submitForm(){
   const g=id=>document.getElementById(id);
   const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
@@ -334,6 +340,17 @@ function wire(){
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  // keep Tab inside whichever modal is open (simple focus trap)
+  document.addEventListener("keydown",e=>{
+    if(e.key!=="Tab")return;
+    const open=document.querySelector(".modal-bg.open"); if(!open)return;
+    const f=Array.from(open.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'))
+      .filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!f.length)return;
+    const first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   // display options: theme, density, detail level, Summary panels
   applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
   const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");

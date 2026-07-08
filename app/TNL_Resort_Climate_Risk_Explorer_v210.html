@@ -175,6 +175,7 @@
   nav.tabs button[aria-selected="true"]{color:var(--heading);border-bottom-color:var(--focus)}
 
   main{padding:20px;max-width:1220px;margin:0 auto;width:100%;flex:1}
+  @media(min-width:1600px){main{max-width:1440px}.foot-legal{max-width:1440px}}
   .tabpane{display:none}
   .tabpane.active{display:block;animation:fade .2s ease}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
@@ -208,7 +209,7 @@
   .pill.Minimal{background:var(--r-min)} .pill.Low{background:var(--r-low)}
   .pill.Moderate{background:var(--r-mod)} .pill.High{background:var(--r-high)} .pill.Severe{background:var(--r-sev)}
   .pill.mini{padding:1px 6px;font-size:10px;margin-right:3px;min-width:20px;text-align:center}
-  .ratecell{white-space:nowrap;display:flex;gap:0}
+  .ratecell{display:flex;gap:1px;flex-wrap:wrap;min-width:132px}
   .hazgroup{display:flex;align-items:center;gap:6px}
   .hazgroup .seg{display:flex;align-items:center;gap:2px}
   .hazgroup label.mini-l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--topbar-muted);margin-right:2px}
@@ -249,6 +250,11 @@
     color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0}
   .infopop .close:hover{color:var(--ink)}
 
+  .skip{position:absolute;left:-9999px;top:0;z-index:3000;background:var(--surface);color:var(--ink);
+    padding:10px 16px;border-radius:0 0 8px 0;border:1px solid var(--line);font-size:13px}
+  .skip:focus{left:0}
+  table.tbl th[data-dir="asc"]::after{content:" \2191"}
+  table.tbl th[data-dir="desc"]::after{content:" \2193"}
   .rowclick{cursor:pointer}
   .narrative{font-size:14.5px;line-height:1.6;color:var(--ink)}
   .narrative b{color:var(--heading)}
@@ -510,6 +516,7 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
 <header class="topbar">
   <div class="brand">
@@ -639,7 +646,7 @@
   <button role="tab" aria-selected="false" data-tab="method">Method &amp; data</button>
 </nav>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- SUMMARY -->
   <section class="tabpane active" id="tab-summary" role="tabpanel" aria-label="Summary">
     <div id="sumEmpty" class="panel" style="text-align:center;padding:40px">
@@ -1149,7 +1156,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="modal-bg" id="onboardModal">
-  <div class="modal" style="width:min(560px,94vw)">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="What this tool does" style="width:min(560px,94vw)">
     <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
     <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
     <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
@@ -1167,7 +1174,7 @@
 </div>
 
 <div class="modal-bg" id="addModal">
-  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formTitle" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
     <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
     <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
@@ -1238,7 +1245,7 @@
 </div>
 
 <div class="modal-bg" id="focusBg">
-  <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Site scorecard" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
       <div style="display:flex;gap:8px">
@@ -3567,6 +3574,13 @@ function renderSites(){
        '<button class="lightbtn" onclick="loadSample()" style="margin-left:8px">Load sample</button> '+
        '<button class="lightbtn" onclick="openForm(\'add\',{})">Add a site</button></td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
+  // visible + announced sort state on the column headers
+  document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>{
+    if(!th.setAttribute)return;
+    const on=th.dataset&&th.dataset.sort===sortKey;
+    if(on){th.setAttribute("data-dir",sortDir<0?"desc":"asc");th.setAttribute("aria-sort",sortDir<0?"descending":"ascending");}
+    else{th.removeAttribute("data-dir");th.removeAttribute("aria-sort");}
+  });
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
 /* the named-insured breakout for one physical site: every named insured that
@@ -4019,13 +4033,20 @@ function renderFinance(){
    One overlay tells a single site's complete story: perils, money,
    trajectory, and its best adaptation actions.
    ============================================================ */
+let _scorecardReturn=null;
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
   _scorecardId=id;
   renderScorecard(s);
+  try{_scorecardReturn=document.activeElement;}catch(e){_scorecardReturn=null;}
   document.getElementById("focusBg").classList.add("open");
+  const c=document.getElementById("focusClose"); if(c&&c.focus)try{c.focus();}catch(e){}
 }
-function closeScorecard(){document.getElementById("focusBg").classList.remove("open");}
+function closeScorecard(){
+  document.getElementById("focusBg").classList.remove("open");
+  if(_scorecardReturn&&_scorecardReturn.focus)try{_scorecardReturn.focus();}catch(e){}
+  _scorecardReturn=null;
+}
 function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
@@ -4376,7 +4397,7 @@ function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
   const idx=scrubIndex(), p=currentPathway();
   const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
-  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'">'+esc(st.label)+'</button>').join("");
+  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'" aria-pressed="'+(i===idx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
   host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
 }
 
@@ -5133,7 +5154,7 @@ function geocodeInto(q,box,onPick){
 function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
 /* ---- add / edit site form (SVP review) ---- */
-let _editId=null;
+let _editId=null,_formReturn=null;
 function openForm(mode,site){
   const g=id=>document.getElementById(id), s=site||{};
   const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
@@ -5155,10 +5176,16 @@ function openForm(mode,site){
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  try{_formReturn=document.activeElement;}catch(e){_formReturn=null;}
   g("addModal").classList.add("open");
+  const nm=g("mName"); if(nm&&nm.focus)try{nm.focus();}catch(e){}
 }
 function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
-function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function closeAdd(){
+  document.getElementById("addModal").classList.remove("open");_editId=null;
+  if(_formReturn&&_formReturn.focus)try{_formReturn.focus();}catch(e){}
+  _formReturn=null;
+}
 function submitForm(){
   const g=id=>document.getElementById(id);
   const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
@@ -5417,6 +5444,17 @@ function wire(){
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  // keep Tab inside whichever modal is open (simple focus trap)
+  document.addEventListener("keydown",e=>{
+    if(e.key!=="Tab")return;
+    const open=document.querySelector(".modal-bg.open"); if(!open)return;
+    const f=Array.from(open.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'))
+      .filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!f.length)return;
+    const first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
   // display options: theme, density, detail level, Summary panels
   applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
   const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");

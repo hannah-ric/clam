@@ -448,6 +448,13 @@ function renderSites(){
        '<button class="lightbtn" onclick="loadSample()" style="margin-left:8px">Load sample</button> '+
        '<button class="lightbtn" onclick="openForm(\'add\',{})">Add a site</button></td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
+  // visible + announced sort state on the column headers
+  document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>{
+    if(!th.setAttribute)return;
+    const on=th.dataset&&th.dataset.sort===sortKey;
+    if(on){th.setAttribute("data-dir",sortDir<0?"desc":"asc");th.setAttribute("aria-sort",sortDir<0?"descending":"ascending");}
+    else{th.removeAttribute("data-dir");th.removeAttribute("aria-sort");}
+  });
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
 /* the named-insured breakout for one physical site: every named insured that
@@ -900,13 +907,20 @@ function renderFinance(){
    One overlay tells a single site's complete story: perils, money,
    trajectory, and its best adaptation actions.
    ============================================================ */
+let _scorecardReturn=null;
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
   _scorecardId=id;
   renderScorecard(s);
+  try{_scorecardReturn=document.activeElement;}catch(e){_scorecardReturn=null;}
   document.getElementById("focusBg").classList.add("open");
+  const c=document.getElementById("focusClose"); if(c&&c.focus)try{c.focus();}catch(e){}
 }
-function closeScorecard(){document.getElementById("focusBg").classList.remove("open");}
+function closeScorecard(){
+  document.getElementById("focusBg").classList.remove("open");
+  if(_scorecardReturn&&_scorecardReturn.focus)try{_scorecardReturn.focus();}catch(e){}
+  _scorecardReturn=null;
+}
 function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
@@ -1257,7 +1271,7 @@ function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
   const idx=scrubIndex(), p=currentPathway();
   const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
-  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'">'+esc(st.label)+'</button>').join("");
+  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'" aria-pressed="'+(i===idx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
   host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
 }
 

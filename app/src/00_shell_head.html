@@ -175,6 +175,7 @@
   nav.tabs button[aria-selected="true"]{color:var(--heading);border-bottom-color:var(--focus)}
 
   main{padding:20px;max-width:1220px;margin:0 auto;width:100%;flex:1}
+  @media(min-width:1600px){main{max-width:1440px}.foot-legal{max-width:1440px}}
   .tabpane{display:none}
   .tabpane.active{display:block;animation:fade .2s ease}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
@@ -208,7 +209,7 @@
   .pill.Minimal{background:var(--r-min)} .pill.Low{background:var(--r-low)}
   .pill.Moderate{background:var(--r-mod)} .pill.High{background:var(--r-high)} .pill.Severe{background:var(--r-sev)}
   .pill.mini{padding:1px 6px;font-size:10px;margin-right:3px;min-width:20px;text-align:center}
-  .ratecell{white-space:nowrap;display:flex;gap:0}
+  .ratecell{display:flex;gap:1px;flex-wrap:wrap;min-width:132px}
   .hazgroup{display:flex;align-items:center;gap:6px}
   .hazgroup .seg{display:flex;align-items:center;gap:2px}
   .hazgroup label.mini-l{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--topbar-muted);margin-right:2px}
@@ -249,6 +250,11 @@
     color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0}
   .infopop .close:hover{color:var(--ink)}
 
+  .skip{position:absolute;left:-9999px;top:0;z-index:3000;background:var(--surface);color:var(--ink);
+    padding:10px 16px;border-radius:0 0 8px 0;border:1px solid var(--line);font-size:13px}
+  .skip:focus{left:0}
+  table.tbl th[data-dir="asc"]::after{content:" \2191"}
+  table.tbl th[data-dir="desc"]::after{content:" \2193"}
   .rowclick{cursor:pointer}
   .narrative{font-size:14.5px;line-height:1.6;color:var(--ink)}
   .narrative b{color:var(--heading)}
@@ -510,6 +516,7 @@
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
 <header class="topbar">
   <div class="brand">
@@ -639,7 +646,7 @@
   <button role="tab" aria-selected="false" data-tab="method">Method &amp; data</button>
 </nav>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- SUMMARY -->
   <section class="tabpane active" id="tab-summary" role="tabpanel" aria-label="Summary">
     <div id="sumEmpty" class="panel" style="text-align:center;padding:40px">
@@ -1149,7 +1156,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="modal-bg" id="onboardModal">
-  <div class="modal" style="width:min(560px,94vw)">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="What this tool does" style="width:min(560px,94vw)">
     <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Welcome</div>
     <h3 style="margin:0 0 10px">What this tool does, in one minute</h3>
     <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
@@ -1167,7 +1174,7 @@
 </div>
 
 <div class="modal-bg" id="addModal">
-  <div class="modal" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formTitle" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
     <h3 id="formTitle">Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
     <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
@@ -1238,7 +1245,7 @@
 </div>
 
 <div class="modal-bg" id="focusBg">
-  <div class="modal" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Site scorecard" style="width:min(980px,94vw);max-height:88vh;overflow:auto;padding:24px 28px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div id="focusHead"></div>
       <div style="display:flex;gap:8px">
