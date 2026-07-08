@@ -329,6 +329,28 @@
   .exportmenu .mi b{font-size:13px;color:var(--heading);font-weight:600}
   .exportmenu .mi small{font-size:11.5px;color:var(--muted)}
 
+  /* ---- Display options menu (theme, density, detail, panels) ---- */
+  #displayMenu{left:0;right:auto;max-height:min(70vh,560px);overflow-y:auto}
+  .dm-sec{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:10px 11px 4px;font-weight:600}
+  .dm-seg{display:flex;gap:4px;padding:0 11px 4px;flex-wrap:wrap}
+  .dm-seg button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;flex:1;white-space:nowrap}
+  .dm-seg button:hover{background:var(--surface-2)}
+  .dm-seg button[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+  .dm-checks{display:flex;flex-direction:column;gap:2px;padding:0 11px 10px}
+  .dm-checks label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink);padding:3px 0;cursor:pointer}
+  .dm-hint{font-size:11px;color:var(--muted);padding:0 11px 10px;line-height:1.45}
+
+  /* ---- display density: compact fits more on screen, same content ---- */
+  body.compact{--fs-hero:21px;--fs-h2:18px;--fs-h3:15px;--fs-body:13.5px}
+  body.compact .panel{padding:12px 14px;margin-bottom:12px}
+  body.compact .card{padding:10px 13px}
+  body.compact .cards{gap:10px;margin-bottom:14px}
+  body.compact table.tbl th{padding:6px 8px}
+  body.compact table.tbl td{padding:6px 8px}
+  body.compact main{padding:14px 16px}
+  body.compact .grid2{gap:12px}
+  body.compact .measure{padding:10px 12px;margin-bottom:9px}
+
   body.execmode{height:100vh;overflow:hidden}
   body.execmode #mapwrap{flex:1;min-height:0}
   body.execmode #map{height:100%;min-height:0}
@@ -516,9 +538,33 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
-    <button class="btn ghost analyst-only" id="simpleBtn" title="Toggle a cleaner analyst view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
     <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
+    <div class="exportwrap">
+      <button class="btn ghost" id="displayBtn" aria-haspopup="true" aria-expanded="false" aria-controls="displayMenu" title="Theme, density, detail level, and which Summary panels show">Display</button>
+      <div class="exportmenu" id="displayMenu" aria-label="Display options" style="width:272px">
+        <div class="dm-sec">Theme</div>
+        <div class="dm-seg" role="group" aria-label="Theme">
+          <button type="button" data-set-theme="light">Light</button>
+          <button type="button" data-set-theme="dark">Dark</button>
+          <button type="button" data-set-theme="auto">System</button>
+        </div>
+        <div class="dm-sec">Density</div>
+        <div class="dm-seg" role="group" aria-label="Density">
+          <button type="button" data-set-density="comfortable">Comfortable</button>
+          <button type="button" data-set-density="compact">Compact</button>
+        </div>
+        <div class="dm-sec">Detail level</div>
+        <div class="dm-seg" role="group" aria-label="Detail level">
+          <button type="button" data-set-detail="full">Full</button>
+          <button type="button" data-set-detail="essentials">Essentials</button>
+        </div>
+        <div class="dm-hint">Essentials hides the specialist panels (model definition, uncertainty, backtest). The trust surface always stays.</div>
+        <div class="dm-sec">Summary panels</div>
+        <div class="dm-checks" id="dmPanels"></div>
+        <div class="dm-hint">Display choices never change a computed figure or an export.</div>
+      </div>
+    </div>
     <div class="modeswitch" role="group" aria-label="Choose how much detail the app shows">
       <button type="button" id="modeExec" aria-pressed="true" title="The one-minute view: map, headline cost, and ranked priorities">Executive</button>
       <button type="button" id="modeAnalyst" aria-pressed="false" title="The full workspace: every tab, model control, and specialist panel">Analyst</button>
@@ -625,7 +671,7 @@
         <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
         <div id="riskValue" style="overflow-x:auto"></div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumMixRow">
         <div class="panel">
           <h3>Cost by peril<button type="button" class="info" data-info="aggPeril" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Every peril in one currency: expected annual cost across all six hazards, damage plus interruption.</div>
@@ -637,7 +683,7 @@
           <div id="sumByType"></div>
         </div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumTrajRow">
         <div class="panel">
           <h3>Trajectory<button type="button" class="info" data-info="aggTraj" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Expected annual cost today and under the selected pathway. This is the delta that climate adds.</div>
@@ -649,7 +695,7 @@
           <div id="sumBands"></div>
         </div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumTopRow">
         <div class="panel">
           <h3>Most exposed sites<button type="button" class="info" data-info="aggSites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Where the expected annual cost concentrates.</div>
@@ -2505,11 +2551,17 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false,
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},onboarded:false,simpleView:false,
   /* v2.3.0 executive home: the full-bleed map with floating priority panels
      is the default landing view; Analyst restores the classic tab workspace.
      A pure display flag: it changes no computed figure. */
-  execMode:true};
+  execMode:true,
+  /* v2.4.0 display options, all persisted, none touching a computed figure:
+     theme (light / dark / auto follows the OS), density (comfortable /
+     compact), and per-panel visibility on the Summary tab (panels[key]=false
+     hides; anything else shows). simpleView above remains the detail-level
+     flag (true = essentials). */
+  theme:"auto",density:"comfortable",panels:{}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -3027,6 +3079,26 @@ function quadrantSvg(pts){
 /* ============================================================
    Rendering
    ============================================================ */
+/* v2.4.0 display options: which Summary panels show. A pure visibility lens
+   over panels the renderers still fully paint; ui.panels[key]===false hides,
+   anything else leaves the renderer's own display state alone. */
+const SUMMARY_PANELS=[
+  {key:"decision",id:"decisionPanel",label:"Decision view"},
+  {key:"tolerance",id:"tolPanel",label:"Position vs tolerance"},
+  {key:"matrix",id:"matrixPanel",label:"Risk matrix"},
+  {key:"quadrant",id:"quadrantPanel",label:"Risk vs value"},
+  {key:"mix",id:"sumMixRow",label:"Cost by peril and type"},
+  {key:"traj",id:"sumTrajRow",label:"Trajectory and risk mix"},
+  {key:"top",id:"sumTopRow",label:"Most exposed and by brand"},
+];
+function applyPanelPrefs(){
+  const p=(ui&&ui.panels)||{};
+  SUMMARY_PANELS.forEach(x=>{
+    const el=document.getElementById(x.id); if(!el)return;
+    if(p[x.key]===false){ el.style.display="none"; if(el.setAttribute)el.setAttribute("data-panel-hidden","1"); }
+    else if(el.getAttribute&&el.getAttribute("data-panel-hidden")){ el.style.display=""; el.removeAttribute("data-panel-hidden"); }
+  });
+}
 function render(){
   hideInfo();
   const hasData=sites.length>0;
@@ -3051,6 +3123,7 @@ function render(){
   renderHazProv();
   renderResultsPack();
   renderExecHome();
+  applyPanelPrefs();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
@@ -5067,7 +5140,45 @@ function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
    hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
 function applySimpleView(){
   document.body.classList.toggle("execview", !!ui.simpleView);
-  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
+
+/* ---- v2.4.0 display options: theme, density, detail level, Summary panels.
+   Pure presentation over persisted ui keys; never touches a computed figure.
+   Charts read CSS variables, so a theme change needs no re-render. Every
+   function guards for the node test stubs and is only invoked from wire()
+   or a user action. ---- */
+function applyTheme(){
+  try{
+    const de=document.documentElement; if(!de||!de.setAttribute)return;
+    let t=ui.theme||"auto";
+    if(t==="auto")t=(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";
+    if(t==="dark")de.setAttribute("data-theme","dark"); else de.removeAttribute("data-theme");
+  }catch(e){}
+}
+function applyDensity(){
+  try{ document.body.classList.toggle("compact",(ui.density||"comfortable")==="compact"); }catch(e){}
+}
+function closeDisplayMenu(){
+  const m=document.getElementById("displayMenu"),b=document.getElementById("displayBtn");
+  if(m&&m.classList)m.classList.remove("open");
+  if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
+}
+function syncDisplayMenu(){
+  const m=document.getElementById("displayMenu"); if(!m||!m.querySelectorAll)return;
+  m.querySelectorAll("[data-set-theme]").forEach(b=>b.setAttribute("aria-pressed",(ui.theme||"auto")===b.dataset.setTheme?"true":"false"));
+  m.querySelectorAll("[data-set-density]").forEach(b=>b.setAttribute("aria-pressed",(ui.density||"comfortable")===b.dataset.setDensity?"true":"false"));
+  const det=ui.simpleView?"essentials":"full";
+  m.querySelectorAll("[data-set-detail]").forEach(b=>b.setAttribute("aria-pressed",det===b.dataset.setDetail?"true":"false"));
+  const host=document.getElementById("dmPanels");
+  if(host){
+    host.innerHTML=SUMMARY_PANELS.map(x=>'<label><input type="checkbox" data-panel-key="'+x.key+'"'+
+      (((ui.panels||{})[x.key]===false)?'':' checked')+'> '+esc(x.label)+'</label>').join("");
+    host.querySelectorAll("input[data-panel-key]").forEach(cb=>cb.onchange=()=>{
+      if(!ui.panels)ui.panels={};
+      ui.panels[cb.dataset.panelKey]=cb.checked?true:false;
+      persist();applyPanelPrefs();
+    });
+  }
 }
 
 /* ---- export ---- */
@@ -5197,7 +5308,9 @@ function wire(){
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
-  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // brand filter persists like every other view preference
+  brandFilter=(ui.views&&ui.views.brand)||"";
+  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;ui.views.brand=brandFilter;persist();render();};
   // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
   const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
   if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
@@ -5230,10 +5343,20 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();}});
-  // executive / simple view
-  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
-  applySimpleView();
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  // display options: theme, density, detail level, Summary panels
+  applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
+  const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");
+  if(dBtn&&dMenu){
+    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();
+      const open=!dMenu.classList.contains("open");
+      dMenu.classList.toggle("open",open);dBtn.setAttribute("aria-expanded",open?"true":"false");};
+    dMenu.addEventListener("click",e=>e.stopPropagation());
+    dMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
+    dMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
+    dMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
+  }
+  try{ if(window.matchMedia)window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((ui.theme||"auto")==="auto")applyTheme();}); }catch(e){}
   // v2.3.0 executive home: the mode switch, the map-hero overlays, and the
   // consolidated Export menu (same handlers the old topbar buttons carried)
   document.getElementById("modeExec").onclick=()=>setExecMode(true);
@@ -5241,9 +5364,9 @@ function wire(){
   document.getElementById("execSampleBtn").onclick=loadSample;
   document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
-  emBtn.onclick=e=>{e.stopPropagation();const open=!emBox.classList.contains("open");
+  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
-  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap"))closeExportMenu();});
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();}});
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;

@@ -1,3 +1,23 @@
+/* v2.4.0 display options: which Summary panels show. A pure visibility lens
+   over panels the renderers still fully paint; ui.panels[key]===false hides,
+   anything else leaves the renderer's own display state alone. */
+const SUMMARY_PANELS=[
+  {key:"decision",id:"decisionPanel",label:"Decision view"},
+  {key:"tolerance",id:"tolPanel",label:"Position vs tolerance"},
+  {key:"matrix",id:"matrixPanel",label:"Risk matrix"},
+  {key:"quadrant",id:"quadrantPanel",label:"Risk vs value"},
+  {key:"mix",id:"sumMixRow",label:"Cost by peril and type"},
+  {key:"traj",id:"sumTrajRow",label:"Trajectory and risk mix"},
+  {key:"top",id:"sumTopRow",label:"Most exposed and by brand"},
+];
+function applyPanelPrefs(){
+  const p=(ui&&ui.panels)||{};
+  SUMMARY_PANELS.forEach(x=>{
+    const el=document.getElementById(x.id); if(!el)return;
+    if(p[x.key]===false){ el.style.display="none"; if(el.setAttribute)el.setAttribute("data-panel-hidden","1"); }
+    else if(el.getAttribute&&el.getAttribute("data-panel-hidden")){ el.style.display=""; el.removeAttribute("data-panel-hidden"); }
+  });
+}
 function render(){
   hideInfo();
   const hasData=sites.length>0;
@@ -22,6 +42,7 @@ function render(){
   renderHazProv();
   renderResultsPack();
   renderExecHome();
+  applyPanelPrefs();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the

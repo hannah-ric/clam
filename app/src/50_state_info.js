@@ -34,11 +34,17 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false,
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},onboarded:false,simpleView:false,
   /* v2.3.0 executive home: the full-bleed map with floating priority panels
      is the default landing view; Analyst restores the classic tab workspace.
      A pure display flag: it changes no computed figure. */
-  execMode:true};
+  execMode:true,
+  /* v2.4.0 display options, all persisted, none touching a computed figure:
+     theme (light / dark / auto follows the OS), density (comfortable /
+     compact), and per-panel visibility on the Summary tab (panels[key]=false
+     hides; anything else shows). simpleView above remains the detail-level
+     flag (true = essentials). */
+  theme:"auto",density:"comfortable",panels:{}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */

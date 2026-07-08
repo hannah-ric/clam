@@ -329,6 +329,28 @@
   .exportmenu .mi b{font-size:13px;color:var(--heading);font-weight:600}
   .exportmenu .mi small{font-size:11.5px;color:var(--muted)}
 
+  /* ---- Display options menu (theme, density, detail, panels) ---- */
+  #displayMenu{left:0;right:auto;max-height:min(70vh,560px);overflow-y:auto}
+  .dm-sec{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:10px 11px 4px;font-weight:600}
+  .dm-seg{display:flex;gap:4px;padding:0 11px 4px;flex-wrap:wrap}
+  .dm-seg button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;flex:1;white-space:nowrap}
+  .dm-seg button:hover{background:var(--surface-2)}
+  .dm-seg button[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+  .dm-checks{display:flex;flex-direction:column;gap:2px;padding:0 11px 10px}
+  .dm-checks label{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink);padding:3px 0;cursor:pointer}
+  .dm-hint{font-size:11px;color:var(--muted);padding:0 11px 10px;line-height:1.45}
+
+  /* ---- display density: compact fits more on screen, same content ---- */
+  body.compact{--fs-hero:21px;--fs-h2:18px;--fs-h3:15px;--fs-body:13.5px}
+  body.compact .panel{padding:12px 14px;margin-bottom:12px}
+  body.compact .card{padding:10px 13px}
+  body.compact .cards{gap:10px;margin-bottom:14px}
+  body.compact table.tbl th{padding:6px 8px}
+  body.compact table.tbl td{padding:6px 8px}
+  body.compact main{padding:14px 16px}
+  body.compact .grid2{gap:12px}
+  body.compact .measure{padding:10px 12px;margin-bottom:9px}
+
   body.execmode{height:100vh;overflow:hidden}
   body.execmode #mapwrap{flex:1;min-height:0}
   body.execmode #map{height:100%;min-height:0}
@@ -516,9 +538,33 @@
       </div>
       <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
     </div>
-    <button class="btn ghost analyst-only" id="simpleBtn" title="Toggle a cleaner analyst view that hides the specialist model, uncertainty, and backtest panels">Simple view</button>
     <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
+    <div class="exportwrap">
+      <button class="btn ghost" id="displayBtn" aria-haspopup="true" aria-expanded="false" aria-controls="displayMenu" title="Theme, density, detail level, and which Summary panels show">Display</button>
+      <div class="exportmenu" id="displayMenu" aria-label="Display options" style="width:272px">
+        <div class="dm-sec">Theme</div>
+        <div class="dm-seg" role="group" aria-label="Theme">
+          <button type="button" data-set-theme="light">Light</button>
+          <button type="button" data-set-theme="dark">Dark</button>
+          <button type="button" data-set-theme="auto">System</button>
+        </div>
+        <div class="dm-sec">Density</div>
+        <div class="dm-seg" role="group" aria-label="Density">
+          <button type="button" data-set-density="comfortable">Comfortable</button>
+          <button type="button" data-set-density="compact">Compact</button>
+        </div>
+        <div class="dm-sec">Detail level</div>
+        <div class="dm-seg" role="group" aria-label="Detail level">
+          <button type="button" data-set-detail="full">Full</button>
+          <button type="button" data-set-detail="essentials">Essentials</button>
+        </div>
+        <div class="dm-hint">Essentials hides the specialist panels (model definition, uncertainty, backtest). The trust surface always stays.</div>
+        <div class="dm-sec">Summary panels</div>
+        <div class="dm-checks" id="dmPanels"></div>
+        <div class="dm-hint">Display choices never change a computed figure or an export.</div>
+      </div>
+    </div>
     <div class="modeswitch" role="group" aria-label="Choose how much detail the app shows">
       <button type="button" id="modeExec" aria-pressed="true" title="The one-minute view: map, headline cost, and ranked priorities">Executive</button>
       <button type="button" id="modeAnalyst" aria-pressed="false" title="The full workspace: every tab, model control, and specialist panel">Analyst</button>
@@ -625,7 +671,7 @@
         <div class="hint">Each bubble is a site: how much it is worth (across) against how hard climate hits it (up), sized by the dollars at risk each year. The top-right corner is where the most value meets the most risk, so protection tends to pay back there first. Click a bubble to open the site's scorecard.</div>
         <div id="riskValue" style="overflow-x:auto"></div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumMixRow">
         <div class="panel">
           <h3>Cost by peril<button type="button" class="info" data-info="aggPeril" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Every peril in one currency: expected annual cost across all six hazards, damage plus interruption.</div>
@@ -637,7 +683,7 @@
           <div id="sumByType"></div>
         </div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumTrajRow">
         <div class="panel">
           <h3>Trajectory<button type="button" class="info" data-info="aggTraj" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Expected annual cost today and under the selected pathway. This is the delta that climate adds.</div>
@@ -649,7 +695,7 @@
           <div id="sumBands"></div>
         </div>
       </div>
-      <div class="grid2">
+      <div class="grid2" id="sumTopRow">
         <div class="panel">
           <h3>Most exposed sites<button type="button" class="info" data-info="aggSites" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
           <div class="hint">Where the expected annual cost concentrates.</div>
