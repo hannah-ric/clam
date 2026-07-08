@@ -237,7 +237,11 @@ function downloadTemplate(){
 
 /* ---- tabs ---- */
 function switchTab(name){
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===name));
+  document.querySelectorAll("nav.tabs button").forEach(b=>{
+    const on=b.dataset.tab===name;
+    b.setAttribute("aria-selected",on);
+    b.tabIndex=on?0:-1;              // roving tabindex; arrow keys move between tabs
+  });
   document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
   if(name==="sites"&&map){setTimeout(()=>map.invalidateSize(),50);}
 }
@@ -249,20 +253,36 @@ function wire(){
   restore();
   initMap();
   wireInfo();
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  const tabBtns=Array.from(document.querySelectorAll("nav.tabs button"));
+  tabBtns.forEach((b,i)=>{
+    b.onclick=()=>switchTab(b.dataset.tab);
+    // arrow keys walk the tablist (WAI-ARIA tabs pattern); Home/End jump
+    b.addEventListener("keydown",e=>{
+      let j=null;
+      if(e.key==="ArrowRight")j=(i+1)%tabBtns.length;
+      else if(e.key==="ArrowLeft")j=(i-1+tabBtns.length)%tabBtns.length;
+      else if(e.key==="Home")j=0;
+      else if(e.key==="End")j=tabBtns.length-1;
+      if(j!=null){e.preventDefault();switchTab(tabBtns[j].dataset.tab);tabBtns[j].focus();}
+    });
+  });
   // hazard + scenario controls
   const hazSel=document.getElementById("hazSel"),pathSel=document.getElementById("pathSel"),horSel=document.getElementById("horSel");
+  const horSeg=document.getElementById("horSeg");
   function syncScenControls(){
     const parts=scenario==="present"?["present","2050"]:scenario.split("_");
     hazSel.value=activeHazard;
     pathSel.value=parts[0];
     horSel.value=parts[0]==="present"?horSel.value||"2050":parts[1];
     horSel.disabled=(pathSel.value==="present");
+    // the horizon only applies to future pathways; hide it on Present day
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
   }
   function composeScenario(){
     stopScrub();
-    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
+    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+(horSel.value||"2050"));
     horSel.disabled=(pathSel.value==="present");
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
     persist();render();
   }
   syncScenControls();

@@ -146,6 +146,14 @@
   .leaflet-popup-content{font-family:var(--font-ui);margin:12px 14px}
   .leaflet-popup-content b{font-family:var(--font-display)}
 
+  /* view bar: the analyst's five display lenses, out of the dark header
+     and onto a light strip where the labels are legible */
+  .viewbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:8px 18px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+  .viewbar .seg{display:flex;align-items:center;gap:7px}
+  .viewbar label.mini-l{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .viewbar select.scen{background:var(--surface);color:var(--ink);border:1px solid var(--line);padding:6px 10px}
+
   /* tabs */
   nav.tabs{
     display:flex;gap:2px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);
@@ -498,46 +506,6 @@
   <div class="toolbar">
     <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
     <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
-    <div class="hazgroup analyst-only">
-      <div class="seg"><label class="mini-l">Peril</label>
-        <select class="scen" id="hazSel" title="Hazard" aria-label="Hazard">
-          <option value="tc">Tropical cyclone</option>
-          <option value="cflood">Coastal flood</option>
-          <option value="rflood">Riverine flood</option>
-          <option value="heat">Extreme heat</option>
-          <option value="wfire">Wildfire</option>
-          <option value="prain">TC rainfall</option>
-        </select>
-      </div>
-      <div class="seg"><label class="mini-l">Pathway</label>
-        <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
-          <option value="present">Present day</option>
-          <option value="ssp126">Lower emissions (SSP1-2.6)</option>
-          <option value="ssp245">Middle path (SSP2-4.5)</option>
-          <option value="ssp585">Higher emissions (SSP5-8.5)</option>
-        </select>
-      </div>
-      <div class="seg"><label class="mini-l">Horizon</label>
-        <select class="scen" id="horSel" title="Time horizon" aria-label="Time horizon">
-          <option value="2030">2030</option>
-          <option value="2050">2050</option>
-          <option value="2080">2080</option>
-        </select>
-      </div>
-      <div class="seg"><label class="mini-l">Brand</label>
-        <select class="scen" id="brandSel" title="Filter the map markers by brand" aria-label="Filter map markers by brand">
-          <option value="">All brands</option>
-        </select>
-      </div>
-      <div class="seg"><label class="mini-l">Map colour</label>
-        <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
-          <option value="peril">Selected peril</option>
-          <option value="combined">Combined risk</option>
-          <option value="dominant">Dominant peril</option>
-        </select>
-      </div>
-      <button type="button" class="info on-dark" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
-    </div>
     <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
     <div class="exportwrap">
@@ -599,6 +567,47 @@
       </div>
     </div>
   </div>
+</div>
+
+<div class="viewbar analyst-only" role="group" aria-label="View controls">
+  <div class="seg"><label class="mini-l" for="hazSel">Peril</label>
+    <select class="scen" id="hazSel" title="Which hazard drives the map colour and the peril detail views" aria-label="Hazard">
+      <option value="tc">Tropical cyclone</option>
+      <option value="cflood">Coastal flood</option>
+      <option value="rflood">Riverine flood</option>
+      <option value="heat">Extreme heat</option>
+      <option value="wfire">Wildfire</option>
+      <option value="prain">TC rainfall</option>
+    </select>
+  </div>
+  <div class="seg"><label class="mini-l" for="pathSel">Pathway</label>
+    <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
+      <option value="present">Present day</option>
+      <option value="ssp126">Lower emissions (SSP1-2.6)</option>
+      <option value="ssp245">Middle path (SSP2-4.5)</option>
+      <option value="ssp585">Higher emissions (SSP5-8.5)</option>
+    </select>
+  </div>
+  <div class="seg" id="horSeg"><label class="mini-l" for="horSel">Horizon</label>
+    <select class="scen" id="horSel" title="Time horizon" aria-label="Time horizon">
+      <option value="2030">2030</option>
+      <option value="2050">2050</option>
+      <option value="2080">2080</option>
+    </select>
+  </div>
+  <div class="seg"><label class="mini-l" for="brandSel">Brand</label>
+    <select class="scen" id="brandSel" title="Filter the map markers by brand" aria-label="Filter map markers by brand">
+      <option value="">All brands</option>
+    </select>
+  </div>
+  <div class="seg"><label class="mini-l" for="mapColorSel">Map colour</label>
+    <select class="scen" id="mapColorSel" title="What the map markers are coloured by" aria-label="Colour the map markers by">
+      <option value="peril">Selected peril</option>
+      <option value="combined">Combined risk</option>
+      <option value="dominant">Dominant peril</option>
+    </select>
+  </div>
+  <button type="button" class="info" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
 </div>
 
 <nav class="tabs" role="tablist">
@@ -5267,7 +5276,11 @@ function downloadTemplate(){
 
 /* ---- tabs ---- */
 function switchTab(name){
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===name));
+  document.querySelectorAll("nav.tabs button").forEach(b=>{
+    const on=b.dataset.tab===name;
+    b.setAttribute("aria-selected",on);
+    b.tabIndex=on?0:-1;              // roving tabindex; arrow keys move between tabs
+  });
   document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
   if(name==="sites"&&map){setTimeout(()=>map.invalidateSize(),50);}
 }
@@ -5279,20 +5292,36 @@ function wire(){
   restore();
   initMap();
   wireInfo();
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  const tabBtns=Array.from(document.querySelectorAll("nav.tabs button"));
+  tabBtns.forEach((b,i)=>{
+    b.onclick=()=>switchTab(b.dataset.tab);
+    // arrow keys walk the tablist (WAI-ARIA tabs pattern); Home/End jump
+    b.addEventListener("keydown",e=>{
+      let j=null;
+      if(e.key==="ArrowRight")j=(i+1)%tabBtns.length;
+      else if(e.key==="ArrowLeft")j=(i-1+tabBtns.length)%tabBtns.length;
+      else if(e.key==="Home")j=0;
+      else if(e.key==="End")j=tabBtns.length-1;
+      if(j!=null){e.preventDefault();switchTab(tabBtns[j].dataset.tab);tabBtns[j].focus();}
+    });
+  });
   // hazard + scenario controls
   const hazSel=document.getElementById("hazSel"),pathSel=document.getElementById("pathSel"),horSel=document.getElementById("horSel");
+  const horSeg=document.getElementById("horSeg");
   function syncScenControls(){
     const parts=scenario==="present"?["present","2050"]:scenario.split("_");
     hazSel.value=activeHazard;
     pathSel.value=parts[0];
     horSel.value=parts[0]==="present"?horSel.value||"2050":parts[1];
     horSel.disabled=(pathSel.value==="present");
+    // the horizon only applies to future pathways; hide it on Present day
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
   }
   function composeScenario(){
     stopScrub();
-    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
+    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+(horSel.value||"2050"));
     horSel.disabled=(pathSel.value==="present");
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
     persist();render();
   }
   syncScenControls();
