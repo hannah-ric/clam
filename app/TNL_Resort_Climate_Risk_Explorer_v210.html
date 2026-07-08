@@ -143,6 +143,14 @@
   /* map */
   #mapwrap{position:relative;flex:none}
   #map{height:42vh;min-height:320px;width:100%;flex:none;z-index:1;background:var(--line-2)}
+  /* offline / blocked-network placeholder: never a blank void */
+  #map.mapless{height:auto;min-height:0;padding:14px 18px;display:flex;align-items:center;
+    justify-content:center;background:var(--surface-2);border-bottom:1px solid var(--line)}
+  .mapless-msg{color:var(--ink-2);font-size:13px;text-align:center}
+  body.execmode #map.mapless{height:100%;min-height:0;border-bottom:0;
+    background:radial-gradient(ellipse at 30% 20%,var(--surface-2),var(--bg) 70%)}
+  body.execmode #map.mapless .mapless-msg{max-width:340px;margin-left:min(46vw,460px);
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 18px;box-shadow:var(--shadow)}
   .leaflet-popup-content{font-family:var(--font-ui);margin:12px 14px}
   .leaflet-popup-content b{font-family:var(--font-display)}
 
@@ -266,6 +274,15 @@
   .drop .big{font-weight:600;color:var(--heading);margin-bottom:3px}
   .drop small{color:var(--muted)}
 
+  /* Method tab guided path */
+  .stepflow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px}
+  .stepchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+  .stepchip b{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+    background:var(--primary);color:var(--on-primary);font-size:11px;font-weight:600}
+  .steparrow{color:var(--muted)}
+  .stepnum{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+    background:var(--primary);color:var(--on-primary);font-size:11px;font-weight:600;margin-right:8px;vertical-align:text-bottom;font-family:var(--font-ui)}
+
   .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px}
   .kv .k{color:var(--muted)}
   .kv .v{color:var(--ink)}
@@ -275,6 +292,8 @@
          color:#fff;padding:11px 18px;border-radius:9px;box-shadow:var(--shadow);font-size:13px;
          z-index:2000;opacity:0;pointer-events:none;transition:opacity .2s}
   .toast.show{opacity:1}
+  /* keep the toast clear of the executive timeline pill */
+  body.execmode .toast{bottom:84px}
   .modal-bg{position:fixed;inset:0;background:var(--scrim);display:none;align-items:center;
             justify-content:center;z-index:1500}
   .modal-bg.open{display:flex}
@@ -1021,24 +1040,21 @@
         </div>
       </div>
     </div>
+    <div class="panel stepflow" aria-label="How to get from data to a board brief">
+      <span class="stepchip"><b>1</b> Load your sites</span>
+      <span class="steparrow" aria-hidden="true">&rarr;</span>
+      <span class="stepchip"><b>2</b> Drop the climate data</span>
+      <span class="steparrow" aria-hidden="true">&rarr;</span>
+      <span class="stepchip"><b>3</b> Optional: results pack, observed losses</span>
+      <span class="steparrow" aria-hidden="true">&rarr;</span>
+      <span class="stepchip"><b>4</b> Read the Summary, export the brief</span>
+    </div>
     <div class="grid2">
       <div class="panel">
-        <h3>Hazard source</h3>
-        <div class="hint">The app runs on one of two hazard sources. This is the current one.</div>
-        <div class="kv" id="hazProv"></div>
-        <div id="hazDrop" class="drop" style="margin-top:14px">
-          <div class="big">Load CLIMADA hazard grid + provenance</div>
-          <small>Drop <span class="mono">hazard_grid.csv</span>, <span class="mono">hazard_grid_meta.json</span>, and <span class="mono">results_pack.json</span> from the pipeline, together or one at a time, or click to browse. Grid schema: <span class="mono">lat, lon, scenario, hazard, v10..v500</span></small>
-        </div>
-        <input type="file" id="hazFile" accept=".csv,.json" multiple hidden>
-        <div id="packPanel" style="margin-top:14px"></div>
-        <div class="note" id="hazNote">Until a grid is loaded, hazard comes from built-in interim models where an honest one exists (wildfire needs the site's wui_class; TC rainfall has no interim model at all and stays zero without a grid). Good for exploration, not for disclosure. A CLIMADA grid supersedes any peril it carries.</div>
-      </div>
-      <div class="panel">
-        <h3>Sites data</h3>
-        <div class="hint">Load or replace the portfolio.</div>
+        <h3><span class="stepnum">1</span>Sites data</h3>
+        <div class="hint">Start here. Load or replace the portfolio; every tab fills in immediately.</div>
         <div id="siteDrop" class="drop">
-          <div class="big">Load site CSV</div>
+          <div class="big">Drop your site CSV here</div>
           <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name.</small>
         </div>
         <input type="file" id="siteFile" accept=".csv" hidden>
@@ -1046,6 +1062,18 @@
           <button class="lightbtn" id="tmplBtn">Download site template</button>
           <button class="lightbtn" id="sampleBtn3">Load sample portfolio</button>
         </div>
+      </div>
+      <div class="panel">
+        <h3><span class="stepnum">2</span>Hazard source</h3>
+        <div class="hint">The app runs on one of two hazard sources. This is the current one.</div>
+        <div class="kv" id="hazProv"></div>
+        <div id="hazDrop" class="drop" style="margin-top:14px">
+          <div class="big">Drop your climate data here</div>
+          <small>Drop <span class="mono">hazard_grid.csv</span>, <span class="mono">hazard_grid_meta.json</span>, and <span class="mono">results_pack.json</span> from the pipeline, together or one at a time, or click to browse. Grid schema: <span class="mono">lat, lon, scenario, hazard, v10..v500</span></small>
+        </div>
+        <input type="file" id="hazFile" accept=".csv,.json" multiple hidden>
+        <div id="packPanel" style="margin-top:14px"></div>
+        <div class="note" id="hazNote">Until a grid is loaded, hazard comes from built-in interim models where an honest one exists (wildfire needs the site's wui_class; TC rainfall has no interim model at all and stays zero without a grid). Good for exploration, not for disclosure. A CLIMADA grid supersedes any peril it carries.</div>
       </div>
     </div>
     <div class="panel pro-only">
@@ -1118,7 +1146,7 @@
 
 <div id="briefHost"></div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="modal-bg" id="onboardModal">
   <div class="modal" style="width:min(560px,94vw)">
@@ -2882,11 +2910,12 @@ function wireInfo(){
 /* ---- map (degrades gracefully if Leaflet CDN or tiles are blocked) ---- */
 let map, markers=[], mapOk=false, _lastFitKey="";
 function showMapUnavailable(){
+  /* class-based so the executive layout can restyle the same placeholder:
+     a slim strip in the analyst workspace, a full-height quiet backdrop
+     under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
-  el.style.height="auto";el.style.minHeight="0";el.style.padding="16px 18px";
-  el.style.display="flex";el.style.alignItems="center";el.style.justifyContent="center";
-  el.style.background="#eef2f1";el.style.borderBottom="1px solid var(--line)";
-  el.innerHTML='<div style="color:#43535F;font-size:13px;text-align:center">Map is unavailable on this network. Every analysis below is fully functional without it.</div>';
+  if(el.classList&&el.classList.add)el.classList.add("mapless");
+  el.innerHTML='<div class="mapless-msg">Map is unavailable on this network. Every figure and analysis works without it.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
@@ -3107,6 +3136,15 @@ function applyPanelPrefs(){
     if(p[x.key]===false){ el.style.display="none"; if(el.setAttribute)el.setAttribute("data-panel-hidden","1"); }
     else if(el.getAttribute&&el.getAttribute("data-panel-hidden")){ el.style.display=""; el.removeAttribute("data-panel-hidden"); }
   });
+}
+/* one consistent empty state for every tab: what this view will show, and
+   the single obvious next step. Inline onclick keeps it stub-safe. */
+function emptyStateHtml(msg){
+  return '<div style="text-align:center;padding:26px 16px">'+
+    '<div style="font-weight:600;color:var(--heading);margin-bottom:4px;font-size:15px">Start with your portfolio</div>'+
+    '<div class="hint" style="margin-bottom:12px">'+msg+'</div>'+
+    '<button class="lightbtn primary" onclick="loadSample()">Load sample portfolio</button> '+
+    '<button class="lightbtn" onclick="switchTab(\'method\')">Load your own sites</button></div>';
 }
 function render(){
   hideInfo();
@@ -3525,7 +3563,9 @@ function renderSites(){
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.rp100))+'</td>'+
     '<td>'+ratingCell(r)+'</td></tr>').join("")
-    || '<tr><td colspan="7" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+    || '<tr><td colspan="7" style="color:var(--muted);padding:18px;text-align:center">No sites yet. '+
+       '<button class="lightbtn" onclick="loadSample()" style="margin-left:8px">Load sample</button> '+
+       '<button class="lightbtn" onclick="openForm(\'add\',{})">Add a site</button></td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
@@ -3610,11 +3650,13 @@ function renderDetail(r){
 function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
   if(!sites.length){
-    host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
+    host.innerHTML=emptyStateHtml("This tab appraises hardening measures against your portfolio: cost, averted loss, and a funded action queue.");
     ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary",
      "sweepHost","queueRoll","queueBody","queuePack","queueMore"].forEach(id=>document.getElementById(id).innerHTML="");
+    document.getElementById("portfolioSummary").style.display="none";
     return;
   }
+  document.getElementById("portfolioSummary").style.display="";
   // read shared settings
   const horizon=+document.getElementById("horizon").value;
   const disc=+document.getElementById("disc").value/100;
@@ -3849,7 +3891,9 @@ function layerSvg(varByRp,ls){
   s+="</svg>";return s;
 }
 function renderScenarios(){
-  if(!sites.length){document.getElementById("scenCards").innerHTML="";document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
+  if(!sites.length){
+    document.getElementById("scenCards").innerHTML=emptyStateHtml("This tab compares the portfolio's combined physical risk across emissions pathways, present through 2080.");
+    document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
   const hz=+(document.getElementById("horSel").value||2050);
   const keys=["present","ssp126_"+hz,"ssp245_"+hz,"ssp585_"+hz];
   const runs=keys.map(sc=>({sc,r:scorePhysTotal(sites,sc)}));
@@ -3918,7 +3962,7 @@ function renderBrandAssume(){
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
-    kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
+    kpis.innerHTML=emptyStateHtml("This tab translates hazard into money: expected annual cost, tail Value at Risk, uncertainty, and the disclosure table.");
     ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }

@@ -18,6 +18,15 @@ function applyPanelPrefs(){
     else if(el.getAttribute&&el.getAttribute("data-panel-hidden")){ el.style.display=""; el.removeAttribute("data-panel-hidden"); }
   });
 }
+/* one consistent empty state for every tab: what this view will show, and
+   the single obvious next step. Inline onclick keeps it stub-safe. */
+function emptyStateHtml(msg){
+  return '<div style="text-align:center;padding:26px 16px">'+
+    '<div style="font-weight:600;color:var(--heading);margin-bottom:4px;font-size:15px">Start with your portfolio</div>'+
+    '<div class="hint" style="margin-bottom:12px">'+msg+'</div>'+
+    '<button class="lightbtn primary" onclick="loadSample()">Load sample portfolio</button> '+
+    '<button class="lightbtn" onclick="switchTab(\'method\')">Load your own sites</button></div>';
+}
 function render(){
   hideInfo();
   const hasData=sites.length>0;
@@ -435,7 +444,9 @@ function renderSites(){
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.rp100))+'</td>'+
     '<td>'+ratingCell(r)+'</td></tr>').join("")
-    || '<tr><td colspan="7" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+    || '<tr><td colspan="7" style="color:var(--muted);padding:18px;text-align:center">No sites yet. '+
+       '<button class="lightbtn" onclick="loadSample()" style="margin-left:8px">Load sample</button> '+
+       '<button class="lightbtn" onclick="openForm(\'add\',{})">Add a site</button></td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
@@ -520,11 +531,13 @@ function renderDetail(r){
 function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
   if(!sites.length){
-    host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
+    host.innerHTML=emptyStateHtml("This tab appraises hardening measures against your portfolio: cost, averted loss, and a funded action queue.");
     ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary",
      "sweepHost","queueRoll","queueBody","queuePack","queueMore"].forEach(id=>document.getElementById(id).innerHTML="");
+    document.getElementById("portfolioSummary").style.display="none";
     return;
   }
+  document.getElementById("portfolioSummary").style.display="";
   // read shared settings
   const horizon=+document.getElementById("horizon").value;
   const disc=+document.getElementById("disc").value/100;
@@ -759,7 +772,9 @@ function layerSvg(varByRp,ls){
   s+="</svg>";return s;
 }
 function renderScenarios(){
-  if(!sites.length){document.getElementById("scenCards").innerHTML="";document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
+  if(!sites.length){
+    document.getElementById("scenCards").innerHTML=emptyStateHtml("This tab compares the portfolio's combined physical risk across emissions pathways, present through 2080.");
+    document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
   const hz=+(document.getElementById("horSel").value||2050);
   const keys=["present","ssp126_"+hz,"ssp245_"+hz,"ssp585_"+hz];
   const runs=keys.map(sc=>({sc,r:scorePhysTotal(sites,sc)}));
@@ -828,7 +843,7 @@ function renderBrandAssume(){
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
-    kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
+    kpis.innerHTML=emptyStateHtml("This tab translates hazard into money: expected annual cost, tail Value at Risk, uncertainty, and the disclosure table.");
     ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }

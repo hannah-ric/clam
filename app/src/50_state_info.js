@@ -356,11 +356,12 @@ function wireInfo(){
 /* ---- map (degrades gracefully if Leaflet CDN or tiles are blocked) ---- */
 let map, markers=[], mapOk=false, _lastFitKey="";
 function showMapUnavailable(){
+  /* class-based so the executive layout can restyle the same placeholder:
+     a slim strip in the analyst workspace, a full-height quiet backdrop
+     under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
-  el.style.height="auto";el.style.minHeight="0";el.style.padding="16px 18px";
-  el.style.display="flex";el.style.alignItems="center";el.style.justifyContent="center";
-  el.style.background="#eef2f1";el.style.borderBottom="1px solid var(--line)";
-  el.innerHTML='<div style="color:#43535F;font-size:13px;text-align:center">Map is unavailable on this network. Every analysis below is fully functional without it.</div>';
+  if(el.classList&&el.classList.add)el.classList.add("mapless");
+  el.innerHTML='<div class="mapless-msg">Map is unavailable on this network. Every figure and analysis works without it.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
