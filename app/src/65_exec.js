@@ -183,7 +183,7 @@ function renderExecHome(){
   if(!execModeOn())return;
   const empty=document.getElementById("execEmpty"),layer=document.getElementById("execLayerbar"),time=document.getElementById("execTimebar");
   const has=sites.length>0;
-  if(empty)empty.style.display=has?"none":"flex";
+  if(empty)empty.style.display=(has||!ui.onboarded)?"none":"flex";
   panel.style.display=has?"flex":"none";
   if(layer)layer.style.display=has?"flex":"none";
   if(time)time.style.display=has?"flex":"none";
@@ -198,7 +198,7 @@ function renderExecHome(){
   const prog=execProgram();
   const agg=aggregatePortfolio(sites,scenario);
   const pathway=currentPathway();
-  const curLabel=SCEN_LABEL[scenario]||scenario;
+  const curLabel=scenLabelPlain(scenario);
 
   /* headline delta: at Present, the projection to 2050 under the chosen
      pathway; at a future scenario, the change against today */
@@ -257,8 +257,8 @@ function renderExecHome(){
     const priced=r.paybackYears!=null;
     let planLine;
     if(priced&&r.lane!=="transfer"){
-      planLine='<span class="prioplan">Do: <b>'+esc(r.measure)+'</b><br>'+
-        '<span class="prionums">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
+      planLine='<span class="prioplan"><span class="plan-action">Do: <b>'+esc(r.measure)+'</b></span>'+
+        '<span class="plan-metrics">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
     }else if(r.lane==="transfer"){
       planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
         ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
@@ -282,7 +282,7 @@ function renderExecHome(){
       '</span>'+
       planLine+whenLine+
       '</button>'+
-      '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Zoom the map to '+esc(r.name)+'" aria-label="Zoom the map to '+esc(r.name)+'">◎</button>'+
+      '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Show '+esc(r.name)+' on the map" aria-label="Show '+esc(r.name)+' on the map"><span class="loc-ic" aria-hidden="true">◎</span>Map</button>'+
       '</li>';
   });
   h+='</ol>';
@@ -330,7 +330,7 @@ function renderExecHome(){
   /* the colour bar: what the markers encode */
   if(layer){
     const mode=ui.views.mapColor;
-    let l='<span class="timelabel">Colour</span>'+
+    let l='<span class="timelabel">Map colours</span>'+
       [["combined","Combined risk"],["dominant","Dominant peril"],["peril","One peril"]].map(([k,lab])=>
         '<button type="button" class="layerchip" data-exmap="'+k+'" aria-pressed="'+(mode===k?"true":"false")+'">'+lab+'</button>').join("");
     if(mode==="peril"){

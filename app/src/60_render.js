@@ -52,16 +52,26 @@ function render(){
   renderResultsPack();
   renderExecHome();
   applyPanelPrefs();
+  renderPortfolioLabel();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
    why-these-numbers trace. Physical units lead; the qualitative bands stay
    on the ratings surfaces. */
 let decisionSort={key:"ead",dir:-1};
+function syncDecisionScroll(){
+  const el=document.getElementById("decisionScroll");
+  if(!el||!el.classList||el.scrollWidth==null)return;
+  const scrollable=el.scrollWidth>el.clientWidth+2;
+  el.classList.toggle("is-scrollable",scrollable);
+}
 function renderDecision(){
   const host=document.getElementById("decisionHost"); if(!host)return;
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
+  const compact=!!(ui&&ui.decisionCompact);
+  const cbtn=document.getElementById("decisionCompactBtn");
+  if(cbtn){cbtn.textContent=compact?"All columns":"Fewer columns";if(cbtn.setAttribute)cbtn.setAttribute("aria-pressed",compact?"true":"false");}
   const rows=decisionRows(sites,scenario,tolAf());
   /* act-by (v2.3.0): the tolerance-crossing horizon, shared with the
      executive plan so the two surfaces state the same deadline */
@@ -73,27 +83,43 @@ function renderDecision(){
       ?d*String(va||"").localeCompare(String(vb||""))
       :d*((va||0)-(vb||0));});
   const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
-  const th=(label,key,num)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer" title="click to rank by '+label+'">'+label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
-  let h='<table class="tbl"><thead><tr>'+
+  const th=(label,key,num,title)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer"'+(title?' title="'+esc(title)+'"':'')+'>'
+    +label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
+  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead><tr>'+
     th("Site","name")+th("Dominant peril","dom")+
-    th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
-    th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
-    th("Top measure","measure")+th("BCR","bcr",1)+
-    th("Act by","actByOrd",1)+
-    th("Basis","trustModeled",1)+'</tr></thead><tbody>';
+    th("1-in-100 damage","dmg100",1,"Loss at a 1-in-100 year return period")+
+    th("Expected annual cost ($/yr)","ead",1,"Average yearly climate cost at this scenario")+
+    (compact?"":th("Flood depth @100 (m)","depth100",1,"Flood depth at the 1-in-100 year event"))+
+    (compact?"":th("Downtime @100 (days)","downtime100",1,"Business interruption days at the 1-in-100 year event"))+
+    th("Top measure","measure")+th("Benefit-cost ratio","bcr",1,"Averted loss divided by upfront cost; above 1.0 pays back")+
+    th("Act by","actByOrd",1,"When this site crosses your stated risk tolerance")+
+    th("Data basis","trustModeled",1,"How many perils are modeled vs interim at this site")+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
       '<td>'+esc(perilName(r.dom))+'</td>'+
       '<td class="num mono">'+fmt$(r.dmg100)+'</td>'+
       '<td class="num mono">'+fmt$(r.ead)+'</td>'+
-      '<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
-      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
+      (compact?"":('<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
+      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'))+
       '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
       '<td class="num mono" style="color:'+(r.bcr>=1?"var(--good)":"var(--bad)")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
       '<td class="num"><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></td>'+
       '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
+  h+='<div class="decision-cards">';
+  rows.forEach(r=>{
+    h+='<div class="dcard rowclick" data-focus="'+r.id+'">'+
+      '<div class="dtop"><span class="dnm">'+esc(r.name)+'</span><span class="dcost">'+fmt$(r.ead)+'/yr</span></div>'+
+      '<div class="dmeta"><span>'+esc(perilName(r.dom))+'</span>'+
+      '<span class="pill mini '+esc(r.band||"")+'">'+(r.band||"")+'</span>'+
+      '<span class="mono">'+r.trustModeled+'/'+r.trustTotal+' modeled</span></div>'+
+      '<div class="drow"><span>1-in-100 damage</span><b class="mono">'+fmt$(r.dmg100)+'</b></div>'+
+      (r.measure?('<div class="drow"><span>Top measure</span><b>'+esc(r.measure)+' · BCR '+r.bcr.toFixed(1)+'x</b></div>'):'')+
+      '<div class="drow"><span>Act by</span><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></div>'+
+      '</div>';
+  });
+  h+='</div>';
   host.innerHTML=h;
   host.querySelectorAll("th[data-dsort]").forEach(el=>el.onclick=()=>{
     const key=el.dataset.dsort;
@@ -101,7 +127,9 @@ function renderDecision(){
     else decisionSort={key,dir:(key==="name"||key==="dom"||key==="measure")?1:-1};
     renderDecision();
   });
-  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  host.querySelectorAll("[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  if(typeof requestAnimationFrame==="function")requestAnimationFrame(syncDecisionScroll);
+  else syncDecisionScroll();
 }
 function renderSummary(){
   const host=document.getElementById("sumKpis"); if(!host)return;
@@ -112,7 +140,7 @@ function renderSummary(){
   const futureSc=(scenario!=="present")?scenario:(pathway+"_2050");
   const pf=finPortfolio(sites,"present"), ff=finPortfolio(sites,futureSc);
   const premium=ff.totalAal-pf.totalAal, premiumPct=pf.totalAal?premium/pf.totalAal*100:0;
-  const futLabel=SCEN_LABEL[futureSc]||futureSc, curLabel=SCEN_LABEL[scenario]||scenario;
+  const futLabel=scenLabelPlain(futureSc), curLabel=scenLabelPlain(scenario);
   document.getElementById("sumSub").innerHTML="Every peril and every cost type in one view, at "+esc(curLabel)+". "+(hazardGrid?"Using the loaded CLIMADA grid.":"Interim screening model.");
   const db=document.getElementById("dataBanner");
   if(db){
@@ -797,7 +825,14 @@ function renderScenarios(){
     s+='<tr><td>'+SCEN_LABEL[x.sc]+'</td>'+bands.map(b=>'<td class="num mono">'+(counts[b]||"·")+'</td>').join("")+'</tr>';});
   s+="</tbody></table>";document.getElementById("bandMig").innerHTML=s;
 }
-function currentPathway(){const p=document.getElementById("pathSel");return (p&&p.value&&p.value!=="present")?p.value:"ssp245";}
+function currentPathway(){
+  const sp=document.getElementById("scrubPathSel");
+  if(sp&&sp.value)return sp.value;
+  const ep=document.getElementById("execPathSel");
+  if(ep&&ep.value)return ep.value;
+  const p=document.getElementById("pathSel");
+  return (p&&p.value&&p.value!=="present")?p.value:((ui.views&&ui.views.scrubPathway)||"ssp245");
+}
 function syncFinAssume(){
   const g=id=>document.getElementById(id);
   finAssume.revRatio=+g("revRatio").value/100;
@@ -1270,7 +1305,24 @@ function playScrub(){
 function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
   const idx=scrubIndex(), p=currentPathway();
-  const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
+  const pathSel=document.getElementById("scrubPathSel");
+  if(pathSel){
+    pathSel.value=p;
+    if(!pathSel._wired){
+      pathSel._wired=true;
+      pathSel.onchange=()=>{
+        if(!ui.views)ui.views={};
+        ui.views.scrubPathway=pathSel.value;
+        if(scenario!=="present"){
+          const h=scenario.split("_")[1]||"2050";
+          scenario=pathSel.value+"_"+h;
+          const ps=document.getElementById("pathSel");
+          if(ps)ps.value=pathSel.value;
+        }
+        persist(); if(scenHook)scenHook(); render();
+      };
+    }
+  }
   host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'" aria-pressed="'+(i===idx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
   host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
 }

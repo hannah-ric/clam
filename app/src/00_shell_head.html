@@ -99,6 +99,11 @@
   .brand .name{font-family:var(--font-display);font-size:19px;font-weight:560;color:#fff}
   .brand .name b{color:var(--accent);font-weight:560}
   .topbar .spacer{flex:1}
+  .port-label{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    font-size:12px;font-weight:500;border:1px solid var(--topbar-field-line);background:var(--topbar-field);
+    color:var(--topbar-ink);white-space:nowrap;max-width:min(240px,36vw);overflow:hidden;text-overflow:ellipsis}
+  .port-label.sample{border-color:var(--accent);color:var(--accent)}
+  .topbar-haz{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .searchwrap{position:relative;display:flex;align-items:center}
   .searchwrap input{
@@ -312,6 +317,30 @@
   svg text{font-family:var(--font-ui)}
   /* ---- Phase C2: scenario scrubber ---- */
   .scrubbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px}
+  .scrub-hint{flex:1 1 100%;margin:0;font-size:12px;color:var(--muted)}
+  .scrubpathsel{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);
+    color:var(--ink);font:inherit;font-size:12.5px}
+  /* decision view: sticky first column + scroll affordance */
+  .decision-scroll{overflow-x:auto;position:relative;-webkit-overflow-scrolling:touch}
+  .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(21,32,43,.12)}
+  html[data-theme="dark"] .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(0,0,0,.35)}
+  .decision-scroll .tbl th:first-child,.decision-scroll .tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
+  .decision-scroll .tbl tr:hover td:first-child{background:var(--surface-2)}
+  .decision-scroll .tbl tr.sel td:first-child{background:var(--sel)}
+  .decision-cards{display:none;flex-direction:column;gap:10px}
+  .dcard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);cursor:pointer}
+  .dcard:hover{border-color:var(--focus);background:var(--sel)}
+  .dcard .dtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+  .dcard .dnm{font-weight:600;color:var(--heading)}
+  .dcard .dcost{font-family:var(--font-mono);font-size:13px;color:var(--heading)}
+  .dcard .dmeta{display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:var(--ink-2);margin-bottom:6px}
+  .dcard .drow{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--ink-2);padding:2px 0}
+  .dcard .drow b{color:var(--ink);font-weight:600}
+  @media(max-width:760px){
+    .decision-scroll{display:none}
+    .decision-cards{display:flex}
+    .decision-compact-toggle{display:none}
+  }
   .scrublabel{font-size:12px;color:var(--muted);white-space:nowrap}
   .scrubsteps{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .scrubstep{border:0;background:var(--surface);color:var(--ink);padding:7px 16px;font:inherit;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line)}
@@ -410,7 +439,7 @@
   .execbasis.authoritative .dot{background:var(--r-low)}
   .exectiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
   .exectile{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0}
-  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:normal;line-height:1.25}
   .exectile .v{font-family:var(--font-display);font-size:17.5px;font-weight:560;color:var(--heading);line-height:1.1}
   .exectile .f{font-size:10.5px;color:var(--ink-2);margin-top:1px}
   .exectile.alert{border-color:var(--alert-line);background:var(--alert-bg)}
@@ -435,6 +464,8 @@
   .prioact b{color:var(--ok-ink);font-weight:600}
   .prioplan{display:block;margin-top:6px;font-size:11.5px;color:var(--ink);line-height:1.45;
     border-top:1px solid var(--line-2);padding-top:6px}
+  .prioplan .plan-action{display:block;margin-bottom:3px}
+  .prioplan .plan-metrics{display:block;font-size:11px;color:var(--ink-2);line-height:1.45}
   .prioplan b{color:var(--heading);font-weight:600}
   .prionums{color:var(--ink-2)}
   .prionums b{color:var(--ok-ink);font-weight:600}
@@ -447,8 +478,9 @@
   .execprog{margin-top:9px;font-size:12px;line-height:1.55;color:var(--ink-2);background:var(--ok-bg);
     border:1px solid var(--ok-line);border-left:3px solid var(--good);border-radius:9px;padding:10px 12px}
   .execprog b{color:var(--ok-ink)}
-  .priolocate{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;
-    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:13px;line-height:1;padding:0}
+  .priolocate{position:absolute;right:8px;bottom:8px;min-width:26px;height:26px;border-radius:999px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:10px;font-weight:600;line-height:1;padding:0 7px}
+  .priolocate .loc-ic{font-size:13px;margin-right:2px}
   .priolocate:hover{border-color:var(--focus);color:var(--heading)}
   .execactions{display:flex;gap:8px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--line-2);background:var(--surface-2)}
 
@@ -529,11 +561,21 @@
     <input id="geo" type="text" placeholder="Search a place to add a site..." autocomplete="off" aria-label="Search for a place to add as a site" />
     <div class="search-results" id="geoResults" role="listbox"></div>
   </div>
+  <span class="port-label" id="portLabel" style="display:none" title="Which portfolio is loaded"></span>
   <div class="spacer"></div>
   <div class="toolbar">
-    <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
-    <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
-    <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
+    <span class="topbar-haz" aria-hidden="true">
+      <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
+      <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
+    </span>
+    <div class="exportwrap">
+      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Load, replace, or template your site list">Portfolio &#9662;</button>
+      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio actions" style="width:288px">
+        <button class="mi" role="menuitem" id="sampleBtn"><b>Load sample portfolio</b><small>12 illustrative resorts to explore the tool</small></button>
+        <button class="mi" role="menuitem" id="portfolioMethodBtn"><b>Upload your site list</b><small>Opens Method &amp; data to drop in a CSV</small></button>
+        <button class="mi" role="menuitem" id="portfolioTmplBtn"><b>Download site template</b><small>Required columns and optional profile fields</small></button>
+      </div>
+    </div>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
     <div class="exportwrap">
       <button class="btn ghost" id="displayBtn" aria-haspopup="true" aria-expanded="false" aria-controls="displayMenu" title="Theme, density, detail level, and which Summary panels show">Display</button>
@@ -586,8 +628,8 @@
   <div class="execui" id="execTimebar" role="group" aria-label="Climate timeline"></div>
   <div class="execui" id="execEmpty" style="display:none">
     <div class="execempty-card">
-      <h3>Your portfolio's climate priorities, in one minute</h3>
-      <p>Load the sample portfolio to explore, search a place in the top bar to add a site, or open the analyst workspace to drop in your own site list. Everything runs in your browser; nothing you load ever leaves the machine.</p>
+      <h3>Start with a portfolio</h3>
+      <p>Use <b>Portfolio</b> in the top bar to load the sample or upload your own site list. You can also search a place above to add a site one at a time.</p>
       <div class="row">
         <button class="lightbtn primary" id="execSampleBtn">Load sample portfolio</button>
         <button class="lightbtn" id="execAnalystBtn">Open analyst workspace</button>
@@ -607,7 +649,7 @@
       <option value="prain">TC rainfall</option>
     </select>
   </div>
-  <div class="seg"><label class="mini-l" for="pathSel">Pathway</label>
+  <div class="seg viewbar-scrub-only" id="pathSeg" hidden><label class="mini-l" for="pathSel">Pathway</label>
     <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
       <option value="present">Present day</option>
       <option value="ssp126">Lower emissions (SSP1-2.6)</option>
@@ -615,7 +657,7 @@
       <option value="ssp585">Higher emissions (SSP5-8.5)</option>
     </select>
   </div>
-  <div class="seg" id="horSeg"><label class="mini-l" for="horSel">Horizon</label>
+  <div class="seg viewbar-scrub-only" id="horSeg" hidden><label class="mini-l" for="horSel">Horizon</label>
     <select class="scen" id="horSel" title="Time horizon" aria-label="Time horizon">
       <option value="2030">2030</option>
       <option value="2050">2050</option>
@@ -660,15 +702,24 @@
       <p class="sub" id="sumSub"></p>
       <div class="note" id="dataBanner" style="margin-bottom:14px"></div>
       <div class="panel scrubbar">
-        <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
+        <span class="scrublabel">Timeline</span>
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
+        <select class="scrubpathsel" id="scrubPathSel" aria-label="Emissions pathway for future steps" title="Which emissions future the 2030-2080 steps assume">
+          <option value="ssp126">Low emissions (SSP1-2.6)</option>
+          <option value="ssp245">Middle path (SSP2-4.5)</option>
+          <option value="ssp585">High emissions (SSP5-8.5)</option>
+        </select>
         <button class="lightbtn" id="scrubPlay">Play</button>
         <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
+        <p class="scrub-hint">Timeline controls the whole app: every tab recomputes at the step you pick.</p>
       </div>
       <div class="panel" id="decisionPanel">
-        <h3 style="margin:0 0 2px">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
-        <div class="hint">One row per site, ranked by expected annual damage: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
-        <div id="decisionHost" style="overflow-x:auto"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+          <h3 style="margin:0">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
+          <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Hide flood depth and downtime columns">Fewer columns</button>
+        </div>
+        <div class="hint">One row per site, ranked by expected annual cost: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
+        <div id="decisionHost"></div>
       </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
@@ -804,8 +855,8 @@
             <th data-sort="name">Site</th>
             <th data-sort="brand">Brand</th>
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">Expected annual cost ($/yr)<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">Annual cost %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="rp100">1-in-100 loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
@@ -1163,10 +1214,10 @@
     <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
     <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
     <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
-      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
-      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+      <li><b>Load the sample portfolio</b> from Portfolio in the top bar to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or upload your own list via Portfolio.</li>
     </ul>
-    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language. Nothing you load ever leaves your browser.</p>
     <div class="row">
       <button class="lightbtn" id="obGlossary">Open the glossary</button>
       <button class="lightbtn primary" id="obStart">Load the sample and explore</button>

@@ -22,7 +22,11 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
-      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
+      if(s.ui&&typeof s.ui==="object"){
+        ui=Object.assign({},ui,s.ui);
+        ui.views=Object.assign({},ui.views,s.ui.views||{});
+        if(!ui.views.scrubPathway)ui.views.scrubPathway="ssp245";
+      }
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -97,7 +101,10 @@ function submitForm(){
   if(_editId!=null){
     const s=sites.find(x=>x.id===_editId);
     if(s){FORM_OPTIONAL_FIELDS.forEach(k=>delete s[k]);Object.assign(s,rec);clearHazCache();persist();render();toast("Site updated");}
-  }else{ clearHazCache();addSites([rec]);toast("Site added"); }
+  }else{
+    if(!ui.portfolioSource)ui.portfolioSource="manual";
+    clearHazCache();addSites([rec]);toast("Site added");
+  }
   closeAdd();
 }
 
@@ -136,6 +143,11 @@ function applyDensity(){
 }
 function closeDisplayMenu(){
   const m=document.getElementById("displayMenu"),b=document.getElementById("displayBtn");
+  if(m&&m.classList)m.classList.remove("open");
+  if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
+}
+function closePortfolioMenu(){
+  const m=document.getElementById("portfolioMenu"),b=document.getElementById("portfolioBtn");
   if(m&&m.classList)m.classList.remove("open");
   if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
 }
@@ -304,6 +316,9 @@ function wire(){
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
+  const dcb=document.getElementById("decisionCompactBtn");
+  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};
+  window.addEventListener("resize",()=>{if(typeof syncDecisionScroll==="function")syncDecisionScroll();});
   // brand filter persists like every other view preference
   brandFilter=(ui.views&&ui.views.brand)||"";
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;ui.views.brand=brandFilter;persist();render();};
@@ -339,7 +354,7 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
   // keep Tab inside whichever modal is open (simple focus trap)
   document.addEventListener("keydown",e=>{
     if(e.key!=="Tab")return;
@@ -355,7 +370,7 @@ function wire(){
   applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
   const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");
   if(dBtn&&dMenu){
-    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();
+    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closePortfolioMenu();
       const open=!dMenu.classList.contains("open");
       dMenu.classList.toggle("open",open);dBtn.setAttribute("aria-expanded",open?"true":"false");};
     dMenu.addEventListener("click",e=>e.stopPropagation());
@@ -370,10 +385,22 @@ function wire(){
   document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
   document.getElementById("execSampleBtn").onclick=loadSample;
   document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
+  const pBtn=document.getElementById("portfolioBtn"),pMenu=document.getElementById("portfolioMenu");
+  if(pBtn&&pMenu){
+    pBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closeDisplayMenu();
+      const open=!pMenu.classList.contains("open");
+      pMenu.classList.toggle("open",open);pBtn.setAttribute("aria-expanded",open?"true":"false");};
+    pMenu.addEventListener("click",e=>e.stopPropagation());
+    pMenu.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closePortfolioMenu));
+  }
+  const pMethod=document.getElementById("portfolioMethodBtn");
+  if(pMethod)pMethod.onclick=()=>{setExecMode(false);switchTab("method");};
+  const pTmpl=document.getElementById("portfolioTmplBtn");
+  if(pTmpl)pTmpl.onclick=downloadTemplate;
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
-  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();const open=!emBox.classList.contains("open");
+  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();closePortfolioMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
-  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();}});
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;

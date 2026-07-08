@@ -6,6 +6,7 @@ function addSites(arr){
   persist();render();
 }
 function loadSample(){ sites=[]; nextId=1; clearHazCache();
+  ui.portfolioSource="sample";
   addSites(SAMPLE.map(s=>Object.assign({name:s[0],brand:s[1],latitude:s[2],longitude:s[3],asset_value_usd:s[4]},s[5]||{})));
   toast("Sample portfolio loaded (illustrative values)");
 }
@@ -74,7 +75,7 @@ function loadSiteCsv(text){
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
-  sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
+  sites=[];nextId=1;selectedId=null;clearHazCache();ui.portfolioSource="upload";addSites(arr);
   toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
 }
 /* SVP review: the in-app Add/Edit form's coercion, mirroring loadSiteCsv's
