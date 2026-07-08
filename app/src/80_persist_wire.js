@@ -50,7 +50,7 @@ function geocodeInto(q,box,onPick){
 function geocode(q){ geocodeInto(q,document.getElementById("geoResults"),(lat,lon,name)=>{document.getElementById("geo").value="";openForm("add",{latitude:lat,longitude:lon,name:name});}); }
 
 /* ---- add / edit site form (SVP review) ---- */
-let _editId=null;
+let _editId=null,_formReturn=null;
 function openForm(mode,site){
   const g=id=>document.getElementById(id), s=site||{};
   const bl=g("brandList"); if(bl){const bs=[];sites.forEach(x=>{const b=x.brand;if(b&&bs.indexOf(b)<0)bs.push(b);});bl.innerHTML=bs.sort().map(b=>'<option value="'+esc(b)+'"></option>').join("");}
@@ -72,10 +72,16 @@ function openForm(mode,site){
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
+  try{_formReturn=document.activeElement;}catch(e){_formReturn=null;}
   g("addModal").classList.add("open");
+  const nm=g("mName"); if(nm&&nm.focus)try{nm.focus();}catch(e){}
 }
 function openAdd(lat,lon,name){ openForm("add",{latitude:lat,longitude:lon,name:name}); }   // back-compat shim (map click)
-function closeAdd(){document.getElementById("addModal").classList.remove("open");_editId=null;}
+function closeAdd(){
+  document.getElementById("addModal").classList.remove("open");_editId=null;
+  if(_formReturn&&_formReturn.focus)try{_formReturn.focus();}catch(e){}
+  _formReturn=null;
+}
 function submitForm(){
   const g=id=>document.getElementById(id);
   const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
@@ -110,7 +116,45 @@ function maybeOnboard(){ if(!ui.onboarded)openOnboard(); }
    hides the trust surface (hazard source, provenance, drop zones, badge). ---- */
 function applySimpleView(){
   document.body.classList.toggle("execview", !!ui.simpleView);
-  const b=document.getElementById("simpleBtn"); if(b)b.textContent=ui.simpleView?"Full view":"Simple view";
+}
+
+/* ---- v2.4.0 display options: theme, density, detail level, Summary panels.
+   Pure presentation over persisted ui keys; never touches a computed figure.
+   Charts read CSS variables, so a theme change needs no re-render. Every
+   function guards for the node test stubs and is only invoked from wire()
+   or a user action. ---- */
+function applyTheme(){
+  try{
+    const de=document.documentElement; if(!de||!de.setAttribute)return;
+    let t=ui.theme||"auto";
+    if(t==="auto")t=(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";
+    if(t==="dark")de.setAttribute("data-theme","dark"); else de.removeAttribute("data-theme");
+  }catch(e){}
+}
+function applyDensity(){
+  try{ document.body.classList.toggle("compact",(ui.density||"comfortable")==="compact"); }catch(e){}
+}
+function closeDisplayMenu(){
+  const m=document.getElementById("displayMenu"),b=document.getElementById("displayBtn");
+  if(m&&m.classList)m.classList.remove("open");
+  if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
+}
+function syncDisplayMenu(){
+  const m=document.getElementById("displayMenu"); if(!m||!m.querySelectorAll)return;
+  m.querySelectorAll("[data-set-theme]").forEach(b=>b.setAttribute("aria-pressed",(ui.theme||"auto")===b.dataset.setTheme?"true":"false"));
+  m.querySelectorAll("[data-set-density]").forEach(b=>b.setAttribute("aria-pressed",(ui.density||"comfortable")===b.dataset.setDensity?"true":"false"));
+  const det=ui.simpleView?"essentials":"full";
+  m.querySelectorAll("[data-set-detail]").forEach(b=>b.setAttribute("aria-pressed",det===b.dataset.setDetail?"true":"false"));
+  const host=document.getElementById("dmPanels");
+  if(host){
+    host.innerHTML=SUMMARY_PANELS.map(x=>'<label><input type="checkbox" data-panel-key="'+x.key+'"'+
+      (((ui.panels||{})[x.key]===false)?'':' checked')+'> '+esc(x.label)+'</label>').join("");
+    host.querySelectorAll("input[data-panel-key]").forEach(cb=>cb.onchange=()=>{
+      if(!ui.panels)ui.panels={};
+      ui.panels[cb.dataset.panelKey]=cb.checked?true:false;
+      persist();applyPanelPrefs();
+    });
+  }
 }
 
 /* ---- export ---- */
@@ -199,7 +243,11 @@ function downloadTemplate(){
 
 /* ---- tabs ---- */
 function switchTab(name){
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===name));
+  document.querySelectorAll("nav.tabs button").forEach(b=>{
+    const on=b.dataset.tab===name;
+    b.setAttribute("aria-selected",on);
+    b.tabIndex=on?0:-1;              // roving tabindex; arrow keys move between tabs
+  });
   document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("active",p.id==="tab-"+name));
   if(name==="sites"&&map){setTimeout(()=>map.invalidateSize(),50);}
 }
@@ -211,20 +259,36 @@ function wire(){
   restore();
   initMap();
   wireInfo();
-  document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+  const tabBtns=Array.from(document.querySelectorAll("nav.tabs button"));
+  tabBtns.forEach((b,i)=>{
+    b.onclick=()=>switchTab(b.dataset.tab);
+    // arrow keys walk the tablist (WAI-ARIA tabs pattern); Home/End jump
+    b.addEventListener("keydown",e=>{
+      let j=null;
+      if(e.key==="ArrowRight")j=(i+1)%tabBtns.length;
+      else if(e.key==="ArrowLeft")j=(i-1+tabBtns.length)%tabBtns.length;
+      else if(e.key==="Home")j=0;
+      else if(e.key==="End")j=tabBtns.length-1;
+      if(j!=null){e.preventDefault();switchTab(tabBtns[j].dataset.tab);tabBtns[j].focus();}
+    });
+  });
   // hazard + scenario controls
   const hazSel=document.getElementById("hazSel"),pathSel=document.getElementById("pathSel"),horSel=document.getElementById("horSel");
+  const horSeg=document.getElementById("horSeg");
   function syncScenControls(){
     const parts=scenario==="present"?["present","2050"]:scenario.split("_");
     hazSel.value=activeHazard;
     pathSel.value=parts[0];
     horSel.value=parts[0]==="present"?horSel.value||"2050":parts[1];
     horSel.disabled=(pathSel.value==="present");
+    // the horizon only applies to future pathways; hide it on Present day
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
   }
   function composeScenario(){
     stopScrub();
-    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+horSel.value);
+    scenario=(pathSel.value==="present")?"present":(pathSel.value+"_"+(horSel.value||"2050"));
     horSel.disabled=(pathSel.value==="present");
+    if(horSeg)horSeg.style.display=(pathSel.value==="present")?"none":"";
     persist();render();
   }
   syncScenControls();
@@ -240,7 +304,9 @@ function wire(){
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
-  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;render();};
+  // brand filter persists like every other view preference
+  brandFilter=(ui.views&&ui.views.brand)||"";
+  document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;ui.views.brand=brandFilter;persist();render();};
   // SVP review: risk-matrix view lenses (regroup / re-measure; matrix only)
   const mtxG=document.getElementById("mtxGroup"),mtxM=document.getElementById("mtxMetric");
   if(mtxG)mtxG.onchange=e=>{ui.views.matrixGroup=e.target.value;persist();renderRiskMatrix();};
@@ -273,10 +339,31 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();}});
-  // executive / simple view
-  document.getElementById("simpleBtn").onclick=()=>{ui.simpleView=!ui.simpleView;persist();applySimpleView();};
-  applySimpleView();
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  // keep Tab inside whichever modal is open (simple focus trap)
+  document.addEventListener("keydown",e=>{
+    if(e.key!=="Tab")return;
+    const open=document.querySelector(".modal-bg.open"); if(!open)return;
+    const f=Array.from(open.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])'))
+      .filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!f.length)return;
+    const first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
+  // display options: theme, density, detail level, Summary panels
+  applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
+  const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");
+  if(dBtn&&dMenu){
+    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();
+      const open=!dMenu.classList.contains("open");
+      dMenu.classList.toggle("open",open);dBtn.setAttribute("aria-expanded",open?"true":"false");};
+    dMenu.addEventListener("click",e=>e.stopPropagation());
+    dMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
+    dMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
+    dMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
+  }
+  try{ if(window.matchMedia)window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((ui.theme||"auto")==="auto")applyTheme();}); }catch(e){}
   // v2.3.0 executive home: the mode switch, the map-hero overlays, and the
   // consolidated Export menu (same handlers the old topbar buttons carried)
   document.getElementById("modeExec").onclick=()=>setExecMode(true);
@@ -284,9 +371,9 @@ function wire(){
   document.getElementById("execSampleBtn").onclick=loadSample;
   document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
-  emBtn.onclick=e=>{e.stopPropagation();const open=!emBox.classList.contains("open");
+  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
-  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap"))closeExportMenu();});
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();}});
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;

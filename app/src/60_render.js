@@ -1,3 +1,32 @@
+/* v2.4.0 display options: which Summary panels show. A pure visibility lens
+   over panels the renderers still fully paint; ui.panels[key]===false hides,
+   anything else leaves the renderer's own display state alone. */
+const SUMMARY_PANELS=[
+  {key:"decision",id:"decisionPanel",label:"Decision view"},
+  {key:"tolerance",id:"tolPanel",label:"Position vs tolerance"},
+  {key:"matrix",id:"matrixPanel",label:"Risk matrix"},
+  {key:"quadrant",id:"quadrantPanel",label:"Risk vs value"},
+  {key:"mix",id:"sumMixRow",label:"Cost by peril and type"},
+  {key:"traj",id:"sumTrajRow",label:"Trajectory and risk mix"},
+  {key:"top",id:"sumTopRow",label:"Most exposed and by brand"},
+];
+function applyPanelPrefs(){
+  const p=(ui&&ui.panels)||{};
+  SUMMARY_PANELS.forEach(x=>{
+    const el=document.getElementById(x.id); if(!el)return;
+    if(p[x.key]===false){ el.style.display="none"; if(el.setAttribute)el.setAttribute("data-panel-hidden","1"); }
+    else if(el.getAttribute&&el.getAttribute("data-panel-hidden")){ el.style.display=""; el.removeAttribute("data-panel-hidden"); }
+  });
+}
+/* one consistent empty state for every tab: what this view will show, and
+   the single obvious next step. Inline onclick keeps it stub-safe. */
+function emptyStateHtml(msg){
+  return '<div style="text-align:center;padding:26px 16px">'+
+    '<div style="font-weight:600;color:var(--heading);margin-bottom:4px;font-size:15px">Start with your portfolio</div>'+
+    '<div class="hint" style="margin-bottom:12px">'+msg+'</div>'+
+    '<button class="lightbtn primary" onclick="loadSample()">Load sample portfolio</button> '+
+    '<button class="lightbtn" onclick="switchTab(\'method\')">Load your own sites</button></div>';
+}
 function render(){
   hideInfo();
   const hasData=sites.length>0;
@@ -22,6 +51,7 @@ function render(){
   renderHazProv();
   renderResultsPack();
   renderExecHome();
+  applyPanelPrefs();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
@@ -59,7 +89,7 @@ function renderDecision(){
       '<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
       '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
       '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
-      '<td class="num mono" style="color:'+(r.bcr>=1?"#2E8B6F":"#B23A32")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
+      '<td class="num mono" style="color:'+(r.bcr>=1?"var(--good)":"var(--bad)")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
       '<td class="num"><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></td>'+
       '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
   });
@@ -88,10 +118,10 @@ function renderSummary(){
   if(db){
     if(hazardGrid){
       const live=perilAuthority().filter(a=>a.live).length;
-      db.style.borderLeftColor="#2E8B6F";
+      db.style.borderLeftColor="var(--good)";
       db.innerHTML="<b>Running on your loaded climate data</b> ("+live+" of "+HAZARDS.length+" perils authoritative). These figures are disclosure-grade for those perils; any peril still on the built-in estimate is labelled where it appears.";
     }else{
-      db.style.borderLeftColor="#E0A43B";
+      db.style.borderLeftColor="var(--r-mod)";
       db.innerHTML="<b>You are exploring with built-in estimates.</b> Good for a first look, not for disclosure. To sharpen every number, load your climate data on the Method and data tab (or ask your analytics team for the CLIMADA grid).";
     }
   }
@@ -128,7 +158,7 @@ function renderSummary(){
   bar+='</div><div class="hint" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:12px">'+order.map(b=>'<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+BAND_COLOR[b]+';margin-right:5px;vertical-align:middle"></span>'+b+' '+(agg.bands[b]||0)+'</span>').join("")+'</div>';
   document.getElementById("sumBands").innerHTML=bar;
   const top=agg.perSite.slice().sort((a,b)=>b.total-a.total).slice(0,6);
-  document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","#B23A32");
+  document.getElementById("sumTopSites").innerHTML=barsSvg(top.map(r=>({label:r.name,ead:r.total})),"ead","label","var(--chart-bad)");
   const brands=Object.keys(agg.byBrand).map(b=>({label:b,ead:agg.byBrand[b]})).sort((a,b)=>b.ead-a.ead);
   document.getElementById("sumByBrand").innerHTML=barsSvg(brands,"ead","label","#0F3A4B");
   /* named-insured breakout: who carries the exposure across the portfolio. Only
@@ -261,7 +291,7 @@ function renderTolerance(){
   const fld=(key,label,val,step,unit)=>'<div class="field" style="margin-bottom:4px"><label>'+label+'</label>'+
     '<input type="number" data-tol="'+key+'" min="0" step="'+step+'" value="'+val+'" style="width:100%"> <span class="hint">'+unit+'</span></div>';
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
-    ' <b style="color:'+(breach?"#B23A32":"#2E8B6F")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
+    ' <b style="color:'+(breach?"var(--bad)":"var(--good)")+'">'+(breach?"ABOVE tolerance":"within tolerance")+'</b></span>';
   let h='<div class="grid2" style="grid-template-columns:1fr 1fr 1fr;gap:10px">'+
     fld("siteAalBps","Site threshold",tolerance.siteAalBps,5,"bps (hundredths of a percent) of site value, expected annual cost")+
     fld("portAalPct","Portfolio threshold",tolerance.portAalPct,0.1,"% of insured value, expected annual cost")+
@@ -275,7 +305,7 @@ function renderTolerance(){
     h+='<table class="tbl" style="margin-top:8px"><thead><tr><th>Site</th><th class="num">Cost $/yr</th><th class="num">bps of value</th><th>Best in-scope measure</th><th class="num">BCR</th><th>Lane</th></tr></thead><tbody>'+
       t.siteBreaches.map(b=>'<tr class="rowclick" data-focus="'+b.id+'"><td>'+esc(b.name)+'</td><td class="num mono">'+fmt$(b.aal)+'</td>'+
         '<td class="num mono">'+b.bps.toFixed(0)+'</td><td>'+(b.bestMeasure?esc(b.bestMeasure):'<span class="hint">none in scope</span>')+'</td>'+
-        '<td class="num mono" style="color:'+(b.bestBcr>=1?"#2E8B6F":"#B23A32")+'">'+b.bestBcr.toFixed(2)+'x</td>'+
+        '<td class="num mono" style="color:'+(b.bestBcr>=1?"var(--good)":"var(--bad)")+'">'+b.bestBcr.toFixed(2)+'x</td>'+
         '<td>'+(b.lane==="capex"?"Harden (capex)":"Transfer or accept")+'</td></tr>').join("")+'</tbody></table>';
   }
   const acts=[];
@@ -332,7 +362,7 @@ function renderOverview(scored){
     document.getElementById("epHint").textContent="Days per year above 32\u00b0C, "+SCEN_LABEL[scenario].toLowerCase()+".";
     const items=scored.rows.slice().sort((a,b)=>(b.indicators.daysOver32)-(a.indicators.daysOver32))
       .map(r=>({label:r.name,v:r.indicators.daysOver32}));
-    document.getElementById("epCurve").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
+    document.getElementById("epCurve").innerHTML=countBarsSvg(items,"v","label","var(--chart-warm)"," d");
   }else{
     document.getElementById("epTitle").innerHTML="Loss exceedance"+infoBtn("epcurve");
     document.getElementById("epHint").textContent="Portfolio "+hazName.toLowerCase()+" loss by return period, "+SCEN_LABEL[scenario].toLowerCase()+" (site losses summed at equal RP: an upper bound; the results pack carries the joint event tail).";
@@ -351,7 +381,7 @@ function renderOverview(scored){
     document.getElementById("brandHint").textContent="Portfolio-average exposure by brand.";
     const bm={};scored.rows.forEach(r=>{const k=r.brand||"Unbranded";(bm[k]||(bm[k]={label:k,sum:0,n:0}));bm[k].sum+=r.indicators.daysOver32;bm[k].n++;});
     const items=Object.values(bm).map(x=>({label:x.label,v:Math.round(x.sum/x.n)})).sort((a,b)=>b.v-a.v);
-    document.getElementById("brandBars").innerHTML=countBarsSvg(items,"v","label","#C06B2E"," d");
+    document.getElementById("brandBars").innerHTML=countBarsSvg(items,"v","label","var(--chart-warm)"," d");
   }else{
     document.getElementById("brandTitle").innerHTML="Expected annual damage by brand"+infoBtn("brand");
     document.getElementById("brandHint").textContent="Where "+hazName.toLowerCase()+" loss concentrates across the portfolio.";
@@ -414,8 +444,17 @@ function renderSites(){
     '<td class="num mono">'+(heat?(r.indicators.daysOver32+" d"):r.eadPct.toFixed(2)+'%')+'</td>'+
     '<td class="num mono">'+(heat?"&mdash;":fmt$(r.rp100))+'</td>'+
     '<td>'+ratingCell(r)+'</td></tr>').join("")
-    || '<tr><td colspan="7" style="color:var(--muted);padding:18px">No sites yet. Add one, load the sample, or search a place.</td></tr>';
+    || '<tr><td colspan="7" style="color:var(--muted);padding:18px;text-align:center">No sites yet. '+
+       '<button class="lightbtn" onclick="loadSample()" style="margin-left:8px">Load sample</button> '+
+       '<button class="lightbtn" onclick="openForm(\'add\',{})">Add a site</button></td></tr>';
   document.querySelectorAll("#siteBody tr.rowclick").forEach(tr=>tr.onclick=()=>{selectedId=+tr.dataset.id;renderSites();});
+  // visible + announced sort state on the column headers
+  document.querySelectorAll("#siteTbl th[data-sort]").forEach(th=>{
+    if(!th.setAttribute)return;
+    const on=th.dataset&&th.dataset.sort===sortKey;
+    if(on){th.setAttribute("data-dir",sortDir<0?"desc":"asc");th.setAttribute("aria-sort",sortDir<0?"descending":"ascending");}
+    else{th.removeAttribute("data-dir");th.removeAttribute("aria-sort");}
+  });
   if(selectedId!=null){renderDetail(rows.find(r=>r.id===selectedId));}
 }
 /* the named-insured breakout for one physical site: every named insured that
@@ -429,7 +468,7 @@ function namedInsuredDetail(record){
   if(members.length<2)return "";
   const gr=scoreGroup(siteGroups(members)[0],scenario);
   const rows=gr.byInsured.map(r=>
-    '<tr'+(insuredOf(record)===r.insured?' style="background:#F2F5F3"':'')+'><td>'+esc(r.insured)+(r.n>1?' <span class="hint">('+r.n+' rec)</span>':'')+'</td>'+
+    '<tr'+(insuredOf(record)===r.insured?' style="background:var(--sel)"':'')+'><td>'+esc(r.insured)+(r.n>1?' <span class="hint">('+r.n+' rec)</span>':'')+'</td>'+
     '<td class="num mono">'+fmt$(r.value)+'</td><td class="num mono">'+fmt$(r.ead)+'</td>'+
     '<td class="num mono">'+r.eadPct.toFixed(2)+'%</td><td class="num mono">'+r.share.toFixed(0)+'%</td>'+
     '<td><span class="pill mini '+r.band+'" title="'+r.band+'">'+r.band+'</span></td></tr>').join("");
@@ -483,7 +522,7 @@ function renderDetail(r){
     table='<table class="tbl"><thead><tr><th>Return period</th><th class="num">Intensity</th><th class="num">Loss</th></tr></thead><tbody>'+rpRows+'</tbody></table>';
   }
   body.innerHTML=
-    '<div style="font-family:Fraunces,serif;font-size:17px;color:var(--primary);margin-bottom:2px">'+esc(r.name)+'</div>'+
+    '<div style="font-family:var(--font-display);font-size:17px;color:var(--heading);margin-bottom:2px">'+esc(r.name)+'</div>'+
     '<div class="hint" style="margin-bottom:6px">'+esc(r.brand||"")+(insuredOf(r)!=="Unspecified"?' · '+esc(insuredOf(r)):'')+' · '+r.latitude.toFixed(3)+', '+r.longitude.toFixed(3)+' · '+H.label+infoBtn(hz)+(r.hazardMeta&&r.hazardMeta.outside?' · <span style="color:var(--r-high)">outside hazard grid</span>':'')+'</div>'+
     ratingStrip+siteTrustStrip(r)+mid+table+namedInsuredDetail(r)+
     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">'+
@@ -499,11 +538,13 @@ function renderDetail(r){
 function renderAdaptation(){
   const host=document.getElementById("measuresHost"); if(!host)return;
   if(!sites.length){
-    host.innerHTML='<p class="hint">Load a portfolio to appraise measures.</p>';
+    host.innerHTML=emptyStateHtml("This tab appraises hardening measures against your portfolio: cost, averted loss, and a funded action queue.");
     ["costCurve","waterfallChart","layerChart","layerStats","recBody","portfolioSummary",
      "sweepHost","queueRoll","queueBody","queuePack","queueMore"].forEach(id=>document.getElementById(id).innerHTML="");
+    document.getElementById("portfolioSummary").style.display="none";
     return;
   }
+  document.getElementById("portfolioSummary").style.display="";
   // read shared settings
   const horizon=+document.getElementById("horizon").value;
   const disc=+document.getElementById("disc").value/100;
@@ -539,7 +580,7 @@ function renderAdaptation(){
     }).join("");
     return '<div class="measure" style="'+(a.st.on?"":"opacity:.62")+'">'+
       '<div class="mh"><span class="nm"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-mtoggle="'+a.m.key+'" '+(a.st.on?"checked":"")+'> '+esc(a.m.name)+infoBtn(a.m.info)+'</label></span>'+
-      '<span class="bcr" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">BCR '+a.bcr.toFixed(2)+'x</span></div>'+
+      '<span class="bcr" style="color:'+(a.bcr>=1?"var(--good)":"var(--bad)")+'">BCR '+a.bcr.toFixed(2)+'x</span></div>'+
       '<div class="hint" style="margin:0 0 8px">Targets: '+a.m.target+' · applies to '+a.scopeN+' of '+sites.length+' sites</div>'+
       sliders+
       '<div class="stat"><span>Cost <b>'+fmt$(a.cost)+'</b></span><span>Averted <b>'+fmt$(a.averted)+'/yr</b></span><span>Benefit ('+horizon+'y) <b>'+fmt$(a.benefit)+'</b></span></div></div>';
@@ -605,7 +646,7 @@ function renderAdaptation(){
     .sort((a,b)=>(b.best?b.best.bcr:0)-(a.best?a.best.bcr:0));
   document.getElementById("recBody").innerHTML=rec.map(r=>
     '<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.site)+'</td><td class="num mono">'+fmt$(r.aal)+'</td>'+
-    (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"#2E8B6F":"#B23A32")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
+    (r.best?'<td>'+esc(r.best.name)+'</td><td class="num mono">'+fmt$(r.best.averted)+'</td><td class="num mono">'+fmt$(r.best.cost)+'</td><td class="num mono" style="color:'+(r.best.bcr>=1?"var(--good)":"var(--bad)")+'">'+r.best.bcr.toFixed(2)+'x</td>':'<td colspan="4" class="hint">No in-scope measure</td>')+'</tr>').join("");
   document.querySelectorAll("#recBody tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
 
   // Wave 1 R3: the action queue with its funding cutline
@@ -624,8 +665,8 @@ function renderAdaptation(){
   document.getElementById("queueBody").innerHTML=q.items.slice(0,QSHOW).map((it,i)=>
     '<tr class="rowclick" data-focus="'+it.id+'"><td class="mono">'+(i+1)+'</td><td>'+esc(it.site)+'</td><td>'+esc(it.measure)+'</td>'+
     '<td class="num mono">'+fmt$(it.averted)+'</td><td class="num mono">'+fmt$(it.cost)+'</td>'+
-    '<td class="num mono" style="color:'+(it.bcr>=1?"#2E8B6F":"#B23A32")+'">'+it.bcr.toFixed(2)+'x</td>'+
-    '<td style="color:'+(it.funded?"#2E8B6F":"#7A8893")+';font-weight:600">'+(it.funded?"funded":"unfunded")+'</td></tr>').join("");
+    '<td class="num mono" style="color:'+(it.bcr>=1?"var(--good)":"var(--bad)")+'">'+it.bcr.toFixed(2)+'x</td>'+
+    '<td style="color:'+(it.funded?"var(--good)":"var(--muted)")+';font-weight:600">'+(it.funded?"funded":"unfunded")+'</td></tr>').join("");
   document.getElementById("queueMore").textContent=q.items.length>QSHOW?
     ("Top "+QSHOW+" of "+q.items.length+" pairs shown; the export carries the full list."):"";
   const pkq=resultsPack&&resultsPack.data;
@@ -644,7 +685,7 @@ function sweepTable(varByRp,acuteAal){
   if(!rows.length)return "";
   return '<h3 style="margin-top:14px">Retention: the attachment trade'+infoBtn("retention")+'</h3>'+
     '<table class="tbl"><thead><tr><th>Attachment</th><th class="num">Retained below</th><th class="num">Transferred</th><th class="num">Premium</th><th class="num">Cost of certainty</th><th class="num">Tail beyond limit</th></tr></thead><tbody>'+
-    rows.map(r=>'<tr'+(r.attach===adapt.attach?' style="background:#F2F5F3;font-weight:600"':'')+'>'+
+    rows.map(r=>'<tr'+(r.attach===adapt.attach?' style="background:var(--sel);font-weight:600"':'')+'>'+
       '<td class="mono">1-in-'+r.attach+(r.attach===adapt.attach?" (current)":"")+'</td>'+
       '<td class="num mono">'+fmt$(r.below)+'/yr</td><td class="num mono">'+fmt$(r.layer)+'/yr</td>'+
       '<td class="num mono">'+fmt$(r.premium)+'/yr</td><td class="num mono">'+fmt$(r.certainty)+'/yr</td>'+
@@ -660,22 +701,22 @@ function costCurveSvg(appraised){
   const maxBcr=Math.max(1.5,Math.min(Math.max.apply(null,items.map(a=>a.bcr)),8));
   const X=v=>padL+(v/totAvert)*(W-padL-14);
   const Y=b=>padT+(1-Math.min(b,maxBcr)/maxBcr)*(H-padT-padB);
-  const colors=["#0F3A4B","#12586F","#2C7DA0","#6A8CAF","#7FD0C4"];
+  const colors=["var(--chart-brand)","var(--chart-brand2)","var(--chart-brand3)","var(--chart-neutral)","var(--chart-accent)"];
   let s=svgEl(W,H),x=0,legend="";
   [0.25,0.5,0.75,1].forEach(t=>{const y=Y(t*maxBcr);
-    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
-    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+(t*maxBcr).toFixed(1)+'x</text>';});
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" style="stroke:var(--chart-grid)"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" style="fill:var(--chart-muted)">'+(t*maxBcr).toFixed(1)+'x</text>';});
   items.forEach((a,i)=>{
     const w=(a.averted/totAvert)*(W-padL-14);
     const y=Y(a.bcr), h=(H-padB)-y;
-    s+='<rect x="'+X(x)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" fill="'+colors[i%colors.length]+'" opacity="'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
+    s+='<rect x="'+X(x)+'" y="'+y+'" width="'+Math.max(w-2,1)+'" height="'+Math.max(h,1)+'" rx="2" style="fill:'+colors[i%colors.length]+';opacity:'+(a.st.on?0.95:0.35)+'"><title>'+esc(a.m.name)+': BCR '+a.bcr.toFixed(2)+'x, averts '+fmt$(a.averted)+'/yr</title></rect>';
     legend+='<span style="margin-right:12px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+colors[i%colors.length]+';margin-right:5px;vertical-align:middle;opacity:'+(a.st.on?1:0.4)+'"></span>'+esc(a.m.name.split("(")[0].trim())+' '+a.bcr.toFixed(1)+'x</span>';
     x+=a.averted;
   });
   const y1=Y(1);
-  s+='<line x1="'+padL+'" y1="'+y1+'" x2="'+(W-14)+'" y2="'+y1+'" stroke="#B23A32" stroke-width="1.5" stroke-dasharray="5 4"/>';
-  s+='<text x="'+(W-16)+'" y="'+(y1-5)+'" text-anchor="end" font-size="10" fill="#B23A32">breakeven 1.0x</text>';
-  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-padB+16)+'" text-anchor="middle" font-size="10" fill="#43535F">Averted expected annual cost (bar width, total '+fmt$(totAvert)+'/yr)</text>';
+  s+='<line x1="'+padL+'" y1="'+y1+'" x2="'+(W-14)+'" y2="'+y1+'" style="stroke:var(--chart-bad)" stroke-width="1.5" stroke-dasharray="5 4"/>';
+  s+='<text x="'+(W-16)+'" y="'+(y1-5)+'" text-anchor="end" font-size="10" style="fill:var(--chart-bad)">breakeven 1.0x</text>';
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-padB+16)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)">Averted expected annual cost (bar width, total '+fmt$(totAvert)+'/yr)</text>';
   s+="</svg>";
   return s+'<div class="hint" style="margin-top:6px;display:flex;flex-wrap:wrap;row-gap:4px">'+legend+'</div>';
 }
@@ -683,33 +724,33 @@ function costCurveSvg(appraised){
 function waterfallSvg(wf){
   const W=460,H=240,padL=48,padB=40,padT=14;
   const cols=[
-    {lab:"Today",v:wf.today,base:0,color:"#0F3A4B",solid:true},
-    {lab:"+ Growth",v:wf.growthInc,base:wf.today,color:"#7A8893"},
-    {lab:"+ Climate",v:wf.climateInc,base:wf.today+wf.growthInc,color:"#D9772F"},
-    {lab:"Future",v:wf.future,base:0,color:"#12586F",solid:true},
-    {lab:"- Adaptation",v:-wf.averted,base:wf.future,color:"#2E8B6F"},
-    {lab:"Residual",v:wf.residual,base:0,color:"#2C7DA0",solid:true},
+    {lab:"Today",v:wf.today,base:0,color:"var(--chart-brand)",solid:true},
+    {lab:"+ Growth",v:wf.growthInc,base:wf.today,color:"var(--chart-neutral)"},
+    {lab:"+ Climate",v:wf.climateInc,base:wf.today+wf.growthInc,color:"var(--chart-warm)"},
+    {lab:"Future",v:wf.future,base:0,color:"var(--chart-brand2)",solid:true},
+    {lab:"- Adaptation",v:-wf.averted,base:wf.future,color:"var(--chart-good)"},
+    {lab:"Residual",v:wf.residual,base:0,color:"var(--chart-brand3)",solid:true},
   ];
   const ymax=Math.max(wf.future,1)*1.12;
   const Y=v=>padT+(1-v/ymax)*(H-padT-padB);
   const bw=(W-padL-16)/cols.length;
   let s=svgEl(W,H);
   [0.25,0.5,0.75,1].forEach(t=>{const y=Y(t*ymax);
-    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
-    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" style="stroke:var(--chart-grid)"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" style="fill:var(--chart-muted)">'+fmt$(t*ymax)+'</text>';});
   cols.forEach((c,i)=>{
     const x=padL+i*bw+6, w=bw-12;
     const top=c.solid?Y(c.v):Y(Math.max(c.base,c.base+c.v));
     const bot=c.solid?Y(0):Y(Math.min(c.base,c.base+c.v));
-    s+='<rect x="'+x+'" y="'+top+'" width="'+w+'" height="'+Math.max(bot-top,1.5)+'" rx="2" fill="'+c.color+'"><title>'+c.lab+': '+fmt$(Math.abs(c.v))+'</title></rect>';
+    s+='<rect x="'+x+'" y="'+top+'" width="'+w+'" height="'+Math.max(bot-top,1.5)+'" rx="2" style="fill:'+c.color+'"><title>'+c.lab+': '+fmt$(Math.abs(c.v))+'</title></rect>';
     if(!c.solid){ // connector from previous level
       const lev=Y(c.base);
-      s+='<line x1="'+(x-6)+'" y1="'+lev+'" x2="'+x+'" y2="'+lev+'" stroke="#C4CCC7" stroke-width="1"/>';
+      s+='<line x1="'+(x-6)+'" y1="'+lev+'" x2="'+x+'" y2="'+lev+'" style="stroke:var(--chart-grid)" stroke-width="1"/>';
     }
-    s+='<text x="'+(x+w/2)+'" y="'+(top-4)+'" text-anchor="middle" font-size="9.5" class="mono" fill="#15202B">'+fmt$(Math.abs(c.v))+'</text>';
-    s+='<text x="'+(x+w/2)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#43535F">'+c.lab+'</text>';
+    s+='<text x="'+(x+w/2)+'" y="'+(top-4)+'" text-anchor="middle" font-size="9.5" class="mono" style="fill:var(--chart-ink)">'+fmt$(Math.abs(c.v))+'</text>';
+    s+='<text x="'+(x+w/2)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" style="fill:var(--chart-ink2)">'+c.lab+'</text>';
   });
-  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="#7A8893">Expected annual climate cost, $/yr</text>';
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-muted)">Expected annual climate cost, $/yr</text>';
   s+="</svg>";return s;
 }
 /* loss-exceedance curve with retain / transfer / tail shading */
@@ -722,23 +763,25 @@ function layerSvg(varByRp,ls){
   const Y=v=>padT+(1-v/ymax)*(H-padT-padB);
   let s=svgEl(W,H);
   // layer bands (horizontal, in loss space)
-  s+='<rect x="'+padL+'" y="'+Y(ls.A)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(0)-Y(ls.A),0)+'" fill="#8AA0AC" opacity="0.13"/>';
-  s+='<rect x="'+padL+'" y="'+Y(ls.E)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.A)-Y(ls.E),0)+'" fill="#7FD0C4" opacity="0.28"/>';
-  s+='<rect x="'+padL+'" y="'+padT+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.E)-padT,0)+'" fill="#B23A32" opacity="0.10"/>';
+  s+='<rect x="'+padL+'" y="'+Y(ls.A)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(0)-Y(ls.A),0)+'" style="fill:var(--chart-neutral)" opacity="0.13"/>';
+  s+='<rect x="'+padL+'" y="'+Y(ls.E)+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.A)-Y(ls.E),0)+'" style="fill:var(--chart-accent)" opacity="0.28"/>';
+  s+='<rect x="'+padL+'" y="'+padT+'" width="'+(W-padL-14)+'" height="'+Math.max(Y(ls.E)-padT,0)+'" style="fill:var(--chart-bad)" opacity="0.10"/>';
   [ [ls.A,"attach "+fmt$(ls.A),"#43535F"], [ls.E,"exhaust "+fmt$(ls.E),"#43535F"] ].forEach(([v,lab,col])=>{
     s+='<line x1="'+padL+'" y1="'+Y(v)+'" x2="'+(W-14)+'" y2="'+Y(v)+'" stroke="'+col+'" stroke-width="1" stroke-dasharray="4 4"/>';
     s+='<text x="'+(W-16)+'" y="'+(Y(v)-4)+'" text-anchor="end" font-size="9.5" fill="'+col+'">'+lab+'</text>';});
   // EP curve
   let path="";RPS.forEach((rp,i)=>{path+=(i?"L":"M")+X(rp)+" "+Y(varByRp[rp]||0)+" ";});
-  s+='<path d="'+path+'" fill="none" stroke="#0F3A4B" stroke-width="2.5"/>';
-  RPS.forEach(rp=>{s+='<circle cx="'+X(rp)+'" cy="'+Y(varByRp[rp]||0)+'" r="3" fill="#12586F"/>';
-    s+='<text x="'+X(rp)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="10" fill="#7A8893">'+rp+'</text>';});
-  [0.5,1].forEach(t=>{const y=Y(t*ymax);s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
-  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Return period (years) &middot; grey retained &middot; teal transferred &middot; red tail beyond limit</text>';
+  s+='<path d="'+path+'" fill="none" style="stroke:var(--chart-brand)" stroke-width="2.5"/>';
+  RPS.forEach(rp=>{s+='<circle cx="'+X(rp)+'" cy="'+Y(varByRp[rp]||0)+'" r="3" style="fill:var(--chart-brand2)"/>';
+    s+='<text x="'+X(rp)+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-muted)">'+rp+'</text>';});
+  [0.5,1].forEach(t=>{const y=Y(t*ymax);s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" style="fill:var(--chart-muted)">'+fmt$(t*ymax)+'</text>';});
+  s+='<text x="'+((padL+W-14)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)">Return period (years) &middot; grey retained &middot; teal transferred &middot; red tail beyond limit</text>';
   s+="</svg>";return s;
 }
 function renderScenarios(){
-  if(!sites.length){document.getElementById("scenCards").innerHTML="";document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
+  if(!sites.length){
+    document.getElementById("scenCards").innerHTML=emptyStateHtml("This tab compares the portfolio's combined physical risk across emissions pathways, present through 2080.");
+    document.getElementById("scenBars").innerHTML="";document.getElementById("bandMig").innerHTML="";return;}
   const hz=+(document.getElementById("horSel").value||2050);
   const keys=["present","ssp126_"+hz,"ssp245_"+hz,"ssp585_"+hz];
   const runs=keys.map(sc=>({sc,r:scorePhysTotal(sites,sc)}));
@@ -807,7 +850,7 @@ function renderBrandAssume(){
 function renderFinance(){
   const kpis=document.getElementById("finKpis"); if(!kpis)return;
   if(!sites.length){
-    kpis.innerHTML='<div class="card"><div class="l">No portfolio</div><div class="v" style="font-size:18px">&mdash;</div><div class="foot">Load sites to see financial impact</div></div>';
+    kpis.innerHTML=emptyStateHtml("This tab translates hazard into money: expected annual cost, tail Value at Risk, uncertainty, and the disclosure table.");
     ["finBreakdown","finAcuteChronic","finDiscBody","finSiteBody","tornado","uncStats","brandAssume"].forEach(id=>document.getElementById(id).innerHTML="");
     document.getElementById("finDiscNote").textContent="";document.getElementById("uncNote").textContent="";return;
   }
@@ -864,13 +907,20 @@ function renderFinance(){
    One overlay tells a single site's complete story: perils, money,
    trajectory, and its best adaptation actions.
    ============================================================ */
+let _scorecardReturn=null;
 function openScorecard(id){
   const s=sites.find(x=>x.id===id); if(!s)return;
   _scorecardId=id;
   renderScorecard(s);
+  try{_scorecardReturn=document.activeElement;}catch(e){_scorecardReturn=null;}
   document.getElementById("focusBg").classList.add("open");
+  const c=document.getElementById("focusClose"); if(c&&c.focus)try{c.focus();}catch(e){}
 }
-function closeScorecard(){document.getElementById("focusBg").classList.remove("open");}
+function closeScorecard(){
+  document.getElementById("focusBg").classList.remove("open");
+  if(_scorecardReturn&&_scorecardReturn.focus)try{_scorecardReturn.focus();}catch(e){}
+  _scorecardReturn=null;
+}
 function renderScorecard(s){
   const fin=finSite(s,scenario);
   const fPort=finPortfolio(sites,scenario);
@@ -907,7 +957,7 @@ function renderScorecard(s){
   if(s.defended)attrs.push("defended");
   attrs.push("wind vulnerability x"+vuln.windMult.toFixed(2));
   document.getElementById("focusHead").innerHTML=
-    '<div style="font-family:Fraunces,serif;font-size:21px;color:var(--primary)">'+esc(s.name)+'</div>'+
+    '<div style="font-family:var(--font-display);font-size:21px;color:var(--heading)">'+esc(s.name)+'</div>'+
     '<div class="hint" style="margin:2px 0 0">'+esc(s.brand||"")+(insuredOf(s)!=="Unspecified"?' \u00b7 '+esc(insuredOf(s)):'')+' \u00b7 '+s.latitude.toFixed(3)+', '+s.longitude.toFixed(3)+' \u00b7 '+esc(attrs.join(" \u00b7 "))+' \u00b7 '+SCEN_LABEL[scenario]+'</div>'+
     siteTrustStrip(s);
   const card=(l,v,foot)=>'<div class="card"><div class="l">'+l+'</div><div class="v" style="font-size:19px">'+v+'</div><div class="foot">'+foot+'</div></div>';
@@ -936,7 +986,7 @@ function renderScorecard(s){
     '</div>'+
     '<div class="panel" style="margin-bottom:14px"><h3>Best actions for this site</h3><div class="hint">Top in-scope measures at current library settings.</div>'+
       '<table class="tbl"><thead><tr><th>Measure</th><th class="num">Averted $/yr</th><th class="num">Cost</th><th class="num">BCR</th></tr></thead><tbody>'+
-      (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"#2E8B6F":"#B23A32")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
+      (acts.length?acts.map(a=>'<tr><td>'+esc(a.name)+'</td><td class="num mono">'+fmt$(a.averted)+'</td><td class="num mono">'+fmt$(a.cost)+'</td><td class="num mono" style="color:'+(a.bcr>=1?"var(--good)":"var(--bad)")+'">'+a.bcr.toFixed(2)+'x</td></tr>').join(""):'<tr><td colspan="4" class="hint">No in-scope measures</td></tr>')+
       '</tbody></table></div>'+
     namedInsuredDetail(s)+
     traceSection(s)+
@@ -980,7 +1030,7 @@ function renderBacktest(){
     '<span class="k">Matched sites</span><span class="v mono">'+pairs.length+' of '+backtest.rows.length+'</span>'+
     '<span class="k">Modeled damage AAL</span><span class="v mono">'+fmt$(sumM)+'/yr</span>'+
     '<span class="k">Observed losses</span><span class="v mono">'+fmt$(sumO)+'/yr</span>'+
-    '<span class="k">Bias (observed / modeled)</span><span class="v mono" style="color:'+(bias>0.5&&bias<2?"#2E8B6F":"#B23A32")+'">'+bias.toFixed(2)+'x</span>';
+    '<span class="k">Bias (observed / modeled)</span><span class="v mono" style="color:'+(bias>0.5&&bias<2?"var(--good)":"var(--bad)")+'">'+bias.toFixed(2)+'x</span>';
   document.getElementById("btChart").innerHTML=scatterSvg(pairs);
   document.getElementById("btTableWrap").style.display="block";
   document.getElementById("btBody").innerHTML=pairs.slice().sort((a,b)=>b.observed-a.observed).map(p=>
@@ -1000,15 +1050,15 @@ function scatterSvg(pairs){
   const Y=v=>H-34-(v/maxV)*(H-34-14);
   let s=svgEl(W,H);
   [0.25,0.5,0.75,1].forEach(t=>{const v=t*maxV;
-    s+='<line x1="'+pad+'" y1="'+Y(v)+'" x2="'+(W-16)+'" y2="'+Y(v)+'" stroke="#EEF0EC"/>';
-    s+='<text x="'+(pad-6)+'" y="'+(Y(v)+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+fmt$(v)+'</text>';
-    s+='<text x="'+X(v)+'" y="'+(H-20)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(v)+'</text>';});
-  s+='<line x1="'+X(0)+'" y1="'+Y(0)+'" x2="'+X(maxV)+'" y2="'+Y(maxV)+'" stroke="#B23A32" stroke-width="1.2" stroke-dasharray="5 4"/>';
-  s+='<text x="'+(X(maxV)-4)+'" y="'+(Y(maxV)+12)+'" text-anchor="end" font-size="9.5" fill="#B23A32">1:1</text>';
+    s+='<line x1="'+pad+'" y1="'+Y(v)+'" x2="'+(W-16)+'" y2="'+Y(v)+'" style="stroke:var(--chart-grid)"/>';
+    s+='<text x="'+(pad-6)+'" y="'+(Y(v)+3)+'" text-anchor="end" font-size="9.5" style="fill:var(--chart-muted)">'+fmt$(v)+'</text>';
+    s+='<text x="'+X(v)+'" y="'+(H-20)+'" text-anchor="middle" font-size="9.5" style="fill:var(--chart-muted)">'+fmt$(v)+'</text>';});
+  s+='<line x1="'+X(0)+'" y1="'+Y(0)+'" x2="'+X(maxV)+'" y2="'+Y(maxV)+'" style="stroke:var(--chart-bad)" stroke-width="1.2" stroke-dasharray="5 4"/>';
+  s+='<text x="'+(X(maxV)-4)+'" y="'+(Y(maxV)+12)+'" text-anchor="end" font-size="9.5" style="fill:var(--chart-bad)">1:1</text>';
   pairs.forEach(p=>{
-    s+='<circle cx="'+X(p.modeled)+'" cy="'+Y(p.observed)+'" r="5" fill="#12586F" opacity="0.85"><title>'+esc(p.name)+': modeled '+fmt$(p.modeled)+', observed '+fmt$(p.observed)+'</title></circle>';});
-  s+='<text x="'+((pad+W-16)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Modeled damage AAL</text>';
-  s+='<text x="12" y="'+((H-34+14)/2)+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 12 '+((H-34+14)/2)+')">Observed $/yr</text>';
+    s+='<circle cx="'+X(p.modeled)+'" cy="'+Y(p.observed)+'" r="5" style="fill:var(--chart-brand2)" opacity="0.85"><title>'+esc(p.name)+': modeled '+fmt$(p.modeled)+', observed '+fmt$(p.observed)+'</title></circle>';});
+  s+='<text x="'+((pad+W-16)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)">Modeled damage AAL</text>';
+  s+='<text x="12" y="'+((H-34+14)/2)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)" transform="rotate(-90 12 '+((H-34+14)/2)+')">Observed $/yr</text>';
   s+="</svg>";return s;
 }
 /* Phase 4: per-peril authority, resolved PER SITE. Which perils are
@@ -1221,7 +1271,7 @@ function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
   const idx=scrubIndex(), p=currentPathway();
   const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
-  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'">'+esc(st.label)+'</button>').join("");
+  host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'" aria-pressed="'+(i===idx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
   host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
 }
 

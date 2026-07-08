@@ -34,11 +34,17 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril"},onboarded:false,simpleView:false,
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},onboarded:false,simpleView:false,
   /* v2.3.0 executive home: the full-bleed map with floating priority panels
      is the default landing view; Analyst restores the classic tab workspace.
      A pure display flag: it changes no computed figure. */
-  execMode:true};
+  execMode:true,
+  /* v2.4.0 display options, all persisted, none touching a computed figure:
+     theme (light / dark / auto follows the OS), density (comfortable /
+     compact), and per-panel visibility on the Summary tab (panels[key]=false
+     hides; anything else shows). simpleView above remains the detail-level
+     flag (true = essentials). */
+  theme:"auto",density:"comfortable",panels:{}};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -350,11 +356,12 @@ function wireInfo(){
 /* ---- map (degrades gracefully if Leaflet CDN or tiles are blocked) ---- */
 let map, markers=[], mapOk=false, _lastFitKey="";
 function showMapUnavailable(){
+  /* class-based so the executive layout can restyle the same placeholder:
+     a slim strip in the analyst workspace, a full-height quiet backdrop
+     under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
-  el.style.height="auto";el.style.minHeight="0";el.style.padding="16px 18px";
-  el.style.display="flex";el.style.alignItems="center";el.style.justifyContent="center";
-  el.style.background="#eef2f1";el.style.borderBottom="1px solid var(--line)";
-  el.innerHTML='<div style="color:#43535F;font-size:13px;text-align:center">Map is unavailable on this network. Every analysis below is fully functional without it.</div>';
+  if(el.classList&&el.classList.add)el.classList.add("mapless");
+  el.innerHTML='<div class="mapless-msg">Map is unavailable on this network. Every figure and analysis works without it.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
@@ -487,13 +494,13 @@ function epCurveSvg(rpLoss){
   const X=lx=>pad+(lx-xmin)/(xmax-xmin)*(W-pad-14);
   const Y=v=>H-30-(v/ymax)*(H-30-14);
   let s=svgEl(W,H);
-  [0,.25,.5,.75,1].forEach(t=>{const y=Y(t*ymax);s+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" stroke="#EEF0EC"/>';
-    s+='<text x="'+(pad-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="#7A8893">'+fmt$(t*ymax)+'</text>';});
+  [0,.25,.5,.75,1].forEach(t=>{const y=Y(t*ymax);s+='<line x1="'+pad+'" y1="'+y+'" x2="'+(W-14)+'" y2="'+y+'" style="stroke:var(--chart-grid)"/>';
+    s+='<text x="'+(pad-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" style="fill:var(--chart-muted)">'+fmt$(t*ymax)+'</text>';});
   let path="";RPS.forEach((rp,i)=>{path+=(i?"L":"M")+X(Math.log(rp))+" "+Y(rpLoss[rp])+" ";});
-  s+='<path d="'+path+'" fill="none" stroke="#0F3A4B" stroke-width="2.5"/>';
-  RPS.forEach(rp=>{s+='<circle cx="'+X(Math.log(rp))+'" cy="'+Y(rpLoss[rp])+'" r="3.5" fill="#12586F"/>';
-    s+='<text x="'+X(Math.log(rp))+'" y="'+(H-12)+'" text-anchor="middle" font-size="10" fill="#7A8893">'+rp+'</text>';});
-  s+='<text x="'+(W/2)+'" y="'+(H-1)+'" text-anchor="middle" font-size="10" fill="#43535F">Return period (years)</text>';
+  s+='<path d="'+path+'" fill="none" style="stroke:var(--chart-brand)" stroke-width="2.5"/>';
+  RPS.forEach(rp=>{s+='<circle cx="'+X(Math.log(rp))+'" cy="'+Y(rpLoss[rp])+'" r="3.5" style="fill:var(--chart-brand2)"/>';
+    s+='<text x="'+X(Math.log(rp))+'" y="'+(H-12)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-muted)">'+rp+'</text>';});
+  s+='<text x="'+(W/2)+'" y="'+(H-1)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)">Return period (years)</text>';
   s+="</svg>";return s;
 }
 function barsSvg(items,valKey,labKey,color){
@@ -501,9 +508,9 @@ function barsSvg(items,valKey,labKey,color){
   const lab=140;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+10;const w=(it[valKey]/max)*(W-lab-70);
     const full=String(it[labKey]);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" fill="'+color+'"><title>'+esc(full)+': '+fmt$(it[valKey])+'</title></rect>';
-    s+='<text x="'+(lab+w+6)+'" y="'+(y+13)+'" font-size="11" fill="#15202B" class="mono">'+fmt$(it[valKey])+'</text>';});
+    s+='<text x="0" y="'+(y+13)+'" font-size="11.5" style="fill:var(--chart-ink2)">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="17" rx="3" style="fill:'+color+'"><title>'+esc(full)+': '+fmt$(it[valKey])+'</title></rect>';
+    s+='<text x="'+(lab+w+6)+'" y="'+(y+13)+'" font-size="11" style="fill:var(--chart-ink)" class="mono">'+fmt$(it[valKey])+'</text>';});
   s+="</svg>";return s;
 }
 function countBarsSvg(items,valKey,labKey,color,suffix){
@@ -512,9 +519,9 @@ function countBarsSvg(items,valKey,labKey,color,suffix){
   const lab=150;let s=svgEl(W,H);
   items.forEach((it,i)=>{const y=i*rowH+8;const w=(it[valKey]/max)*(W-lab-56);
     const full=String(it[labKey]);
-    s+='<text x="0" y="'+(y+13)+'" font-size="11" fill="#43535F">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
-    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" fill="'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
-    s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" fill="#15202B" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
+    s+='<text x="0" y="'+(y+13)+'" font-size="11" style="fill:var(--chart-ink2)">'+esc(full.slice(0,24))+'<title>'+esc(full)+'</title></text>';
+    s+='<rect x="'+lab+'" y="'+y+'" width="'+Math.max(w,1)+'" height="15" rx="3" style="fill:'+color+'"><title>'+esc(full)+': '+Math.round(it[valKey])+suffix+'</title></rect>';
+    s+='<text x="'+(lab+w+6)+'" y="'+(y+12)+'" font-size="11" style="fill:var(--chart-ink)" class="mono">'+Math.round(it[valKey])+suffix+'</text>';});
   s+="</svg>";return s;
 }
 function median(a){ if(!a.length)return 0; const s=a.slice().sort((x,y)=>x-y),m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
@@ -536,20 +543,20 @@ function quadrantSvg(pts){
   const R=e=>5+15*Math.sqrt(Math.max(e,0)/rmax);
   let s=svgEl(W,H);
   [0,.25,.5,.75,1].forEach(t=>{const yv=t*ymax,y=Y(yv);
-    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" stroke="#EEF0EC"/>';
-    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="9.5" fill="#7A8893">'+yv.toFixed(1)+'%</text>';});
+    s+='<line x1="'+padL+'" y1="'+y+'" x2="'+(W-padR)+'" y2="'+y+'" style="stroke:var(--chart-grid)"/>';
+    s+='<text x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="9.5" style="fill:var(--chart-muted)">'+yv.toFixed(1)+'%</text>';});
   [0.5,1].forEach(t=>{const xv=t*xmax,x=X(xv);
-    s+='<text x="'+x+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" fill="#7A8893">'+fmt$(xv)+'</text>';});
-  s+='<line x1="'+X(xDiv)+'" y1="'+padT+'" x2="'+X(xDiv)+'" y2="'+(H-padB)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
-  if(yDiv<ymax)s+='<line x1="'+padL+'" y1="'+Y(yDiv)+'" x2="'+(W-padR)+'" y2="'+Y(yDiv)+'" stroke="#CBD3CE" stroke-dasharray="4 3"/>';
-  const tag=(x,y,anc,txt)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+anc+'" font-size="9.5" fill="#9AA7A0" font-style="italic">'+txt+'</text>';
+    s+='<text x="'+x+'" y="'+(H-padB+14)+'" text-anchor="middle" font-size="9.5" style="fill:var(--chart-muted)">'+fmt$(xv)+'</text>';});
+  s+='<line x1="'+X(xDiv)+'" y1="'+padT+'" x2="'+X(xDiv)+'" y2="'+(H-padB)+'" style="stroke:var(--chart-grid)" stroke-dasharray="4 3"/>';
+  if(yDiv<ymax)s+='<line x1="'+padL+'" y1="'+Y(yDiv)+'" x2="'+(W-padR)+'" y2="'+Y(yDiv)+'" style="stroke:var(--chart-grid)" stroke-dasharray="4 3"/>';
+  const tag=(x,y,anc,txt)=>'<text x="'+x+'" y="'+y+'" text-anchor="'+anc+'" font-size="9.5" style="fill:var(--chart-muted)" font-style="italic">'+txt+'</text>';
   s+=tag(W-padR-2,padT+11,"end","protect first")+tag(padL+2,padT+11,"start","harden / transfer")+
      tag(W-padR-2,H-padB-5,"end","monitor")+tag(padL+2,H-padB-5,"start","accept");
   pts.slice().sort((a,b)=>b.ead-a.ead).forEach(p=>{
     s+='<circle cx="'+X(p.value).toFixed(1)+'" cy="'+Y(Math.min(p.eadPct,ymax)).toFixed(1)+'" r="'+R(p.ead).toFixed(1)+'" fill="'+BAND_COLOR[p.band]+'" fill-opacity="0.72" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="openScorecard('+(+p.id)+')"><title>'+esc(p.name)+' · '+fmt$(p.value)+' value · '+p.eadPct.toFixed(2)+'% cost · '+fmt$(p.ead)+'/yr · '+p.band+'</title></circle>';});
-  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#43535F">Asset value</text>';
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)">Asset value</text>';
   const ymid=(padT+H-padB)/2;
-  s+='<text x="14" y="'+ymid+'" text-anchor="middle" font-size="10" fill="#43535F" transform="rotate(-90 14 '+ymid+')">Annual cost, % of value</text>';
+  s+='<text x="14" y="'+ymid+'" text-anchor="middle" font-size="10" style="fill:var(--chart-ink2)" transform="rotate(-90 14 '+ymid+')">Annual cost, % of value</text>';
   s+="</svg>";return s;
 }
 

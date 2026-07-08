@@ -141,17 +141,17 @@ function execSparkSvg(steps,vals,curIdx){
   let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMidYMid meet" role="img" '+
     'aria-label="Expected annual cost from '+esc(steps[0].label)+' to '+esc(steps[steps.length-1].label)+': '+
     fmt$(vals[0])+' rising to '+fmt$(vals[vals.length-1])+'">';
-  s+='<path d="'+area+'" fill="rgba(15,58,75,.09)"/>';
-  s+='<path d="'+line+'" fill="none" stroke="#0F3A4B" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  s+='<path d="'+area+'" style="fill:var(--chart-brand);fill-opacity:.12"/>';
+  s+='<path d="'+line+'" fill="none" style="stroke:var(--chart-brand)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   vals.forEach((v,i)=>{
     const cur=i===curIdx;
-    s+='<circle cx="'+X(i)+'" cy="'+Y(v)+'" r="'+(cur?5:4)+'" fill="'+(cur?"#1E7FA6":"#0F3A4B")+'" stroke="#fff" stroke-width="2">'+
+    s+='<circle cx="'+X(i)+'" cy="'+Y(v)+'" r="'+(cur?5:4)+'" style="fill:var(--chart-'+(cur?"brand3":"brand")+')" stroke="#fff" stroke-width="2">'+
        '<title>'+esc(steps[i].label)+': '+fmt$(v)+'/yr</title></circle>';
-    s+='<text x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="'+(cur?"#15202B":"#7A8893")+'"'+(cur?' font-weight="600"':'')+'>'+esc(steps[i].label)+'</text>';
+    s+='<text x="'+X(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-'+(cur?"ink":"muted")+')"'+(cur?' font-weight="600"':'')+'>'+esc(steps[i].label)+'</text>';
   });
   // direct labels on the two endpoints only; the titles carry the rest
-  s+='<text x="'+X(0)+'" y="'+(Y(vals[0])-9)+'" text-anchor="start" font-size="10.5" fill="#43535F" class="mono">'+fmt$(vals[0])+'</text>';
-  s+='<text x="'+X(vals.length-1)+'" y="'+(Y(vals[vals.length-1])-9)+'" text-anchor="end" font-size="10.5" fill="#15202B" font-weight="600" class="mono">'+fmt$(vals[vals.length-1])+'</text>';
+  s+='<text x="'+X(0)+'" y="'+(Y(vals[0])-9)+'" text-anchor="start" font-size="10.5" style="fill:var(--chart-ink2)" class="mono">'+fmt$(vals[0])+'</text>';
+  s+='<text x="'+X(vals.length-1)+'" y="'+(Y(vals[vals.length-1])-9)+'" text-anchor="end" font-size="10.5" style="fill:var(--chart-ink)" font-weight="600" class="mono">'+fmt$(vals[vals.length-1])+'</text>';
   s+='</svg>';
   return s;
 }
@@ -278,7 +278,7 @@ function renderExecHome(){
         '<span title="Dominant peril at this site"><span class="perildot" style="background:'+(HAZARD_BY[r.dom]?HAZARD_BY[r.dom].color:"#7A8893")+'"></span>'+esc(HAZARD_LABEL[r.dom]||r.dom)+'</span>'+
         '<span class="pill mini '+esc(r.band)+'">'+esc(r.band)+'</span>'+
         '<span class="mono" title="Annual climate cost as a share of this site\'s value">'+r.pctValue.toFixed(2)+'% of value</span>'+
-        '<span class="mono" style="font-size:10px;color:'+(full?"var(--ink-2)":"#8A4A1B")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site; the scorecard trust strip has the detail">'+r.trustModeled+'/'+r.trustTotal+' modeled</span>'+
+        '<span class="mono" style="font-size:10px;color:'+(full?"var(--ink-2)":"var(--warn-ink)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site; the scorecard trust strip has the detail">'+r.trustModeled+'/'+r.trustTotal+' modeled</span>'+
       '</span>'+
       planLine+whenLine+
       '</button>'+
