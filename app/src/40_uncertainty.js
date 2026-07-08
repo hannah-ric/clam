@@ -33,14 +33,14 @@ function tornadoSvg(u){
   let s=svgEl(W,H);
   rows.forEach((r,i)=>{
     const y=i*rowH+14;
-    s+='<text x="0" y="'+(y+12)+'" font-size="10.5" fill="#43535F">'+esc(r.label)+'</text>';
-    s+='<rect x="'+X(r.lo)+'" y="'+y+'" width="'+Math.max(X(r.hi)-X(r.lo),1.5)+'" height="16" rx="3" fill="#12586F" opacity="0.85"><title>'+esc(r.label)+': '+fmt$(r.lo)+' to '+fmt$(r.hi)+'</title></rect>';
-    s+='<text x="'+(X(r.hi)+5)+'" y="'+(y+12)+'" font-size="9.5" class="mono" fill="#15202B">'+fmt$(r.swing)+'</text>';
+    s+='<text x="0" y="'+(y+12)+'" font-size="10.5" style="fill:var(--chart-ink2)">'+esc(r.label)+'</text>';
+    s+='<rect x="'+X(r.lo)+'" y="'+y+'" width="'+Math.max(X(r.hi)-X(r.lo),1.5)+'" height="16" rx="3" style="fill:var(--chart-brand2)" opacity="0.85"><title>'+esc(r.label)+': '+fmt$(r.lo)+' to '+fmt$(r.hi)+'</title></rect>';
+    s+='<text x="'+(X(r.hi)+5)+'" y="'+(y+12)+'" font-size="9.5" class="mono" style="fill:var(--chart-ink)">'+fmt$(r.swing)+'</text>';
   });
   const xc=X(u.central);
-  s+='<line x1="'+xc+'" y1="8" x2="'+xc+'" y2="'+(H-26)+'" stroke="#B23A32" stroke-width="1.5" stroke-dasharray="4 4"/>';
-  s+='<text x="'+xc+'" y="'+(H-14)+'" text-anchor="middle" font-size="10" fill="#B23A32">central '+fmt$(u.central)+'</text>';
-  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="10" fill="#7A8893">Expected annual cost when each input moves across its plausible range</text>';
+  s+='<line x1="'+xc+'" y1="8" x2="'+xc+'" y2="'+(H-26)+'" style="stroke:var(--chart-bad)" stroke-width="1.5" stroke-dasharray="4 4"/>';
+  s+='<text x="'+xc+'" y="'+(H-14)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-bad)">central '+fmt$(u.central)+'</text>';
+  s+='<text x="'+((padL+W-padR)/2)+'" y="'+(H-2)+'" text-anchor="middle" font-size="10" style="fill:var(--chart-muted)">Expected annual cost when each input moves across its plausible range</text>';
   s+="</svg>";return s;
 }
 
