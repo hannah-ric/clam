@@ -74,15 +74,15 @@ function execSetHazard(v){
    Over it today: act now. Never over by 2080: monitor. The deadline is
    therefore a restatement of the user's stated appetite, not a new model. */
 function execUrgency(s){
-  if(!s||!tolerance||!isFinite(tolerance.siteAalBps))return {when:"monitor",horizon:null,label:"Monitor",pathway:currentPathway()};
+  if(!s||!tolerance||!isFinite(tolerance.siteAalBps))return {when:"monitor",horizon:null,label:"Within limit",pathway:currentPathway()};
   const p=currentPathway();
   const steps=[["now","present"]].concat(HORIZONS.map(h=>[String(h),p+"_"+h]));
   for(const [tag,sc] of steps){
     const bps=s.asset_value_usd?finSite(s,sc).totalAal/s.asset_value_usd*1e4:0;
     if(bps>tolerance.siteAalBps)
-      return {when:tag,horizon:tag==="now"?null:+tag,label:tag==="now"?"Act now":"Act by "+tag,pathway:p};
+      return {when:tag,horizon:tag==="now"?null:+tag,label:tag==="now"?"Above limit today":"Crosses limit by "+tag,pathway:p};
   }
-  return {when:"monitor",horizon:null,label:"Monitor",pathway:p};
+  return {when:"monitor",horizon:null,label:"Within limit",pathway:p};
 }
 
 /* one row per site, biggest all-in annual cost first: the risk, the best
@@ -237,14 +237,14 @@ function renderExecHome(){
   let h='<div class="exechead">'+
     '<div class="execkicker">Expected annual climate cost'+infoBtn("execHome")+' <span style="flex:1"></span>'+basis+'</div>'+
     '<div class="exechero">'+fmt$(f.totalAal)+'<span class="unit">/yr</span></div>'+
-    '<div class="execsub">'+f.aalPctValue.toFixed(2)+'% of '+fmt$(f.value)+' insured value · '+sites.length+' site'+(sites.length>1?"s":"")+' · '+esc(curLabel)+'</div>'+
+    '<div class="execsub">'+f.aalPctValue.toFixed(2)+'% of '+fmt$(f.value)+' insured value · '+sites.length+' site'+(sites.length>1?"s":"")+' · '+esc(curLabel)+
+    ' · <b>'+esc(EXEC_PERIL_SHORT[domK]||domK)+'</b> drives '+domShare.toFixed(0)+'% of annual cost</div>'+
     deltaChip+
     '</div>';
   h+='<div class="scrollbody">';
   h+='<div class="exectiles">'+
-    '<div class="exectile" title="What a 1-in-100 year would cost the whole portfolio ('+esc(tailBasis)+')"><div class="l">1-in-100 year</div><div class="v">'+fmt$(varRef)+'</div><div class="f">'+(f.value?(varRef/f.value*100).toFixed(0):0)+'% of value · '+esc(tailBasis)+'</div></div>'+
+    '<div class="exectile" title="What a rare extreme year (~1% annual chance) would cost the whole portfolio ('+esc(tailBasis)+')"><div class="l">Rare extreme year</div><div class="v">'+fmt$(varRef)+'</div><div class="f">'+(f.value?(varRef/f.value*100).toFixed(0):0)+'% of value · '+esc(tailBasis)+'</div></div>'+
     tolTile+
-    '<div class="exectile" title="'+esc(HAZARD_LABEL[domK])+' drives '+domShare.toFixed(0)+'% of the expected annual cost"><div class="l">Largest driver</div><div class="v">'+esc(EXEC_PERIL_SHORT[domK]||domK)+'</div><div class="f">'+domShare.toFixed(0)+'% of annual cost</div></div>'+
     '</div>';
   /* THE PLAN: which sites (biggest all-in risk first), what to do with the
      engine's own dollars, and by when (the tolerance-crossing horizon) */
@@ -260,7 +260,7 @@ function renderExecHome(){
       planLine='<span class="prioplan"><span class="plan-action">Do: <b>'+esc(r.measure)+'</b></span>'+
         '<span class="plan-metrics">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
     }else if(r.lane==="transfer"){
-      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
+      planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', '+r.bcr.toFixed(1)+'× pays back)':'')+
         ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
     }else{
       planLine='<span class="prioplan">No priced measure in scope; the adaptation tab has the full library</span>';
@@ -275,7 +275,7 @@ function renderExecHome(){
       '<button type="button" class="priobtn" data-exfocus="'+(+r.id)+'" aria-label="Open the scorecard for '+esc(r.name)+'">'+
       '<span class="priotop"><span class="nm">'+esc(r.name)+'</span><span class="cost">'+fmt$(r.cost)+'/yr</span></span>'+
       '<span class="priometa">'+
-        '<span title="Dominant peril at this site"><span class="perildot" style="background:'+(HAZARD_BY[r.dom]?HAZARD_BY[r.dom].color:"#7A8893")+'"></span>'+esc(HAZARD_LABEL[r.dom]||r.dom)+'</span>'+
+        '<span title="Main driver at this site"><span class="perildot" style="background:'+(HAZARD_BY[r.dom]?HAZARD_BY[r.dom].color:"#7A8893")+'"></span>'+esc(HAZARD_LABEL[r.dom]||r.dom)+'</span>'+
         '<span class="pill mini '+esc(r.band)+'">'+esc(r.band)+'</span>'+
         '<span class="mono" title="Annual climate cost as a share of this site\'s value">'+r.pctValue.toFixed(2)+'% of value</span>'+
         '<span class="mono" style="font-size:10px;color:'+(full?"var(--ink-2)":"var(--warn-ink)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site; the scorecard trust strip has the detail">'+r.trustModeled+'/'+r.trustTotal+' modeled</span>'+
@@ -289,7 +289,7 @@ function renderExecHome(){
   if(prog&&prog.n>0){
     h+='<div class="execprog">Funding all <b>'+prog.n+'</b> action'+(prog.n>1?"s":"")+' above breakeven'+
       ((adapt&&adapt.budget>0)?' within the '+fmt$(adapt.budget)+' budget':'')+
-      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> (program BCR '+prog.bcr.toFixed(1)+'x, no double counting). '+
+      ': <b>'+fmt$(prog.cost)+'</b> one-time capital averts <b>'+fmt$(prog.averted)+'/yr</b> ('+prog.bcr.toFixed(1)+'× pays back, no double counting). '+
       '<button type="button" class="lightbtn" id="execProgBtn" style="margin-top:6px">Open the capital plan</button></div>';
   }
   if(sites.length>planRows.length)h+='<div class="execnote">The '+planRows.length+' largest of '+sites.length+' sites by all-in annual cost (damage, interruption, heat); the analyst decision view ranks them all.</div>';
@@ -331,7 +331,7 @@ function renderExecHome(){
   if(layer){
     const mode=ui.views.mapColor;
     let l='<span class="timelabel">Map colours</span>'+
-      [["combined","Combined risk"],["dominant","Dominant peril"],["peril","One peril"]].map(([k,lab])=>
+      [["combined","All hazards combined"],["dominant","Main driver"],["peril","One peril"]].map(([k,lab])=>
         '<button type="button" class="layerchip" data-exmap="'+k+'" aria-pressed="'+(mode===k?"true":"false")+'">'+lab+'</button>').join("");
     if(mode==="peril"){
       l+='<select class="execsel" id="execHazSel" aria-label="Which peril colours the markers">'+

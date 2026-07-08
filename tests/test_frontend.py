@@ -237,7 +237,7 @@ renderResultsPack();
 assert(panel.innerHTML.indexOf("Layer benchmark")>=0&&panel.innerHTML.indexOf("technical premium")>=0,
   "pack panel carries the technical-premium layer benchmark");
 assert(panel.innerHTML.indexOf("Top capital projects")>=0&&panel.innerHTML.indexOf("Reef Bay")>=0
-  &&panel.innerHTML.indexOf("BCR 5.804")>=0,"pack panel ranks the capital plan");
+  &&panel.innerHTML.indexOf("5.804× pays back")>=0,"pack panel ranks the capital plan");
 assert(panel.innerHTML.indexOf("ssp585_2080 appraisal")>=0,
   "capital plan states its appraisal scenario");
 
@@ -945,14 +945,14 @@ const _scanX=["present"].concat(HORIZONS.map(h=>_pwX+"_"+h));
 assert(Math.max.apply(null,_scanX.slice(1).map(sc=>_bpsAt(sites[0],sc)))>_bpsAt(sites[0],"present"),
   "fixture sanity: warming raises the coastal site's cost, so a future crossing exists");
 tolerance={siteAalBps:_bpsAt(sites[0],"present")-1e-9,portAalPct:1e9,varPctValue:1e9};
-assert(execUrgency(sites[0]).when==="now"&&execUrgency(sites[0]).label==="Act now",
-  "urgency: over your tolerance today reads act now");
+assert(execUrgency(sites[0]).when==="now"&&execUrgency(sites[0]).label==="Above limit today",
+  "urgency: over your tolerance today reads above limit today");
 tolerance.siteAalBps=Math.max.apply(null,_scanX.map(sc=>_bpsAt(sites[0],sc)))+1;
-assert(execUrgency(sites[0]).when==="monitor","urgency: never over the line by 2080 reads monitor");
+assert(execUrgency(sites[0]).when==="monitor","urgency: never over the line by 2080 reads within limit");
 tolerance.siteAalBps=_bpsAt(sites[0],"present")+1e-9;
 const _uX=execUrgency(sites[0]);
 const _firstX=_scanX.slice(1).find(sc=>_bpsAt(sites[0],sc)>tolerance.siteAalBps);
-assert(_uX.when!=="now"&&_uX.when!=="monitor"&&_uX.label==="Act by "+_firstX.split("_")[1],
+assert(_uX.when!=="now"&&_uX.when!=="monitor"&&_uX.label==="Crosses limit by "+_firstX.split("_")[1],
   "urgency: a future breach is dated to the FIRST horizon over the line");
 /* WHAT AND THE DOLLARS: the plan carries the engine's own cost/averted figures */
 tolerance={siteAalBps:75,portAalPct:1.0,varPctValue:10};
@@ -983,8 +983,8 @@ resultsPack=null;
 /* the analyst decision view states the same deadline, and the surfaces explain themselves */
 renderDecision();
 const _dhX=document.getElementById("decisionHost").innerHTML;
-assert(_dhX.indexOf("Act by")>=0&&_dhX.indexOf("whenchip")>=0,
-  "the analyst decision view carries the shared act-by column");
+assert(_dhX.indexOf("Status")>=0&&_dhX.indexOf("whenchip")>=0,
+  "the analyst decision view carries the shared status column");
 assert(INFO.execPlan&&INFO.execPlan.b.indexOf("tolerance")>=0
   &&INFO.execPlan.b.indexOf("planning-grade")>=0&&INFO.execHome,
   "the executive plan carries an INFO popover stating its deadline and cost bases");
