@@ -99,6 +99,11 @@
   .brand .name{font-family:var(--font-display);font-size:19px;font-weight:560;color:#fff}
   .brand .name b{color:var(--accent);font-weight:560}
   .topbar .spacer{flex:1}
+  .port-label{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    font-size:12px;font-weight:500;border:1px solid var(--topbar-field-line);background:var(--topbar-field);
+    color:var(--topbar-ink);white-space:nowrap;max-width:min(240px,36vw);overflow:hidden;text-overflow:ellipsis}
+  .port-label.sample{border-color:var(--accent);color:var(--accent)}
+  .topbar-haz{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .searchwrap{position:relative;display:flex;align-items:center}
   .searchwrap input{
@@ -312,6 +317,30 @@
   svg text{font-family:var(--font-ui)}
   /* ---- Phase C2: scenario scrubber ---- */
   .scrubbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px}
+  .scrub-hint{flex:1 1 100%;margin:0;font-size:12px;color:var(--muted)}
+  .scrubpathsel{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);
+    color:var(--ink);font:inherit;font-size:12.5px}
+  /* decision view: sticky first column + scroll affordance */
+  .decision-scroll{overflow-x:auto;position:relative;-webkit-overflow-scrolling:touch}
+  .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(21,32,43,.12)}
+  html[data-theme="dark"] .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(0,0,0,.35)}
+  .decision-scroll .tbl th:first-child,.decision-scroll .tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
+  .decision-scroll .tbl tr:hover td:first-child{background:var(--surface-2)}
+  .decision-scroll .tbl tr.sel td:first-child{background:var(--sel)}
+  .decision-cards{display:none;flex-direction:column;gap:10px}
+  .dcard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);cursor:pointer}
+  .dcard:hover{border-color:var(--focus);background:var(--sel)}
+  .dcard .dtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+  .dcard .dnm{font-weight:600;color:var(--heading)}
+  .dcard .dcost{font-family:var(--font-mono);font-size:13px;color:var(--heading)}
+  .dcard .dmeta{display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:var(--ink-2);margin-bottom:6px}
+  .dcard .drow{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--ink-2);padding:2px 0}
+  .dcard .drow b{color:var(--ink);font-weight:600}
+  @media(max-width:760px){
+    .decision-scroll{display:none}
+    .decision-cards{display:flex}
+    .decision-compact-toggle{display:none}
+  }
   .scrublabel{font-size:12px;color:var(--muted);white-space:nowrap}
   .scrubsteps{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .scrubstep{border:0;background:var(--surface);color:var(--ink);padding:7px 16px;font:inherit;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line)}
@@ -410,7 +439,7 @@
   .execbasis.authoritative .dot{background:var(--r-low)}
   .exectiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
   .exectile{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0}
-  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .exectile .l{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;white-space:normal;line-height:1.25}
   .exectile .v{font-family:var(--font-display);font-size:17.5px;font-weight:560;color:var(--heading);line-height:1.1}
   .exectile .f{font-size:10.5px;color:var(--ink-2);margin-top:1px}
   .exectile.alert{border-color:var(--alert-line);background:var(--alert-bg)}
@@ -435,6 +464,8 @@
   .prioact b{color:var(--ok-ink);font-weight:600}
   .prioplan{display:block;margin-top:6px;font-size:11.5px;color:var(--ink);line-height:1.45;
     border-top:1px solid var(--line-2);padding-top:6px}
+  .prioplan .plan-action{display:block;margin-bottom:3px}
+  .prioplan .plan-metrics{display:block;font-size:11px;color:var(--ink-2);line-height:1.45}
   .prioplan b{color:var(--heading);font-weight:600}
   .prionums{color:var(--ink-2)}
   .prionums b{color:var(--ok-ink);font-weight:600}
@@ -447,8 +478,9 @@
   .execprog{margin-top:9px;font-size:12px;line-height:1.55;color:var(--ink-2);background:var(--ok-bg);
     border:1px solid var(--ok-line);border-left:3px solid var(--good);border-radius:9px;padding:10px 12px}
   .execprog b{color:var(--ok-ink)}
-  .priolocate{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;
-    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:13px;line-height:1;padding:0}
+  .priolocate{position:absolute;right:8px;bottom:8px;min-width:26px;height:26px;border-radius:999px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:10px;font-weight:600;line-height:1;padding:0 7px}
+  .priolocate .loc-ic{font-size:13px;margin-right:2px}
   .priolocate:hover{border-color:var(--focus);color:var(--heading)}
   .execactions{display:flex;gap:8px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--line-2);background:var(--surface-2)}
 
@@ -529,11 +561,21 @@
     <input id="geo" type="text" placeholder="Search a place to add a site..." autocomplete="off" aria-label="Search for a place to add as a site" />
     <div class="search-results" id="geoResults" role="listbox"></div>
   </div>
+  <span class="port-label" id="portLabel" style="display:none" title="Which portfolio is loaded"></span>
   <div class="spacer"></div>
   <div class="toolbar">
-    <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
-    <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
-    <button class="btn ghost analyst-only" id="sampleBtn">Load sample</button>
+    <span class="topbar-haz" aria-hidden="true">
+      <span class="haz-badge" id="hazBadge"><span class="dot"></span><span id="hazText">Interim model</span></span>
+      <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
+    </span>
+    <div class="exportwrap">
+      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Load, replace, or template your site list">Portfolio &#9662;</button>
+      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio actions" style="width:288px">
+        <button class="mi" role="menuitem" id="sampleBtn"><b>Load sample portfolio</b><small>12 illustrative resorts to explore the tool</small></button>
+        <button class="mi" role="menuitem" id="portfolioMethodBtn"><b>Upload your site list</b><small>Opens Method &amp; data to drop in a CSV</small></button>
+        <button class="mi" role="menuitem" id="portfolioTmplBtn"><b>Download site template</b><small>Required columns and optional profile fields</small></button>
+      </div>
+    </div>
     <button class="btn ghost" id="guideBtn" title="What this tool does and how to read it">Guide</button>
     <div class="exportwrap">
       <button class="btn ghost" id="displayBtn" aria-haspopup="true" aria-expanded="false" aria-controls="displayMenu" title="Theme, density, detail level, and which Summary panels show">Display</button>
@@ -586,8 +628,8 @@
   <div class="execui" id="execTimebar" role="group" aria-label="Climate timeline"></div>
   <div class="execui" id="execEmpty" style="display:none">
     <div class="execempty-card">
-      <h3>Your portfolio's climate priorities, in one minute</h3>
-      <p>Load the sample portfolio to explore, search a place in the top bar to add a site, or open the analyst workspace to drop in your own site list. Everything runs in your browser; nothing you load ever leaves the machine.</p>
+      <h3>Start with a portfolio</h3>
+      <p>Use <b>Portfolio</b> in the top bar to load the sample or upload your own site list. You can also search a place above to add a site one at a time.</p>
       <div class="row">
         <button class="lightbtn primary" id="execSampleBtn">Load sample portfolio</button>
         <button class="lightbtn" id="execAnalystBtn">Open analyst workspace</button>
@@ -607,7 +649,7 @@
       <option value="prain">TC rainfall</option>
     </select>
   </div>
-  <div class="seg"><label class="mini-l" for="pathSel">Pathway</label>
+  <div class="seg viewbar-scrub-only" id="pathSeg" hidden><label class="mini-l" for="pathSel">Pathway</label>
     <select class="scen" id="pathSel" title="Emissions pathway: how much the world warms" aria-label="Emissions pathway">
       <option value="present">Present day</option>
       <option value="ssp126">Lower emissions (SSP1-2.6)</option>
@@ -615,7 +657,7 @@
       <option value="ssp585">Higher emissions (SSP5-8.5)</option>
     </select>
   </div>
-  <div class="seg" id="horSeg"><label class="mini-l" for="horSel">Horizon</label>
+  <div class="seg viewbar-scrub-only" id="horSeg" hidden><label class="mini-l" for="horSel">Horizon</label>
     <select class="scen" id="horSel" title="Time horizon" aria-label="Time horizon">
       <option value="2030">2030</option>
       <option value="2050">2050</option>
@@ -660,15 +702,24 @@
       <p class="sub" id="sumSub"></p>
       <div class="note" id="dataBanner" style="margin-bottom:14px"></div>
       <div class="panel scrubbar">
-        <span class="scrublabel">Timeline <span id="scrubPath" class="mono"></span></span>
+        <span class="scrublabel">Timeline</span>
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
+        <select class="scrubpathsel" id="scrubPathSel" aria-label="Emissions pathway for future steps" title="Which emissions future the 2030-2080 steps assume">
+          <option value="ssp126">Low emissions (SSP1-2.6)</option>
+          <option value="ssp245">Middle path (SSP2-4.5)</option>
+          <option value="ssp585">High emissions (SSP5-8.5)</option>
+        </select>
         <button class="lightbtn" id="scrubPlay">Play</button>
         <button type="button" class="info" data-info="scrub" aria-label="What the timeline does" aria-expanded="false">i</button>
+        <p class="scrub-hint">Timeline controls the whole app: every tab recomputes at the step you pick.</p>
       </div>
       <div class="panel" id="decisionPanel">
-        <h3 style="margin:0 0 2px">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
-        <div class="hint">One row per site, ranked by expected annual damage: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
-        <div id="decisionHost" style="overflow-x:auto"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px">
+          <h3 style="margin:0">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
+          <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Hide flood depth and downtime columns">Fewer columns</button>
+        </div>
+        <div class="hint">One row per site, ranked by expected annual cost: the driver, what a 1-in-100 year does in physical units (dollars, flood depth, downtime), and the best value action. Click a column to re-rank, a row to open the site's full scorecard and its why-these-numbers trace.</div>
+        <div id="decisionHost"></div>
       </div>
       <div class="cards" id="sumKpis"></div>
       <div class="panel" id="sumReadoutPanel" style="border-left:3px solid var(--primary)">
@@ -804,8 +855,8 @@
             <th data-sort="name">Site</th>
             <th data-sort="brand">Brand</th>
             <th class="num" data-sort="asset_value_usd">Value<button type="button" class="info" data-info="value" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="ead">Annual damage $/yr<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
-            <th class="num" data-sort="eadPct">Annual damage %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="ead">Expected annual cost ($/yr)<button type="button" class="info" data-info="ead" aria-label="How this is calculated" aria-expanded="false">i</button></th>
+            <th class="num" data-sort="eadPct">Annual cost %<button type="button" class="info" data-info="eadPct" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th class="num" data-sort="rp100">1-in-100 loss<button type="button" class="info" data-info="rp100" aria-label="How this is calculated" aria-expanded="false">i</button></th>
             <th title="Ratings: W wind, F coastal flood, R riverine flood, H heat, B wildfire, P rainfall">Ratings<button type="button" class="info" data-info="ratings" aria-label="How this is calculated" aria-expanded="false">i</button></th>
           </tr></thead>
@@ -1163,10 +1214,10 @@
     <p style="margin:0 0 10px;font-size:13.5px;line-height:1.55">It puts a dollar figure on the climate risk facing the resort portfolio: how much wind, flood, extreme heat, wildfire and storm rainfall are expected to cost each site every year, today and as the climate warms toward 2080. Then it helps you decide what to do about it: harden the buildings, insure, or accept the risk.</p>
     <p style="margin:0 0 6px;font-size:13.5px"><b>To get going:</b></p>
     <ul style="margin:0 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6">
-      <li><b>Load the sample portfolio</b> to explore with illustrative resorts, or</li>
-      <li><b>Search a place</b> in the top bar to add a site, or drop in your own list on the Method tab.</li>
+      <li><b>Load the sample portfolio</b> from Portfolio in the top bar to explore with illustrative resorts, or</li>
+      <li><b>Search a place</b> in the top bar to add a site, or upload your own list via Portfolio.</li>
     </ul>
-    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language, and the <b>Method &amp; data</b> tab carries a full "How to read this app" glossary. Nothing you load ever leaves your browser.</p>
+    <p class="hint" style="margin:0 0 14px">Every figure has a small <b>i</b> button that explains it in plain language. Nothing you load ever leaves your browser.</p>
     <div class="row">
       <button class="lightbtn" id="obGlossary">Open the glossary</button>
       <button class="lightbtn primary" id="obStart">Load the sample and explore</button>
@@ -2596,7 +2647,8 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},onboarded:false,simpleView:false,
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",scrubPathway:"ssp245"},onboarded:false,simpleView:false,
+  portfolioSource:null,
   /* v2.3.0 executive home: the full-bleed map with floating priority panels
      is the default landing view; Analyst restores the classic tab workspace.
      A pure display flag: it changes no computed figure. */
@@ -2606,7 +2658,7 @@ let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},
      compact), and per-panel visibility on the Summary tab (panels[key]=false
      hides; anything else shows). simpleView above remains the detail-level
      flag (true = essentials). */
-  theme:"auto",density:"comfortable",panels:{}};
+  theme:"auto",density:"comfortable",panels:{},decisionCompact:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -2627,6 +2679,27 @@ function csvCell(s){ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.repla
 function fmt$(x){ if(!isFinite(x))x=0; if(Math.abs(x)>=1e6)return "$"+(x/1e6).toFixed(2)+"M"; if(Math.abs(x)>=1e3)return "$"+(x/1e3).toFixed(0)+"k"; return "$"+Math.round(x); }
 function fmtFull(x){ return "$"+Math.round(x).toLocaleString(); }
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
+/* Plain-language scenario label for executive surfaces and tables. */
+function scenLabelPlain(sc){
+  if(sc==="present")return "Present day";
+  const parts=String(sc).split("_"),pw=parts[0],h=parts[1]||"";
+  const path=EXEC_PATHWAY_NAME[pw]||PATHWAY_LABEL[pw]||pw;
+  const cap=path.charAt(0).toUpperCase()+path.slice(1);
+  return cap+" emissions · "+h+(PATHWAY_LABEL[pw]?" ("+PATHWAY_LABEL[pw]+")":"");
+}
+function portfolioLabelText(){
+  if(!sites.length)return "";
+  const src=(ui&&ui.portfolioSource)==="sample"?"Sample portfolio":"My portfolio";
+  return src+" · "+sites.length+" site"+(sites.length>1?"s":"");
+}
+function renderPortfolioLabel(){
+  const el=document.getElementById("portLabel"); if(!el)return;
+  const t=portfolioLabelText();
+  el.textContent=t;
+  el.style.display=t?"inline-flex":"none";
+  if(el.classList)el.classList.toggle("sample",(ui&&ui.portfolioSource)==="sample");
+  el.title=t||"Which portfolio is loaded";
+}
 
 /* ============================================================
    Explain-it info layer
@@ -2638,8 +2711,7 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;t.cla
 const INFO={
   controls:{t:"Peril, pathway and horizon",b:
     "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, extreme heat, wildfire, or TC rainfall. The Overview risk-driver panel always shows all perils together.</p>"+
-    "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
-    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>"+
+    "<p><b>Timeline</b> on the Summary tab steps the whole app through Present, 2030, 2050, and 2080. The emissions pathway beside it sets which future the 2030-2080 steps assume: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
     "<p><b>Brand</b> filters which sites appear on the map. <b>Map colour</b> is a display lens: colour the markers by the selected peril's band, by combined all-peril risk, or by each site's dominant peril. It changes the map only, never a figure.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
   scrub:{t:"The scenario timeline",b:
@@ -3179,16 +3251,26 @@ function render(){
   renderResultsPack();
   renderExecHome();
   applyPanelPrefs();
+  renderPortfolioLabel();
 }
 /* Task 6: the ranked decision view (the Summary tab's landing artifact).
    Sortable by any column; a row click opens the scorecard, which carries the
    why-these-numbers trace. Physical units lead; the qualitative bands stay
    on the ratings surfaces. */
 let decisionSort={key:"ead",dir:-1};
+function syncDecisionScroll(){
+  const el=document.getElementById("decisionScroll");
+  if(!el||!el.classList||el.scrollWidth==null)return;
+  const scrollable=el.scrollWidth>el.clientWidth+2;
+  el.classList.toggle("is-scrollable",scrollable);
+}
 function renderDecision(){
   const host=document.getElementById("decisionHost"); if(!host)return;
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
+  const compact=!!(ui&&ui.decisionCompact);
+  const cbtn=document.getElementById("decisionCompactBtn");
+  if(cbtn){cbtn.textContent=compact?"All columns":"Fewer columns";if(cbtn.setAttribute)cbtn.setAttribute("aria-pressed",compact?"true":"false");}
   const rows=decisionRows(sites,scenario,tolAf());
   /* act-by (v2.3.0): the tolerance-crossing horizon, shared with the
      executive plan so the two surfaces state the same deadline */
@@ -3200,27 +3282,43 @@ function renderDecision(){
       ?d*String(va||"").localeCompare(String(vb||""))
       :d*((va||0)-(vb||0));});
   const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
-  const th=(label,key,num)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer" title="click to rank by '+label+'">'+label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
-  let h='<table class="tbl"><thead><tr>'+
+  const th=(label,key,num,title)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer"'+(title?' title="'+esc(title)+'"':'')+'>'
+    +label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
+  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead><tr>'+
     th("Site","name")+th("Dominant peril","dom")+
-    th("1-in-100 damage","dmg100",1)+th("EAD $/yr","ead",1)+
-    th("Flood depth @100 (m)","depth100",1)+th("Downtime @100 (days)","downtime100",1)+
-    th("Top measure","measure")+th("BCR","bcr",1)+
-    th("Act by","actByOrd",1)+
-    th("Basis","trustModeled",1)+'</tr></thead><tbody>';
+    th("1-in-100 damage","dmg100",1,"Loss at a 1-in-100 year return period")+
+    th("Expected annual cost ($/yr)","ead",1,"Average yearly climate cost at this scenario")+
+    (compact?"":th("Flood depth @100 (m)","depth100",1,"Flood depth at the 1-in-100 year event"))+
+    (compact?"":th("Downtime @100 (days)","downtime100",1,"Business interruption days at the 1-in-100 year event"))+
+    th("Top measure","measure")+th("Benefit-cost ratio","bcr",1,"Averted loss divided by upfront cost; above 1.0 pays back")+
+    th("Act by","actByOrd",1,"When this site crosses your stated risk tolerance")+
+    th("Data basis","trustModeled",1,"How many perils are modeled vs interim at this site")+'</tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr class="rowclick" data-focus="'+r.id+'"><td>'+esc(r.name)+'</td>'+
       '<td>'+esc(perilName(r.dom))+'</td>'+
       '<td class="num mono">'+fmt$(r.dmg100)+'</td>'+
       '<td class="num mono">'+fmt$(r.ead)+'</td>'+
-      '<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
-      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'+
+      (compact?"":('<td class="num mono">'+(r.depth100>0?r.depth100.toFixed(2):"\u2014")+'</td>'+
+      '<td class="num mono">'+(r.downtime100>0?Math.round(r.downtime100):"\u2014")+'</td>'))+
       '<td>'+(r.measure?esc(r.measure):'<span class="hint">none in scope</span>')+'</td>'+
       '<td class="num mono" style="color:'+(r.bcr>=1?"var(--good)":"var(--bad)")+'">'+(r.measure?r.bcr.toFixed(2)+"x":"\u2014")+'</td>'+
       '<td class="num"><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></td>'+
       '<td class="num"><span class="pill mini" data-trust="'+(r.trustModeled===r.trustTotal?"modeled":"degraded")+'" style="background:'+(r.trustModeled===r.trustTotal?"var(--r-low)":"var(--r-min)")+'" title="'+r.trustModeled+' of '+r.trustTotal+' perils modeled at this site (see the trust strip on the scorecard)">'+r.trustModeled+'/'+r.trustTotal+'</span></td></tr>';
   });
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
+  h+='<div class="decision-cards">';
+  rows.forEach(r=>{
+    h+='<div class="dcard rowclick" data-focus="'+r.id+'">'+
+      '<div class="dtop"><span class="dnm">'+esc(r.name)+'</span><span class="dcost">'+fmt$(r.ead)+'/yr</span></div>'+
+      '<div class="dmeta"><span>'+esc(perilName(r.dom))+'</span>'+
+      '<span class="pill mini '+esc(r.band||"")+'">'+(r.band||"")+'</span>'+
+      '<span class="mono">'+r.trustModeled+'/'+r.trustTotal+' modeled</span></div>'+
+      '<div class="drow"><span>1-in-100 damage</span><b class="mono">'+fmt$(r.dmg100)+'</b></div>'+
+      (r.measure?('<div class="drow"><span>Top measure</span><b>'+esc(r.measure)+' · BCR '+r.bcr.toFixed(1)+'x</b></div>'):'')+
+      '<div class="drow"><span>Act by</span><span class="whenchip '+(r.actByOrd===0?"now":(r.actByOrd===9999?"monitor":"soon"))+'">'+esc(r.actBy)+'</span></div>'+
+      '</div>';
+  });
+  h+='</div>';
   host.innerHTML=h;
   host.querySelectorAll("th[data-dsort]").forEach(el=>el.onclick=()=>{
     const key=el.dataset.dsort;
@@ -3228,7 +3326,9 @@ function renderDecision(){
     else decisionSort={key,dir:(key==="name"||key==="dom"||key==="measure")?1:-1};
     renderDecision();
   });
-  host.querySelectorAll("tr[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  host.querySelectorAll("[data-focus]").forEach(tr=>tr.onclick=()=>openScorecard(+tr.dataset.focus));
+  if(typeof requestAnimationFrame==="function")requestAnimationFrame(syncDecisionScroll);
+  else syncDecisionScroll();
 }
 function renderSummary(){
   const host=document.getElementById("sumKpis"); if(!host)return;
@@ -3239,7 +3339,7 @@ function renderSummary(){
   const futureSc=(scenario!=="present")?scenario:(pathway+"_2050");
   const pf=finPortfolio(sites,"present"), ff=finPortfolio(sites,futureSc);
   const premium=ff.totalAal-pf.totalAal, premiumPct=pf.totalAal?premium/pf.totalAal*100:0;
-  const futLabel=SCEN_LABEL[futureSc]||futureSc, curLabel=SCEN_LABEL[scenario]||scenario;
+  const futLabel=scenLabelPlain(futureSc), curLabel=scenLabelPlain(scenario);
   document.getElementById("sumSub").innerHTML="Every peril and every cost type in one view, at "+esc(curLabel)+". "+(hazardGrid?"Using the loaded CLIMADA grid.":"Interim screening model.");
   const db=document.getElementById("dataBanner");
   if(db){
@@ -3924,7 +4024,14 @@ function renderScenarios(){
     s+='<tr><td>'+SCEN_LABEL[x.sc]+'</td>'+bands.map(b=>'<td class="num mono">'+(counts[b]||"·")+'</td>').join("")+'</tr>';});
   s+="</tbody></table>";document.getElementById("bandMig").innerHTML=s;
 }
-function currentPathway(){const p=document.getElementById("pathSel");return (p&&p.value&&p.value!=="present")?p.value:"ssp245";}
+function currentPathway(){
+  const sp=document.getElementById("scrubPathSel");
+  if(sp&&sp.value)return sp.value;
+  const ep=document.getElementById("execPathSel");
+  if(ep&&ep.value)return ep.value;
+  const p=document.getElementById("pathSel");
+  return (p&&p.value&&p.value!=="present")?p.value:((ui.views&&ui.views.scrubPathway)||"ssp245");
+}
 function syncFinAssume(){
   const g=id=>document.getElementById(id);
   finAssume.revRatio=+g("revRatio").value/100;
@@ -4397,7 +4504,24 @@ function playScrub(){
 function renderScrub(){
   const host=document.getElementById("scrubSteps"); if(!host)return;
   const idx=scrubIndex(), p=currentPathway();
-  const lab=document.getElementById("scrubPath"); if(lab)lab.textContent="under "+(PATHWAY_LABEL[p]||p);
+  const pathSel=document.getElementById("scrubPathSel");
+  if(pathSel){
+    pathSel.value=p;
+    if(!pathSel._wired){
+      pathSel._wired=true;
+      pathSel.onchange=()=>{
+        if(!ui.views)ui.views={};
+        ui.views.scrubPathway=pathSel.value;
+        if(scenario!=="present"){
+          const h=scenario.split("_")[1]||"2050";
+          scenario=pathSel.value+"_"+h;
+          const ps=document.getElementById("pathSel");
+          if(ps)ps.value=pathSel.value;
+        }
+        persist(); if(scenHook)scenHook(); render();
+      };
+    }
+  }
   host.innerHTML=scrubSteps().map((st,i)=>'<button type="button" class="scrubstep'+(i===idx?" cur":"")+'" data-scrub="'+i+'" aria-pressed="'+(i===idx?"true":"false")+'">'+esc(st.label)+'</button>').join("");
   host.querySelectorAll("button[data-scrub]").forEach(bt=>bt.onclick=()=>{stopScrub();scrubTo(+bt.dataset.scrub);});
 }
@@ -4682,7 +4806,7 @@ function renderExecHome(){
   if(!execModeOn())return;
   const empty=document.getElementById("execEmpty"),layer=document.getElementById("execLayerbar"),time=document.getElementById("execTimebar");
   const has=sites.length>0;
-  if(empty)empty.style.display=has?"none":"flex";
+  if(empty)empty.style.display=(has||!ui.onboarded)?"none":"flex";
   panel.style.display=has?"flex":"none";
   if(layer)layer.style.display=has?"flex":"none";
   if(time)time.style.display=has?"flex":"none";
@@ -4697,7 +4821,7 @@ function renderExecHome(){
   const prog=execProgram();
   const agg=aggregatePortfolio(sites,scenario);
   const pathway=currentPathway();
-  const curLabel=SCEN_LABEL[scenario]||scenario;
+  const curLabel=scenLabelPlain(scenario);
 
   /* headline delta: at Present, the projection to 2050 under the chosen
      pathway; at a future scenario, the change against today */
@@ -4756,8 +4880,8 @@ function renderExecHome(){
     const priced=r.paybackYears!=null;
     let planLine;
     if(priced&&r.lane!=="transfer"){
-      planLine='<span class="prioplan">Do: <b>'+esc(r.measure)+'</b><br>'+
-        '<span class="prionums">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
+      planLine='<span class="prioplan"><span class="plan-action">Do: <b>'+esc(r.measure)+'</b></span>'+
+        '<span class="plan-metrics">Cost <b>'+fmt$(r.measureCost)+'</b> one-time · averts <b>'+fmt$(r.averted)+'/yr</b> ('+Math.min(100,r.mitigatedPct).toFixed(0)+'% of this risk) · payback ~'+(r.paybackYears<1?"&lt;1":r.paybackYears.toFixed(1))+' yr</span></span>';
     }else if(r.lane==="transfer"){
       planLine='<span class="prioplan">No measure clears breakeven here'+(priced?' (best: '+esc(r.measure)+', BCR '+r.bcr.toFixed(1)+'x)':'')+
         ': <b>transfer (insure) or accept</b> · renewal workbench in the analyst view</span>';
@@ -4781,7 +4905,7 @@ function renderExecHome(){
       '</span>'+
       planLine+whenLine+
       '</button>'+
-      '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Zoom the map to '+esc(r.name)+'" aria-label="Zoom the map to '+esc(r.name)+'">◎</button>'+
+      '<button type="button" class="priolocate" data-exfly="'+(+r.id)+'" title="Show '+esc(r.name)+' on the map" aria-label="Show '+esc(r.name)+' on the map"><span class="loc-ic" aria-hidden="true">◎</span>Map</button>'+
       '</li>';
   });
   h+='</ol>';
@@ -4829,7 +4953,7 @@ function renderExecHome(){
   /* the colour bar: what the markers encode */
   if(layer){
     const mode=ui.views.mapColor;
-    let l='<span class="timelabel">Colour</span>'+
+    let l='<span class="timelabel">Map colours</span>'+
       [["combined","Combined risk"],["dominant","Dominant peril"],["peril","One peril"]].map(([k,lab])=>
         '<button type="button" class="layerchip" data-exmap="'+k+'" aria-pressed="'+(mode===k?"true":"false")+'">'+lab+'</button>').join("");
     if(mode==="peril"){
@@ -4851,6 +4975,7 @@ function addSites(arr){
   persist();render();
 }
 function loadSample(){ sites=[]; nextId=1; clearHazCache();
+  ui.portfolioSource="sample";
   addSites(SAMPLE.map(s=>Object.assign({name:s[0],brand:s[1],latitude:s[2],longitude:s[3],asset_value_usd:s[4]},s[5]||{})));
   toast("Sample portfolio loaded (illustrative values)");
 }
@@ -4919,7 +5044,7 @@ function loadSiteCsv(text){
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
-  sites=[];nextId=1;selectedId=null;clearHazCache();addSites(arr);
+  sites=[];nextId=1;selectedId=null;clearHazCache();ui.portfolioSource="upload";addSites(arr);
   toast(arr.length+" site"+(arr.length>1?"s":"")+" loaded"+(skipped?", "+skipped+" row"+(skipped>1?"s":"")+" skipped (invalid coordinates or value)":""));
 }
 /* SVP review: the in-app Add/Edit form's coercion, mirroring loadSiteCsv's
@@ -5127,7 +5252,11 @@ function restore(){
         adapt.m={};Object.keys(mDef).forEach(k=>adapt.m[k]=Object.assign({},mDef[k],(s.adapt.m||{})[k]||{}));
       }
       if(s.tolerance&&typeof s.tolerance==="object")tolerance=Object.assign({},tolerance,s.tolerance);
-      if(s.ui&&typeof s.ui==="object"){ui=Object.assign({},ui,s.ui);ui.views=Object.assign({},ui.views,s.ui.views||{});}
+      if(s.ui&&typeof s.ui==="object"){
+        ui=Object.assign({},ui,s.ui);
+        ui.views=Object.assign({},ui.views,s.ui.views||{});
+        if(!ui.views.scrubPathway)ui.views.scrubPathway="ssp245";
+      }
       if(s.backtest&&Array.isArray(s.backtest.rows)&&s.backtest.rows.length)backtest=s.backtest;
       nextId=s.nextId||(sites.length+1);
     }
@@ -5202,7 +5331,10 @@ function submitForm(){
   if(_editId!=null){
     const s=sites.find(x=>x.id===_editId);
     if(s){FORM_OPTIONAL_FIELDS.forEach(k=>delete s[k]);Object.assign(s,rec);clearHazCache();persist();render();toast("Site updated");}
-  }else{ clearHazCache();addSites([rec]);toast("Site added"); }
+  }else{
+    if(!ui.portfolioSource)ui.portfolioSource="manual";
+    clearHazCache();addSites([rec]);toast("Site added");
+  }
   closeAdd();
 }
 
@@ -5241,6 +5373,11 @@ function applyDensity(){
 }
 function closeDisplayMenu(){
   const m=document.getElementById("displayMenu"),b=document.getElementById("displayBtn");
+  if(m&&m.classList)m.classList.remove("open");
+  if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
+}
+function closePortfolioMenu(){
+  const m=document.getElementById("portfolioMenu"),b=document.getElementById("portfolioBtn");
   if(m&&m.classList)m.classList.remove("open");
   if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
 }
@@ -5409,6 +5546,9 @@ function wire(){
   document.getElementById("briefBtn").onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   document.getElementById("scrubPlay").onclick=playScrub;
+  const dcb=document.getElementById("decisionCompactBtn");
+  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};
+  window.addEventListener("resize",()=>{if(typeof syncDecisionScroll==="function")syncDecisionScroll();});
   // brand filter persists like every other view preference
   brandFilter=(ui.views&&ui.views.brand)||"";
   document.getElementById("brandSel").onchange=e=>{brandFilter=e.target.value;ui.views.brand=brandFilter;persist();render();};
@@ -5444,7 +5584,7 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
   // keep Tab inside whichever modal is open (simple focus trap)
   document.addEventListener("keydown",e=>{
     if(e.key!=="Tab")return;
@@ -5460,7 +5600,7 @@ function wire(){
   applySimpleView();applyTheme();applyDensity();syncDisplayMenu();
   const dBtn=document.getElementById("displayBtn"),dMenu=document.getElementById("displayMenu");
   if(dBtn&&dMenu){
-    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();
+    dBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closePortfolioMenu();
       const open=!dMenu.classList.contains("open");
       dMenu.classList.toggle("open",open);dBtn.setAttribute("aria-expanded",open?"true":"false");};
     dMenu.addEventListener("click",e=>e.stopPropagation());
@@ -5475,10 +5615,22 @@ function wire(){
   document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
   document.getElementById("execSampleBtn").onclick=loadSample;
   document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
+  const pBtn=document.getElementById("portfolioBtn"),pMenu=document.getElementById("portfolioMenu");
+  if(pBtn&&pMenu){
+    pBtn.onclick=e=>{e.stopPropagation();closeExportMenu();closeDisplayMenu();
+      const open=!pMenu.classList.contains("open");
+      pMenu.classList.toggle("open",open);pBtn.setAttribute("aria-expanded",open?"true":"false");};
+    pMenu.addEventListener("click",e=>e.stopPropagation());
+    pMenu.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closePortfolioMenu));
+  }
+  const pMethod=document.getElementById("portfolioMethodBtn");
+  if(pMethod)pMethod.onclick=()=>{setExecMode(false);switchTab("method");};
+  const pTmpl=document.getElementById("portfolioTmplBtn");
+  if(pTmpl)pTmpl.onclick=downloadTemplate;
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
-  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();const open=!emBox.classList.contains("open");
+  emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();closePortfolioMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
-  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();}});
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;

@@ -34,7 +34,8 @@ let scrubTimer=null;       // scenario scrubber playback
    chosen visualization lenses (ui.views: how a chart is grouped or measured) and,
    later, first-run and simple-view flags. Never affects a computed number: these
    keys only change how existing figures are shown. */
-let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},onboarded:false,simpleView:false,
+let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",scrubPathway:"ssp245"},onboarded:false,simpleView:false,
+  portfolioSource:null,
   /* v2.3.0 executive home: the full-bleed map with floating priority panels
      is the default landing view; Analyst restores the classic tab workspace.
      A pure display flag: it changes no computed figure. */
@@ -44,7 +45,7 @@ let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:""},
      compact), and per-panel visibility on the Summary tab (panels[key]=false
      hides; anything else shows). simpleView above remains the detail-level
      flag (true = essentials). */
-  theme:"auto",density:"comfortable",panels:{}};
+  theme:"auto",density:"comfortable",panels:{},decisionCompact:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -65,6 +66,27 @@ function csvCell(s){ s=String(s==null?"":s); return /[",\n]/.test(s)?'"'+s.repla
 function fmt$(x){ if(!isFinite(x))x=0; if(Math.abs(x)>=1e6)return "$"+(x/1e6).toFixed(2)+"M"; if(Math.abs(x)>=1e3)return "$"+(x/1e3).toFixed(0)+"k"; return "$"+Math.round(x); }
 function fmtFull(x){ return "$"+Math.round(x).toLocaleString(); }
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
+/* Plain-language scenario label for executive surfaces and tables. */
+function scenLabelPlain(sc){
+  if(sc==="present")return "Present day";
+  const parts=String(sc).split("_"),pw=parts[0],h=parts[1]||"";
+  const path=EXEC_PATHWAY_NAME[pw]||PATHWAY_LABEL[pw]||pw;
+  const cap=path.charAt(0).toUpperCase()+path.slice(1);
+  return cap+" emissions · "+h+(PATHWAY_LABEL[pw]?" ("+PATHWAY_LABEL[pw]+")":"");
+}
+function portfolioLabelText(){
+  if(!sites.length)return "";
+  const src=(ui&&ui.portfolioSource)==="sample"?"Sample portfolio":"My portfolio";
+  return src+" · "+sites.length+" site"+(sites.length>1?"s":"");
+}
+function renderPortfolioLabel(){
+  const el=document.getElementById("portLabel"); if(!el)return;
+  const t=portfolioLabelText();
+  el.textContent=t;
+  el.style.display=t?"inline-flex":"none";
+  if(el.classList)el.classList.toggle("sample",(ui&&ui.portfolioSource)==="sample");
+  el.title=t||"Which portfolio is loaded";
+}
 
 /* ============================================================
    Explain-it info layer
@@ -76,8 +98,7 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;t.cla
 const INFO={
   controls:{t:"Peril, pathway and horizon",b:
     "<p><b>Peril</b> picks which climate hazard drives the map colour and the site detail: tropical-cyclone wind, coastal flood, riverine flood, extreme heat, wildfire, or TC rainfall. The Overview risk-driver panel always shows all perils together.</p>"+
-    "<p><b>Pathway</b> is an emissions future from the IPCC: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
-    "<p><b>Horizon</b> is the future decade (2030, 2050, 2080). Warming and sea-level rise grow with both the pathway and the horizon.</p>"+
+    "<p><b>Timeline</b> on the Summary tab steps the whole app through Present, 2030, 2050, and 2080. The emissions pathway beside it sets which future the 2030-2080 steps assume: <b>SSP1-2.6</b> is rapid decarbonisation, <b>SSP2-4.5</b> a middle road, <b>SSP5-8.5</b> high emissions.</p>"+
     "<p><b>Brand</b> filters which sites appear on the map. <b>Map colour</b> is a display lens: colour the markers by the selected peril's band, by combined all-peril risk, or by each site's dominant peril. It changes the map only, never a figure.</p>",
     s:"Framework: IPCC AR6 SSP-RCP scenarios."},
   scrub:{t:"The scenario timeline",b:
