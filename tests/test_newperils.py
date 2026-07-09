@@ -78,8 +78,8 @@ def test_burn_probability():
 
 def test_scenario_uplift():
     p = np.array([0.01, 0.9])
-    up = rw.scenario_pburn(p, 3.6)
-    assert abs(up[0] - 0.01 * (1 + 0.14 * 3.6)) < 1e-12
+    up = rw.scenario_pburn(p, rw.WARMING["ssp585_2080"])
+    assert abs(up[0] - 0.01 * (1 + 0.14 * rw.WARMING["ssp585_2080"])) < 1e-12
     assert up[1] <= 1.0
     ok("scenario_pburn: warming uplift applied, capped at 1")
 
@@ -160,7 +160,7 @@ def test_prain_scaling():
     rows = rp.prain_rows(present)
     assert set(rows["scenario"]) == set(rp.WARMING)
     r85 = rows[rows.scenario == "ssp585_2080"].iloc[0]
-    assert abs(r85["v100"] - round(310.0 * rp.cc_scale(3.6), 1)) < 1e-9
+    assert abs(r85["v100"] - round(310.0 * rp.cc_scale(rp.WARMING["ssp585_2080"]), 1)) < 1e-9
     v = rows[[f"v{x}" for x in rh.RETURN_PERIODS]].to_numpy()
     assert (np.diff(v, axis=1) >= 0).all(), "scaling preserves monotonicity"
     ok("prain_rows: Clausius-Clapeyron scaling, monotone RP field")

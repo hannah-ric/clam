@@ -47,7 +47,7 @@ buildGridsFromRows(rows);
 const hSA=heatIndicators(29.45,-98.45,"present");
 assert(hSA.source==="grid"&&hSA.daysOver32===120&&hSA.daysOver35===40&&hSA.cdd===2600,
   "heatIndicators reads the grid (d32=120, d35=40, cdd=2600)");
-assert(heatIndicators(29.45,-98.45,"ssp585_2080").daysOver35===Math.round(40+3.6*15),
+assert(heatIndicators(29.45,-98.45,"ssp585_2080").daysOver35===Math.round(40+(WARMING.ssp585_2080||0)*15),
   "heat grid scenario rows resolve per key");
 assert(heatIndicators(19.64,-155.99,"present").source===undefined,"outside heat coverage -> formula fallback");
 assert(Math.abs(hzVector("rflood",25.05,-80.05,"present")[100]-0.4)<1e-9,"rflood grid served near cell");
@@ -393,7 +393,7 @@ assert(Math.abs(wf0.ead-50000000*(0.6/100)*FIRE_COND_INTERIM)<1e-6,
   "wildfire interim: WUI point probability x the capped INTERIM conditional ratio (flat 0.6 retired)");
 assert(wf0.fireCondSource==="interim","the interim conditional side is labeled");
 const wf85=hzSite(wui,"wfire","ssp585_2080");
-assert(Math.abs(wf85.ead-wf0.ead*(1+FIRE_WARMING_UPLIFT*3.6))<1e-3,
+assert(Math.abs(wf85.ead-wf0.ead*(1+FIRE_WARMING_UPLIFT*(WARMING.ssp585_2080||0)))<1e-3,
   "wildfire interim scales with warming per scenario");
 const hard1={...wui,roof_class_a:true,defensible_space_m:40};
 assert(Math.abs(hzSite(hard1,"wfire","present").ead-wf0.ead*0.6*0.7)<1e-6,
@@ -424,8 +424,17 @@ assert(prg.ead>0,"rainfall grid lights the peril up");
 const d100=Math.max(0,800-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF;
 assert(Math.abs(prg.vec[100]-d100)<1e-12,
   "rainfall converts mm to ponding depth via the documented drainage constants");
-assert(prg.curve.find(c=>c.rp===100).loss===0&&prg.curve.find(c=>c.rp===500).loss>0,
-  "drainage freeboard keeps moderate rain dry; only extreme rain ponds deep enough");
+assert(prg.curve.find(c=>c.rp===100).loss>0&&prg.curve.find(c=>c.rp===500).loss>prg.curve.find(c=>c.rp===100).loss,
+  "v3 ponding transform: an 800 mm 1-in-100 event registers loss; deeper rain costs more");
+assert(siteTrust(plain,"prain","present").note.indexOf("screening")>=0,
+  "rainfall trust chip labels the ponding transform as screening");
+/* Harvey-class ~1000 mm must clear freeboard with material damage fraction */
+const harveyRows=SCEN_KEYS.map(sc=>({lat:29.5,lon:-98.5,scenario:sc,hazard:"prain",
+  v10:300,v25:500,v50:700,v100:1000,v250:1400,v500:1800}));
+buildGridsFromRows(harveyRows.concat(sixRows.filter(r=>r.hazard!=="prain")));
+const harvey=hzSite(plain,"prain","present");
+assert(harvey.curve.find(c=>c.rp===100).loss/plain.asset_value_usd>0.05,
+  "Harvey-class 1000 mm produces >5% damage fraction (v3 recalibration)");
 assert(ACUTE.length===5&&ACUTE.indexOf("prain")>=0&&ACUTE.indexOf("wfire")>=0,
   "both new perils are acute (they carry business interruption)");
 assert(HAZARDS.length===6&&siteRatings(wui,"present").wfire,
@@ -880,6 +889,35 @@ assert(t6b.modeled===1&&t6b.degraded.indexOf("tropical cyclone")<0,
   "map confidence: a peril grid that reaches the site counts as modeled");
 assert(groupTrust(siteGroups([sites[1]])[0],"present").modeled===0,
   "map confidence: the same grid never turns green a site it did not reach");
+
+/* ---------------- Climate-map hazardField contract (Surface 3) ---------------- */
+assert(typeof hazardField==="function"&&typeof fieldDomain==="function"&&typeof fieldFC==="function",
+  "map hazardField helpers live in the engine (test-visible before restore)");
+assert(MAP_PERILS.length===6&&MAP_PERIL_BY.tc&&MAP_PERIL_BY.wfire.interim===null,
+  "MAP_PERILS registers six perils; wildfire has no interim spatial field");
+const _hfTc=hazardField("tc","present",{bbox:[-85,24,-79,28],step:1.0});
+assert(!_hfTc.none&&_hfTc.basis==="interim"&&_hfTc.features.length>0,
+  "hazardField interim wind mesh returns positive features over Florida");
+assert(_hfTc.features.every(f=>f.v>0&&f.lat>=24&&f.lat<=28),
+  "interim mesh stays inside the requested bbox and drops zeros");
+const _hfWf=hazardField("wfire","present");
+assert(_hfWf.none&&String(_hfWf.reason).indexOf("interim")>=0,
+  "wildfire hazardField stays off without a grid (honest none)");
+const _hfGrid=hazardField("tc","present");
+assert(_hfGrid.basis==="grid"&&_hfGrid.cells===SCEN_KEYS.length,
+  "hazardField draws loaded grid cells (never resampled) when a tc grid is present");
+const _dom=fieldDomain([_hfTc,_hfGrid]);
+assert(_dom[0]===0&&_dom[1]>0,"fieldDomain is zero-anchored with a positive high end");
+const _fc=fieldFC(_hfGrid);
+assert(_fc.type==="FeatureCollection"&&_fc.features.length===_hfGrid.features.length
+  &&_fc.features[0].geometry.type==="Point"&&typeof _fc.features[0].properties.v==="number",
+  "fieldFC emits GeoJSON points with a numeric v property");
+assert(ASSUMPTIONS_VERSION==="3"&&PRAIN_DRAIN_MM===75&&PRAIN_POND_COEFF===0.55&&PRAIN_FB===0.15,
+  "assumptions v3: rainfall ponding constants are the recalibrated screening floor");
+assert(WARMING.ssp126_2080===1.0&&WARMING.ssp585_2080===4.0,
+  "assumptions v3: warming margins follow the 15% rule (pathway spread undistorted)");
+assert(Math.abs((WARMING.ssp585_2080-WARMING.ssp126_2080)-(3.5-0.9))<0.2,
+  "assumptions v3: 2080 pathway spread stays near the AR6 central spread");
 
 /* ---------------- Parallel swap: explicit not-modeled markers ---------------- */
 assert(NOT_MODELED.length===3&&NOT_MODELED.map(h=>h.key).join(",")==="hail,pluvial,drought",

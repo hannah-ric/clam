@@ -48,35 +48,55 @@ function yearBracket(y){
   return {i:CMD_YEARS.length-2,f:1};
 }
 
-/* the map's peril layers: label, physical unit, and how the field is
-   read. Grid-backed layers draw the loaded rows; interim layers call
-   the app's own screening models; "none" states why a layer is off. */
-const MAP_PERILS=[
-  {key:"tc",    label:"Wind",       unit:"m/s · 1-in-100 wind speed",
-   interim:(la,lo,sc)=>interimVector(la,lo,sc).vec[100]},
-  {key:"cflood",label:"Surge",      unit:"m · 1-in-100 flood depth",
-   interim:(la,lo,sc)=>coastalFloodVector(la,lo,sc)[100]},
-  {key:"rflood",label:"River flood",unit:"m · 1-in-100 flood depth",
-   interim:(la,lo,sc)=>riverineFloodVector(la,lo,sc)[100]},
-  {key:"heat",  label:"Heat",       unit:"days over 32°C per year",
-   interim:(la,lo,sc)=>heatIndicators(la,lo,sc).daysOver32},
-  {key:"wfire", label:"Wildfire",   unit:"% annual burn probability",
-   interim:null,offReason:"wildfire has no interim spatial field (burn probability is point data); load a wfire grid"},
-  {key:"prain", label:"Rain",       unit:"mm · 1-in-100 event rainfall",
-   interim:null,offReason:"TC rainfall has no interim model by design; load a prain grid"},
-];
-const MAP_PERIL_BY={};MAP_PERILS.forEach(p=>MAP_PERIL_BY[p.key]=p);
+/* MAP_PERILS / hazardField / fieldDomain / fieldFC live in 10_hazard_engine.js
+   so the Node harness can contract-test the map's data path. */
 
-let cmdMapState={peril:"tc",opacity:0.7,enc:"tcor",accum:false,eventId:null,
-  year:null,holdYear:false,playing:false,userMoved:false};
+const LS_CMDMAP="rtv_cmdmap_v1";
+function clLoadMapState(){
+  const base={peril:"tc",opacity:0.7,enc:"tcor",accum:false,eventId:null,
+    year:null,holdYear:false,playing:false,userMoved:false,
+    aggregate:true,compare:false,brand:""};
+  try{
+    const raw=localStorage.getItem(LS_CMDMAP);
+    if(!raw)return base;
+    const s=JSON.parse(raw)||{};
+    if(typeof s.peril==="string")base.peril=s.peril;
+    if(typeof s.opacity==="number"&&s.opacity>=0.1&&s.opacity<=1)base.opacity=s.opacity;
+    if(s.enc==="tcor"||s.enc==="component"||s.enc==="confidence")base.enc=s.enc;
+    if(typeof s.accum==="boolean")base.accum=s.accum;
+    if(typeof s.aggregate==="boolean")base.aggregate=s.aggregate;
+    if(typeof s.compare==="boolean")base.compare=s.compare;
+    if(typeof s.brand==="string")base.brand=s.brand;
+  }catch(e){}
+  return base;
+}
+function clPersistMapState(){
+  try{
+    localStorage.setItem(LS_CMDMAP,JSON.stringify({
+      peril:cmdMapState.peril,opacity:cmdMapState.opacity,enc:cmdMapState.enc,
+      accum:cmdMapState.accum,aggregate:cmdMapState.aggregate,
+      compare:cmdMapState.compare,brand:cmdMapState.brand}));
+  }catch(e){}
+}
+function clPrefersReducedMotion(){
+  try{return !!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches);}
+  catch(e){return false;}
+}
+function clAnnounce(msg){
+  const el=document.getElementById("cmdMapLive");
+  if(el)el.textContent=msg||"";
+}
+
+let cmdMapState=clLoadMapState();
 let _clMap=null,_clReady=false,_clFailed=false;
-let _clHaz=null;        // {key,peril,domain,bases:[..],built:[bool x4]}
-let _clSiteInfo=null;   // {key,maxT}
+let _clHaz=null;        // {key,peril,domain,fields:[..]}
+let _clSiteInfo=null;   // {key,maxT,nMarkers,nRecords}
 let _clFitKey="";
 let _clTcorCache={};    // scenario -> tcorPortfolio rows total map
 let _clTcorCacheKey=null;
 let _clPlayT=null;
 let _clThemeObs=null;
+let _clHoverId=null;
 
 /* resolve a CSS token to its current concrete value (theme-aware) */
 function cssTok(name,fallback){
@@ -105,41 +125,6 @@ function perilRamp(hz){
 }
 function rampCss(stops){
   return "linear-gradient(90deg,"+stops.join(",")+")";
-}
-
-/* ---- hazard field for one peril at one modeled scenario ----
-   Returns {features:[{lon,lat,v}], basis:"grid"|"interim",
-   cells, partialFrom} or {none:true, reason}. */
-function hazardField(hz,sc){
-  const P=MAP_PERIL_BY[hz];
-  if(gridByHazard[hz]&&hazardGrid&&hazardGrid.rows){
-    let rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario===sc);
-    let partialFrom=null;
-    if(!rows.length&&sc!=="present"){
-      rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario==="present");
-      partialFrom="present";
-    }
-    if(rows.length){
-      const feats=rows.map(r=>({lon:r.lon,lat:r.lat,
-        v:Math.max(hz==="heat"?(+r.v10||0):(hz==="wfire"?(+r.v10||0):(+r.v100||0)),0)}));
-      return {features:feats,basis:"grid",cells:rows.length,partialFrom};
-    }
-  }
-  if(!P.interim)return {none:true,reason:P.offReason||"no data"};
-  /* interim screening field on a coarse mesh over the basemap region */
-  const b=(typeof CLAM_BASEMAP!=="undefined"&&CLAM_BASEMAP.bbox)||[-180,5,-50,55];
-  const step=0.7,feats=[];
-  for(let la=b[1]+step/2;la<b[3];la+=step)
-    for(let lo=b[0]+step/2;lo<b[2];lo+=step){
-      const v=Math.max(P.interim(la,lo,sc)||0,0);
-      if(v>0)feats.push({lon:+lo.toFixed(2),lat:+la.toFixed(2),v});
-    }
-  return {features:feats,basis:"interim",cells:feats.length,partialFrom:null};
-}
-function fieldFC(field){
-  return {type:"FeatureCollection",features:field.features.map(f=>({
-    type:"Feature",geometry:{type:"Point",coordinates:[f.lon,f.lat]},
-    properties:{v:f.v}}))};
 }
 
 /* ---- the offline basemap style ---- */
@@ -231,24 +216,55 @@ function clInit(){
           filter:["==",["get","id"],-1],
           paint:{"circle-radius":26,"circle-color":"rgba(0,0,0,0)",
                  "circle-stroke-color":cssTok("--focus","#1E7FA6"),"circle-stroke-width":2.5}});
+        _clMap.addLayer({id:"clam-hover",type:"circle",source:"clam-sites",
+          filter:["==",["get","id"],-1],
+          paint:{"circle-radius":22,"circle-color":"rgba(0,0,0,0)",
+                 "circle-stroke-color":cssTok("--ink-2","#5B6770"),"circle-stroke-width":1.5,
+                 "circle-stroke-opacity":0.7}});
         _clMap.addLayer({id:"clam-sites-l",type:"circle",source:"clam-sites",
           paint:{"circle-radius":6,"circle-color":cssTok("--seq-5","#20718B"),
                  "circle-stroke-color":cssTok("--surface","#fff"),"circle-stroke-width":1.5,
                  "circle-opacity":0.88}});
+        /* Top-N site labels at mid-zoom (halo for contrast on hazard surfaces). */
+        _clMap.addLayer({id:"clam-labels",type:"symbol",source:"clam-sites",
+          layout:{"text-field":["get","name"],"text-size":11,"text-offset":[0,1.35],
+                  "text-anchor":"top","text-optional":true,"text-max-width":10,
+                  "symbol-sort-key":["-",["get","tcorNow"]],
+                  "text-allow-overlap":false,"text-ignore-placement":false},
+          paint:{"text-color":cssTok("--heading","#1A2A33"),
+                 "text-halo-color":cssTok("--surface","#fff"),"text-halo-width":1.4},
+          minzoom:5});
         _clMap.on("click","clam-sites-l",e=>{
           const f=e.features&&e.features[0];if(!f)return;
           const p=f.properties;
           selectedId=+p.id;
           try{_clMap.setFilter("clam-sel",["==",["get","id"],+p.id]);}catch(err){}
+          clBrushList(+p.id);
+          const nMem=+p.nMembers||1;
           const html='<div style="font-family:inherit;min-width:180px">'+
             '<b style="font-family:var(--font-display);font-size:14px;color:var(--heading)">'+esc(p.name)+'</b>'+
+            (nMem>1?'<div style="font-size:10.5px;color:var(--muted)">'+nMem+' named-insured records</div>':'')+
             '<div class="mono" style="font-size:11px;margin:3px 0">TCOR '+fmt$(+p.tcorNow)+'/yr'+(p.conf==="est"?' · <span style="color:var(--warn-ink)">estimate</span>':'')+'</div>'+
             '<div style="font-size:11px;color:var(--ink-2)">dominant: '+esc(p.domLabel)+'</div>'+
             '<button class="lightbtn primary" style="margin-top:6px;font-size:12px" onclick="openSiteView('+(+p.id)+')">Open site view</button></div>';
           new maplibregl.Popup({closeButton:true,maxWidth:"260px"}).setLngLat(e.lngLat).setHTML(html).addTo(_clMap);
         });
-        _clMap.on("mouseenter","clam-sites-l",()=>{_clMap.getCanvas().style.cursor="pointer";});
-        _clMap.on("mouseleave","clam-sites-l",()=>{_clMap.getCanvas().style.cursor="";});
+        _clMap.on("mouseenter","clam-sites-l",e=>{
+          _clMap.getCanvas().style.cursor="pointer";
+          const f=e.features&&e.features[0];if(!f)return;
+          _clHoverId=+f.properties.id;
+          try{_clMap.setFilter("clam-hover",["==",["get","id"],_clHoverId]);}catch(err){}
+          clBrushList(_clHoverId,true);
+        });
+        _clMap.on("mouseleave","clam-sites-l",()=>{
+          _clMap.getCanvas().style.cursor="";
+          _clHoverId=null;
+          try{_clMap.setFilter("clam-hover",["==",["get","id"],-1]);}catch(err){}
+          clBrushList(selectedId,true);
+        });
+        _clMap.getCanvas().setAttribute("tabindex","0");
+        _clMap.getCanvas().setAttribute("aria-label","Portfolio climate map. Arrow keys pan, plus and minus zoom.");
+        _clMap.getCanvas().addEventListener("keydown",clMapKeyNav);
       }catch(e){}
       /* theme flips restyle the basemap and re-colour the data layers */
       try{
@@ -270,7 +286,7 @@ function clHazKey(){
 }
 function clBuildHazard(){
   if(!_clMap||!_clReady)return;
-  const key=clHazKey();
+  const key=clHazKey()+(cmdMapState.compare?"|cmp":"");
   if(_clHaz&&_clHaz.key===key)return;
   /* clear previous */
   for(let i=0;i<CMD_YEARS.length;i++){
@@ -278,24 +294,14 @@ function clBuildHazard(){
     try{if(_clMap.getSource("clam-haz-"+i))_clMap.removeSource("clam-haz-"+i);}catch(e){}
   }
   _clHaz={key,peril:cmdMapState.peril,fields:[],domain:null};
-  if(cmdMapState.peril==="none"){clLegend();return;}
+  if(cmdMapState.peril==="none"){clLegend();clAnnounceSummary();return;}
   const pw=cmdScenParts().pathway;
-  const fields=CMD_YEARS.map((y,i)=>hazardField(cmdMapState.peril,scenOfYearIdx(i,pw)));
+  const bbox=(typeof CLAM_BASEMAP!=="undefined"&&CLAM_BASEMAP.bbox)||[-180,5,-50,55];
+  const fields=CMD_YEARS.map((y,i)=>hazardField(cmdMapState.peril,scenOfYearIdx(i,pw),{bbox}));
   _clHaz.fields=fields;
-  if(fields.every(f=>f.none)){clLegend();return;}
-  /* one fixed domain across all horizons so the animation reads:
-     2nd..98th percentile, zero-anchored */
-  const vals=[];
-  fields.forEach(f=>{if(!f.none)f.features.forEach(x=>vals.push(x.v));});
-  vals.sort((a,b)=>a-b);
-  const q=p=>vals.length?vals[Math.min(vals.length-1,Math.floor(p*vals.length))]:0;
-  /* fields with a sparse high tail (surge hugging the coast) need the
-     ramp anchored near the true top, not a global percentile that a
-     sea of near-zeros drags down; p99.5 keeps one wild grid cell from
-     stretching the ramp instead */
-  let lo=0,hi=q(0.995);
-  if(!(hi>0))hi=1;
-  _clHaz.domain=[lo,hi];
+  if(fields.every(f=>f.none)){clLegend();clAnnounceSummary();return;}
+  _clHaz.domain=fieldDomain(fields);
+  const [lo,hi]=_clHaz.domain;
   const ramp=perilRamp(cmdMapState.peril);
   const colorExpr=["interpolate",["linear"],["get","v"],
     lo,ramp[0], lo+(hi-lo)*0.33,ramp[1], lo+(hi-lo)*0.66,ramp[2], hi,ramp[3]];
@@ -303,8 +309,18 @@ function clBuildHazard(){
     if(f.none)return;
     try{
       _clMap.addSource("clam-haz-"+i,{type:"geojson",data:fieldFC(f)});
-      _clMap.addLayer({id:"clam-haz-"+i,type:"circle",source:"clam-haz-"+i,
-        paint:{
+      /* Heatmap for dense grid/interim fields reads as a continuous surface;
+         circle-blur remains as a fallback when a field is very sparse. */
+      const useHeat=(f.features||[]).length>=40;
+      _clMap.addLayer({id:"clam-haz-"+i,type:useHeat?"heatmap":"circle",source:"clam-haz-"+i,
+        paint:useHeat?{
+          "heatmap-weight":["interpolate",["linear"],["get","v"],lo,0,hi,1],
+          "heatmap-intensity":["interpolate",["linear"],["zoom"],2,0.55,6,1.15],
+          "heatmap-radius":["interpolate",["linear"],["zoom"],2,18,4,32,6,55,9,90],
+          "heatmap-opacity":0,
+          "heatmap-color":["interpolate",["linear"],["heatmap-density"],
+            0,ramp[0],0.25,ramp[1],0.55,ramp[2],1,ramp[3]]
+        }:{
           "circle-radius":["interpolate",["exponential",1.9],["zoom"],2,3.6,4,8.5,6,26,9,100],
           "circle-blur":0.85,
           "circle-color":colorExpr,
@@ -313,6 +329,7 @@ function clBuildHazard(){
   });
   clApplyYear();
   clLegend();
+  clAnnounceSummary();
 }
 function clRestyleData(){
   /* theme change: rebuild colour expressions with the new tokens */
@@ -322,10 +339,21 @@ function clRestyleData(){
     const colorExpr=["interpolate",["linear"],["get","v"],
       lo,ramp[0], lo+(hi-lo)*0.33,ramp[1], lo+(hi-lo)*0.66,ramp[2], hi,ramp[3]];
     for(let i=0;i<CMD_YEARS.length;i++){
-      try{if(_clMap.getLayer("clam-haz-"+i))_clMap.setPaintProperty("clam-haz-"+i,"circle-color",colorExpr);}catch(e){}
+      try{
+        if(!_clMap.getLayer("clam-haz-"+i))continue;
+        const t=_clMap.getLayer("clam-haz-"+i).type;
+        if(t==="heatmap"){
+          _clMap.setPaintProperty("clam-haz-"+i,"heatmap-color",
+            ["interpolate",["linear"],["heatmap-density"],0,ramp[0],0.25,ramp[1],0.55,ramp[2],1,ramp[3]]);
+        }else{
+          _clMap.setPaintProperty("clam-haz-"+i,"circle-color",colorExpr);
+        }
+      }catch(e){}
     }
   }
   try{_clMap.setPaintProperty("clam-sel","circle-stroke-color",cssTok("--focus","#1E7FA6"));}catch(e){}
+  try{_clMap.setPaintProperty("clam-labels","text-color",cssTok("--heading","#1A2A33"));}catch(e){}
+  try{_clMap.setPaintProperty("clam-labels","text-halo-color",cssTok("--surface","#fff"));}catch(e){}
   clApplyYear();
   clLegend();
 }
@@ -341,34 +369,62 @@ function clTcorTotals(sc){
   }
   return _clTcorCache[sc];
 }
+/* Aggregate named-insured records that share a campus (site_id / coords)
+   into one marker, matching the legacy analyst map. Toggleable. */
+function clSiteMarkers(c){
+  const brand=(cmdMapState.brand||"").trim().toLowerCase();
+  let rows=c.rows;
+  if(brand)rows=rows.filter(r=>String(r.brand||"").toLowerCase()===brand);
+  if(!cmdMapState.aggregate||typeof siteGroupKey!=="function"){
+    return rows.map(r=>({id:r.id,name:r.name,lat:r.lat,lon:r.lon,dom:r.domComp,
+      conf:r.estimate?"est":"ok",ids:[r.id],nMembers:1,tiv:r.tiv||0}));
+  }
+  const m=new Map();
+  rows.forEach(r=>{
+    const s=r.site||sites.find(x=>x.id===r.id)||{latitude:r.lat,longitude:r.lon,name:r.name,brand:r.brand};
+    const k=siteGroupKey(s);
+    let g=m.get(k);
+    if(!g){g={id:r.id,name:r.name,lat:r.lat,lon:r.lon,dom:r.domComp,conf:r.estimate?"est":"ok",
+      ids:[],nMembers:0,tiv:0,domT:0};m.set(k,g);}
+    g.ids.push(r.id);g.nMembers++;g.tiv+=(r.tiv||0);
+    if(r.total>g.domT){g.domT=r.total;g.dom=r.domComp;g.id=r.id;g.name=r.name;
+      g.conf=r.estimate?"est":g.conf;g.lat=r.lat;g.lon=r.lon;}
+    if(r.estimate)g.conf="est";
+  });
+  return [...m.values()];
+}
 function clBuildSites(c){
   if(!_clMap||!_clReady||!c)return;
   const pw=cmdScenParts().pathway;
-  const key=cmdStateKey()+"|"+pw+"|"+scenario;
+  const key=cmdStateKey()+"|"+pw+"|"+scenario+"|"+(cmdMapState.aggregate?"agg":"rec")+"|"+(cmdMapState.brand||"");
   if(_clSiteInfo&&_clSiteInfo.key===key)return;
+  const markers=clSiteMarkers(c);
   const perScen=CMD_YEARS.map((y,i)=>clTcorTotals(scenOfYearIdx(i,pw)));
   let maxT=0;
-  const feats=c.rows.map(r=>{
-    const t=perScen.map(m=>m[r.id]||0);
+  const feats=markers.map(m=>{
+    const t=perScen.map(scMap=>m.ids.reduce((a,id)=>a+(scMap[id]||0),0));
     t.forEach(v=>{if(v>maxT)maxT=v;});
-    return {type:"Feature",geometry:{type:"Point",coordinates:[r.lon,r.lat]},
-      properties:{id:r.id,name:r.name,
+    const now=m.ids.reduce((a,id)=>a+((c.rows.find(r=>r.id===id)||{}).total||0),0);
+    return {type:"Feature",geometry:{type:"Point",coordinates:[m.lon,m.lat]},
+      properties:{id:m.id,name:m.name,nMembers:m.nMembers,
         t0:t[0],t1:t[1],t2:t[2],t3:t[3],
-        tcorNow:r.total,dom:r.domComp,domLabel:TCOR_COMP_BY[r.domComp].label,
-        conf:r.estimate?"est":"ok"}};
+        tcorNow:now,dom:m.dom,domLabel:TCOR_COMP_BY[m.dom].label,
+        conf:m.conf}};
   });
-  _clSiteInfo={key,maxT:maxT||1};
+  _clSiteInfo={key,maxT:maxT||1,nMarkers:feats.length,nRecords:c.rows.length};
   try{_clMap.getSource("clam-sites").setData({type:"FeatureCollection",features:feats});}catch(e){}
   try{_clMap.setFilter("clam-sel",["==",["get","id"],selectedId==null?-1:+selectedId]);}catch(e){}
   /* frame the portfolio once per site-set; never fight the user's hand */
-  const fit=c.rows.map(r=>r.id).sort().join(",");
-  if(fit!==_clFitKey&&!cmdMapState.userMoved&&c.rows.length){
+  const fit=markers.map(m=>m.id).sort().join(",")+"|"+(cmdMapState.brand||"");
+  if(fit!==_clFitKey&&!cmdMapState.userMoved&&markers.length){
     _clFitKey=fit;
     let lo0=Infinity,la0=Infinity,lo1=-Infinity,la1=-Infinity;
-    c.rows.forEach(r=>{lo0=Math.min(lo0,r.lon);la0=Math.min(la0,r.lat);lo1=Math.max(lo1,r.lon);la1=Math.max(la1,r.lat);});
-    try{_clMap.fitBounds([[lo0,la0],[lo1,la1]],{padding:70,maxZoom:6,duration:600});}catch(e){}
+    markers.forEach(r=>{lo0=Math.min(lo0,r.lon);la0=Math.min(la0,r.lat);lo1=Math.max(lo1,r.lon);la1=Math.max(la1,r.lat);});
+    const dur=clPrefersReducedMotion()?0:600;
+    try{_clMap.fitBounds([[lo0,la0],[lo1,la1]],{padding:70,maxZoom:6,duration:dur});}catch(e){}
   }
   clApplyYear();
+  clAnnounceSummary();
 }
 
 /* ---- the continuous year: cross-fade + lerp everything ---- */
@@ -381,12 +437,25 @@ function clApplyYear(){
   if(!_clMap||!_clReady)return;
   const y=cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario);
   const {i,f}=yearBracket(y);
-  /* hazard cross-fade: exact at modeled points */
+  /* hazard cross-fade: exact at modeled points. Compare mode holds present
+     (horizon 0) at half opacity beside the scrubbed future so the pathway
+     delta is visible without a swipe control. */
   for(let k=0;k<CMD_YEARS.length;k++){
     let op=0;
-    if(k===i)op=(1-f)*cmdMapState.opacity;
-    else if(k===i+1)op=f*cmdMapState.opacity;
-    try{if(_clMap.getLayer("clam-haz-"+k))_clMap.setPaintProperty("clam-haz-"+k,"circle-opacity",op);}catch(e){}
+    if(cmdMapState.compare){
+      if(k===0)op=0.45*cmdMapState.opacity;
+      if(k===i)op=Math.max(op,(1-f)*cmdMapState.opacity);
+      if(k===i+1)op=Math.max(op,f*cmdMapState.opacity);
+    }else{
+      if(k===i)op=(1-f)*cmdMapState.opacity;
+      else if(k===i+1)op=f*cmdMapState.opacity;
+    }
+    try{
+      if(!_clMap.getLayer("clam-haz-"+k))continue;
+      const t=_clMap.getLayer("clam-haz-"+k).type;
+      if(t==="heatmap")_clMap.setPaintProperty("clam-haz-"+k,"heatmap-opacity",op);
+      else _clMap.setPaintProperty("clam-haz-"+k,"circle-opacity",op);
+    }catch(e){}
   }
   /* site encoding lerp */
   const maxT=(_clSiteInfo&&_clSiteInfo.maxT)||1;
@@ -415,6 +484,9 @@ function clApplyYear(){
     _clMap.setPaintProperty("clam-sites-l","circle-stroke-color",cssTok("--surface","#fff"));
     _clMap.setLayoutProperty("clam-accum","visibility",cmdMapState.accum?"visible":"none");
     if(cmdMapState.accum)_clMap.setPaintProperty("clam-accum","heatmap-weight",share);
+    /* show labels only when the portfolio is small enough to read */
+    const n=(_clSiteInfo&&_clSiteInfo.nMarkers)||0;
+    _clMap.setLayoutProperty("clam-labels","visibility",n>0&&n<=40?"visible":"none");
   }catch(e){}
   clSyncScrubUI();
 }
@@ -484,6 +556,10 @@ function clStopPlay(){
 }
 function clPlayToggle(){
   if(cmdMapState.playing){clStopPlay();return;}
+  if(clPrefersReducedMotion()){
+    /* jump to end rather than animate when the user asked for less motion */
+    clOnScrub(CMD_YEARS[CMD_YEARS.length-1]);return;
+  }
   cmdMapState.playing=true;cmdMapState.holdYear=true;
   const b=document.getElementById("clPlay");if(b)b.textContent="◼";
   let y=cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario);
@@ -522,6 +598,7 @@ function clRenderCtl(c){
   if(!host)return;
   const st=cmdMapState;
   const evs=clEventList(c);
+  const brands=[...new Set((c.rows||[]).map(r=>r.brand).filter(Boolean))].sort();
   let h='<div class="mapchips" role="group" aria-label="Hazard layer">'+
     '<span class="lbl">Hazard</span>'+
     MAP_PERILS.map(p=>{
@@ -538,8 +615,16 @@ function clRenderCtl(c){
     [["tcor","TCOR intensity"],["component","Dominant part"],["confidence","Confidence"]].map(([k,l])=>
       '<button type="button" class="mapchip" data-clenc="'+k+'" aria-pressed="'+(st.enc===k?"true":"false")+'">'+l+'</button>').join("")+
     '<button type="button" class="mapchip" id="clAccum" aria-pressed="'+(st.accum?"true":"false")+'" title="Where the portfolio\'s TCOR concentrates geographically">Accumulation</button>'+
+    '<button type="button" class="mapchip" id="clAgg" aria-pressed="'+(st.aggregate?"true":"false")+'" title="One marker per campus (named-insured records sharing a site)">Campus</button>'+
+    '<button type="button" class="mapchip" id="clCompare" aria-pressed="'+(st.compare?"true":"false")+'" title="Hold present-day hazard beside the scrubbed future">Compare</button>'+
     infoBtn("mapAccum")+
     '</div>';
+  if(brands.length>1){
+    h+='<div class="mapchips" role="group" aria-label="Brand filter"><span class="lbl">Brand</span>'+
+      '<select id="clBrandSel" aria-label="Filter map sites by brand"><option value="">all brands</option>'+
+      brands.map(b=>'<option value="'+esc(b)+'"'+(st.brand===b?" selected":"")+'>'+esc(b)+'</option>').join("")+
+      '</select></div>';
+  }
   if(evs.length){
     h+='<div class="mapchips" role="group" aria-label="Event footprints"><span class="lbl">Event</span>'+
       '<select id="clEvtSel" aria-label="Modeled event footprint"><option value="">footprint off</option>'+
@@ -549,16 +634,22 @@ function clRenderCtl(c){
   }else if(st.eventId){st.eventId=null;clShowEvent(null);}
   host.innerHTML=h;
   host.querySelectorAll("[data-clperil]").forEach(b=>b.onclick=()=>{
-    st.peril=b.dataset.clperil;_clHaz=null;
+    st.peril=b.dataset.clperil;_clHaz=null;clPersistMapState();
     clBuildHazard();clRenderCtl(c);
   });
   host.querySelectorAll("[data-clenc]").forEach(b=>b.onclick=()=>{
-    st.enc=b.dataset.clenc;clApplyYear();clLegend();clRenderCtl(c);
+    st.enc=b.dataset.clenc;clPersistMapState();clApplyYear();clLegend();clRenderCtl(c);
   });
   const ac=document.getElementById("clAccum");
-  if(ac)ac.onclick=()=>{st.accum=!st.accum;clApplyYear();clRenderCtl(c);};
+  if(ac)ac.onclick=()=>{st.accum=!st.accum;clPersistMapState();clApplyYear();clRenderCtl(c);};
+  const ag=document.getElementById("clAgg");
+  if(ag)ag.onclick=()=>{st.aggregate=!st.aggregate;_clSiteInfo=null;clPersistMapState();clBuildSites(c);clRenderCtl(c);clLegend();};
+  const cm=document.getElementById("clCompare");
+  if(cm)cm.onclick=()=>{st.compare=!st.compare;_clHaz=null;clPersistMapState();clBuildHazard();clRenderCtl(c);clLegend();};
   const op=document.getElementById("clOpacity");
-  if(op)op.oninput=()=>{st.opacity=(+op.value)/100;clApplyYear();};
+  if(op)op.oninput=()=>{st.opacity=(+op.value)/100;clPersistMapState();clApplyYear();};
+  const br=document.getElementById("clBrandSel");
+  if(br)br.onchange=()=>{st.brand=br.value||"";_clSiteInfo=null;clPersistMapState();clBuildSites(c);clLegend();clAnnounceSummary();};
   const es=document.getElementById("clEvtSel");
   if(es)es.onchange=()=>{
     st.eventId=es.value||null;
@@ -638,14 +729,18 @@ function clLegend(ev){
         '<div class="lgd-minmax"><span>'+(+_clHaz.domain[0].toFixed(1))+'</span><span>'+(+_clHaz.domain[1].toFixed(_clHaz.domain[1]<2?2:(_clHaz.domain[1]<20?1:0)))+'+</span></div>'+
         '<div class="lgd-basis'+(f0.basis==="grid"?"":" est")+'">'+esc(basis)+
         (f0.basis==="grid"?"":" · exploration only, not disclosure")+
-        (partial?" · missing horizons reuse the present-day grid (partial coverage, flagged)":"")+'</div>';
+        (partial?" · missing horizons reuse the present-day grid (partial coverage, flagged)":"")+
+        (cmdMapState.compare?" · compare: present held beside the scrubbed future":"")+'</div>';
     }else{
       const f=_clHaz.fields[0];
       h+='<div class="lh">'+esc(P.label)+'</div><div class="lgd-basis est">layer off: '+esc((f&&f.reason)||"no data")+'</div>';
     }
   }
   const encLab={tcor:"colour = TCOR intensity · area = TCOR",component:"colour = dominant component · area = TCOR",confidence:"colour = confidence · area = TCOR"};
-  h+='<div class="lh" style="margin-top:6px">Sites</div><div class="lgd-basis">'+encLab[cmdMapState.enc]+'</div>';
+  const nMark=_clSiteInfo?_clSiteInfo.nMarkers:0,nRec=_clSiteInfo?_clSiteInfo.nRecords:0;
+  h+='<div class="lh" style="margin-top:6px">Sites</div><div class="lgd-basis">'+encLab[cmdMapState.enc]+
+    (cmdMapState.aggregate&&nRec>nMark?" · "+nMark+" campus marker"+(nMark===1?"":"s")+" ("+nRec+" records)":"")+
+    (cmdMapState.brand?" · brand filter: "+esc(cmdMapState.brand):"")+'</div>';
   if(cmdMapState.enc==="component"){
     h+=TCOR_COMPONENTS.map(cc=>'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;font-size:10px;color:var(--ink-2)"><i style="width:8px;height:8px;border-radius:2px;background:'+cc.color+';display:inline-block"></i>'+esc(cc.label)+'</span>').join("");
   }else if(cmdMapState.enc==="confidence"){
@@ -657,6 +752,42 @@ function clLegend(ev){
     h+='<div class="evt-card"><b>'+esc(ev.id)+'</b> · 1-in-'+Math.round(1/Math.max(ev.freq,1e-6))+' · '+fmt$(ev.tot)+' across <b>'+ev.hits.length+' site'+(ev.hits.length>1?"s":"")+'</b><br>one storm, one shared hurricane deductible per campus: the accumulation the shared-retention math prices.</div>';
   }
   lg.innerHTML=h;
+}
+
+function clBrushList(id,hoverOnly){
+  const scroll=document.getElementById("cmdListScroll");
+  if(!scroll)return;
+  scroll.querySelectorAll("tr[data-sv]").forEach(tr=>{
+    const on=+tr.dataset.sv===+id;
+    tr.classList.toggle("map-hover",!!hoverOnly&&on);
+    if(!hoverOnly)tr.classList.toggle("sel",on);
+  });
+  if(!hoverOnly&&id!=null){
+    const tr=scroll.querySelector('tr[data-sv="'+id+'"]');
+    if(tr&&typeof tr.scrollIntoView==="function")try{tr.scrollIntoView({block:"nearest",behavior:clPrefersReducedMotion()?"auto":"smooth"});}catch(e){}
+  }
+}
+function clAnnounceSummary(){
+  if(!_clSiteInfo)return;
+  const P=MAP_PERIL_BY[cmdMapState.peril];
+  const y=Math.round(cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario));
+  const basis=_clHaz&&_clHaz.fields?(_clHaz.fields.find(f=>!f.none)||{}).basis:null;
+  const msg=_clSiteInfo.nMarkers+" site marker"+(_clSiteInfo.nMarkers===1?"":"s")
+    +" on the map"
+    +(P?" · "+P.label+(basis==="grid"?" from the hazard grid":basis==="interim"?" from the interim screening field":" off"):"")
+    +" · year "+(y===CMD_YEARS[0]?"present":y)
+    +(cmdMapState.compare?" · compare on":"");
+  clAnnounce(msg);
+}
+function clMapKeyNav(e){
+  if(!_clMap||!_clReady)return;
+  const pan=40;
+  if(e.key==="ArrowLeft"){_clMap.panBy([-pan,0]);e.preventDefault();}
+  else if(e.key==="ArrowRight"){_clMap.panBy([pan,0]);e.preventDefault();}
+  else if(e.key==="ArrowUp"){_clMap.panBy([0,-pan]);e.preventDefault();}
+  else if(e.key==="ArrowDown"){_clMap.panBy([0,pan]);e.preventDefault();}
+  else if(e.key==="+"||e.key==="="){_clMap.zoomIn();e.preventDefault();}
+  else if(e.key==="-"||e.key==="_"){_clMap.zoomOut();e.preventDefault();}
 }
 
 /* ---- entry point, called from renderCommand() every paint ----
@@ -683,6 +814,7 @@ function climateMapUpdate(c){
   clRenderScrub();
   if(!cmdMapState.eventId)clShowEvent(null);
   try{_clMap.setFilter("clam-sel",["==",["get","id"],selectedId==null?-1:+selectedId]);}catch(e){}
+  clBrushList(selectedId);
   return true;
 }
 function climateMapResize(){ if(_clMap&&_clReady){try{_clMap.resize();}catch(e){}} }
@@ -692,22 +824,27 @@ function climateMapFocus(id){
   if(!s||!_clMap||!_clReady)return;
   selectedId=id;
   try{_clMap.setFilter("clam-sel",["==",["get","id"],+id]);}catch(e){}
+  clBrushList(id);
   cmdMapState.userMoved=true;
-  try{_clMap.flyTo({center:[+s.longitude,+s.latitude],zoom:7.5,duration:900});}catch(e){}
+  const dur=clPrefersReducedMotion()?0:900;
+  try{_clMap.flyTo({center:[+s.longitude,+s.latitude],zoom:7.5,duration:dur});}catch(e){}
 }
 
 /* ---- plain-language explanations for the map surfaces ---- */
 Object.assign(INFO,{
   mapLayers:{t:"Hazard layers",b:
     "<p>Each layer draws CLAM's own modeled hazard as a continuous coloured surface with a physical-unit legend: 1-in-100 wind speed (m/s), 1-in-100 flood or surge depth (m), days over 32&deg;C, annual burn probability (%), 1-in-100 event rainfall (mm).</p>"+
-    "<p><b>Where the surface comes from is stated in the legend.</b> With a CLIMADA hazard grid loaded, the map draws the grid's own cells, never a resampling. Without one, the app's documented interim screening field fills in and the legend says so (exploration only). Wildfire and TC rainfall have no interim spatial field by design, so those layers stay off until a grid supplies them, with the reason stated.</p>",
+    "<p><b>Where the surface comes from is stated in the legend.</b> With a CLIMADA hazard grid loaded, the map draws the grid's own cells, never a resampling. Without one, the app's documented interim screening field fills in and the legend says so (exploration only). Wildfire and TC rainfall have no interim spatial field by design, so those layers stay off until a grid supplies them, with the reason stated.</p>"+
+    "<p><b>Compare</b> holds the present-day surface at half strength beside the scrubbed future so the pathway delta is visible without inventing a swipe control.</p>",
     s:"The same hazard engine every figure uses; the map adds no new science."},
   mapScrub:{t:"The climate pathway timeline",b:
     "<p>Drag the year, or press play, to watch the portfolio's hazard and TCOR migrate along the selected emissions pathway from present through 2030, 2050, and 2080. The hazard surfaces cross-fade between the bracketing modeled horizons and the site encoding interpolates continuously, so the eye sees the pathway rather than a hard cut.</p>"+
-    "<p><b>Modeled vs interpolated, honestly:</b> the chip beside the year says which one you are on. Dots on the track mark the modeled horizons the engine actually computed; every position between them is a visual interpolation only, and the headline and decision list always show the nearest modeled point. No precision exists between modeled years, and none is implied.</p>",
+    "<p><b>Modeled vs interpolated, honestly:</b> the chip beside the year says which one you are on. Dots on the track mark the modeled horizons the engine actually computed; every position between them is a visual interpolation only, and the headline and decision list always show the nearest modeled point. No precision exists between modeled years, and none is implied.</p>"+
+    "<p>Playback respects <code>prefers-reduced-motion</code>: when that preference is on, play jumps to 2080 instead of animating.</p>",
     s:"The timeline IS the global scenario control: scrubbing the map updates the headline and the list."},
   mapAccum:{t:"Accumulation",b:
     "<p>A concentration view of TCOR: kernel density weighted by each site's TCOR at the current point on the pathway, so geographic clustering of exposure is obvious at a glance. Where the teal deepens, one storm can reach several sites at once.</p>"+
+    "<p><b>Campus</b> aggregates named-insured records that share a site into one marker (the legacy analyst behaviour). <b>Brand</b> filters the map to one collection without touching the decision list.</p>"+
     "<p>The event footprints (when a results pack is loaded) make the same point with real modeled events: one storm, these sites, one shared hurricane deductible per campus.</p>"},
   mapEvents:{t:"Event footprints",b:
     "<p>Pick a modeled event from the results pack's event table and the map draws which sites it hit, sized by each site's loss in that event, with the hull of the footprint outlined.</p>"+
