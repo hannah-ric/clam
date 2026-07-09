@@ -189,7 +189,7 @@ bash tests/run_all.sh
 
 That is: the contract suites, the end-to-end simulations (which
 exercise the validators' accept and reject paths), the frontend assertions
-against the deployable app plus the v1.13-vs-v2.0.0 parity suite,
+against the deployable app plus the v1.13-vs-v2.3.0 parity suite,
 byte-for-byte regeneration of the historical app lineage from the v1.5 patch
 source, the assembly drift check (deployable matches app/src/ exactly), and
 the project style guard.
