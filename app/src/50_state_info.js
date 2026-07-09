@@ -20,7 +20,10 @@ let hazardMeta=null;       // provenance sidecar (hazard_grid_meta.json), option
 let resultsPack=null;      // CLIMADA results pack (results_pack.json), optional
 let backtest=null;         // {rows:[{name,observed}],loaded} observed-loss history for calibration
 let gridByHazard={};       // hazardKey -> grid provider fn, when a grid is loaded
-let scenario="present";
+/* v3: the command surface's default decision frame is mid-century on
+   the middle emissions path (SSP2-4.5 · 2050); a persisted session and
+   the renewal framing both override it. */
+let scenario="ssp245_2050";
 let activeHazard="tc";     // peril driving the map, overview, and detail
 let selectedId=null;
 let _scorecardId=null;     // the site whose scorecard is open (for the Edit button)
@@ -37,10 +40,13 @@ let scrubTimer=null;       // scenario scrubber playback
    keys only change how existing figures are shown. */
 let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",scrubPathway:"ssp245"},onboarded:false,simpleView:false,
   portfolioSource:null,
-  /* v2.3.0 executive home: the full-bleed map with floating priority panels
-     is the default landing view; Analyst restores the classic tab workspace.
-     A pure display flag: it changes no computed figure. */
-  execMode:true,
+  /* v3: the TCOR command view is the default landing surface; Advanced
+     opens the classic tab workspace. The retired v2.3.0 executive-home
+     flag stays false so map clicks route to the workspace as before.
+     lens is the renewal/capital framing; futureSc remembers the last
+     future scenario when the renewal framing pins Present day.
+     All pure display flags: they change no computed figure. */
+  execMode:false,advanced:false,lens:"capital",futureSc:"ssp245_2050",
   /* v2.4.0 display options, all persisted, none touching a computed figure:
      theme (light / dark / auto follows the OS), density (comfortable /
      compact), and per-panel visibility on the Summary tab (panels[key]=false
@@ -73,7 +79,8 @@ function scenLabelPlain(sc){
   const parts=String(sc).split("_"),pw=parts[0],h=parts[1]||"";
   const path=EXEC_PATHWAY_NAME[pw]||PATHWAY_LABEL[pw]||pw;
   const cap=path.charAt(0).toUpperCase()+path.slice(1);
-  return cap+" emissions · "+h+(PATHWAY_LABEL[pw]?" ("+PATHWAY_LABEL[pw]+")":"");
+  /* "middle path" gains the word emissions; "low/high emissions" already carry it */
+  return cap+(/emissions$/i.test(cap)?"":" emissions")+" · "+h+(PATHWAY_LABEL[pw]?" ("+PATHWAY_LABEL[pw]+")":"");
 }
 function portfolioLabelText(){
   if(!sites.length)return "";
@@ -403,7 +410,7 @@ function showMapUnavailable(){
      under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
   if(el.classList&&el.classList.add)el.classList.add("mapless");
-  el.innerHTML='<div class="mapless-msg">Map is unavailable on this network. Every figure and analysis works without it.</div>';
+  el.innerHTML='<div class="mapless-msg">The climate map lives on the command view (top bar: Command view): real hazard surfaces, TCOR-encoded sites, and the pathway timeline, fully offline. This legacy pins-map area is retired; every figure and analysis works without it.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }

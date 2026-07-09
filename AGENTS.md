@@ -23,13 +23,18 @@ gates and opening the app HTML in a browser.
 
 ### The app
 - Deployable: `app/TNL_Resort_Climate_Risk_Explorer_v210.html`, opened directly via
-  `file://` in a browser (fully offline). It ships with a built-in sample portfolio: use the
-  "Load the sample and explore" button (or `loadSample()`), so no pipeline output is needed to
-  exercise the risk engine end to end.
+  `file://` in a browser (fully offline, zero network calls since v3). It ships with a built-in
+  sample portfolio: use the "Load the sample and explore" button (or `loadSample()`), so no
+  pipeline output is needed to exercise the risk engine end to end.
 - Source of truth is `app/src/` (shell head/tail + numbered JS modules). Edit modules, then
   rebuild the deployable with `python3 app/assemble_app.py`. The CI gate
   `python3 app/assemble_app.py --check` fails if the committed HTML drifts from `app/src/`, so
   always reassemble after editing source.
+- Two `app/src/` files are NOT hand-edited: `90_vendor_maplibre.js` (vendored MapLibre GL JS,
+  see its header) and `88_basemap_data.js` (generated offline basemap; regenerate with
+  `python3 app/make_basemap.py`, which needs the network, then reassemble). The node test
+  harness extracts the inline script only up to the end of `restore()`, so anything that must
+  stay test-visible lives in modules before `80_persist_wire.js`.
 
 ### The pipeline (optional, requires the conda env)
 - Pipeline scripts reference each other by bare name, so they **must be run from inside
