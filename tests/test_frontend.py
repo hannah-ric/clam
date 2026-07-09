@@ -895,6 +895,8 @@ assert(typeof hazardField==="function"&&typeof fieldDomain==="function"&&typeof 
   "map hazardField helpers live in the engine (test-visible before restore)");
 assert(MAP_PERILS.length===6&&MAP_PERIL_BY.tc&&MAP_PERIL_BY.wfire.interim===null,
   "MAP_PERILS registers six perils; wildfire has no interim spatial field");
+/* clear the tc grid so the interim mesh path is exercised honestly */
+gridByHazard={};hazardGrid=null;clearHazCache();
 const _hfTc=hazardField("tc","present",{bbox:[-85,24,-79,28],step:1.0});
 assert(!_hfTc.none&&_hfTc.basis==="interim"&&_hfTc.features.length>0,
   "hazardField interim wind mesh returns positive features over Florida");
@@ -903,9 +905,14 @@ assert(_hfTc.features.every(f=>f.v>0&&f.lat>=24&&f.lat<=28),
 const _hfWf=hazardField("wfire","present");
 assert(_hfWf.none&&String(_hfWf.reason).indexOf("interim")>=0,
   "wildfire hazardField stays off without a grid (honest none)");
+/* installHazardRows is the real load path: sets both gridByHazard AND hazardGrid */
+installHazardRows(rows6,"map_contract_tc.csv");
 const _hfGrid=hazardField("tc","present");
-assert(_hfGrid.basis==="grid"&&_hfGrid.cells===SCEN_KEYS.length,
+assert(_hfGrid.basis==="grid"&&_hfGrid.cells===1&&_hfGrid.features[0].v===48,
   "hazardField draws loaded grid cells (never resampled) when a tc grid is present");
+const _hfGrid85=hazardField("tc","ssp585_2080");
+assert(_hfGrid85.basis==="grid"&&_hfGrid85.partialFrom==null&&_hfGrid85.cells===1,
+  "hazardField resolves future scenario rows from the same grid without present fallback");
 const _dom=fieldDomain([_hfTc,_hfGrid]);
 assert(_dom[0]===0&&_dom[1]>0,"fieldDomain is zero-anchored with a positive high end");
 const _fc=fieldFC(_hfGrid);
@@ -916,8 +923,10 @@ assert(ASSUMPTIONS_VERSION==="3"&&PRAIN_DRAIN_MM===75&&PRAIN_POND_COEFF===0.55&&
   "assumptions v3: rainfall ponding constants are the recalibrated screening floor");
 assert(WARMING.ssp126_2080===1.0&&WARMING.ssp585_2080===4.0,
   "assumptions v3: warming margins follow the 15% rule (pathway spread undistorted)");
-assert(Math.abs((WARMING.ssp585_2080-WARMING.ssp126_2080)-(3.5-0.9))<0.2,
-  "assumptions v3: 2080 pathway spread stays near the AR6 central spread");
+assert(WARMING.ssp126_2080===WARMING.ssp126_2050,
+  "assumptions v3: SSP1-2.6 stays flat 2050->2080 (AR6 central is flat; no false keep-warming)");
+assert((WARMING.ssp585_2080-WARMING.ssp126_2080)>(3.5-0.9)*0.9,
+  "assumptions v3: 2080 pathway spread is not compressed below the AR6 central spread");
 
 /* ---------------- Parallel swap: explicit not-modeled markers ---------------- */
 assert(NOT_MODELED.length===3&&NOT_MODELED.map(h=>h.key).join(",")==="hail,pluvial,drought",
