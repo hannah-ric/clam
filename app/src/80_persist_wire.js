@@ -505,8 +505,10 @@ function wire(){
   if(msb)msb.onclick=loadSample;
   // site drop
   const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
-  sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};
-  dropZone(sd,f=>readFile(f,loadSiteCsv));
+  /* Task 8: the portfolio drop accepts CLAM's site schema or an SOV export;
+     routeSiteCsv sniffs the header and picks the loader */
+  sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0]){const n=sf.files[0].name;readFile(sf.files[0],t=>routeSiteCsv(t,n));}};
+  dropZone(sd,f=>readFile(f,t=>routeSiteCsv(t,f&&f.name)));
   // backtest drop
   const bd=document.getElementById("btDrop"),bf=document.getElementById("btFile");
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};

@@ -41,7 +41,9 @@ let tcorProgram={
   perilClass:{tc:"hurricane",cflood:"hurricane",rflood:"flood",prain:"flood",wfire:"general"},
   aggregateCapUsd:null,          // optional annual aggregate retention cap
   bi:{waitingDays:3,limitUsd:null,indemnityDays:365,provenance:"default"},
-  premium:{programAnnualUsd:null,loadFactor:null},
+  /* creditRealization: fraction of the technical premium saving assumed
+     negotiable at renewal (null = the registry default); range 0..1 */
+  premium:{programAnnualUsd:null,loadFactor:null,creditRealization:null},
   adminAnnualUsd:0,              // program/broker admin, allocated by TIV
   mitigationAnnualUsd:0,         // portfolio risk-control spend, by TIV
   indirect:{rebookShare:0.15},   // flagged-estimate factor on gross BI
@@ -329,7 +331,32 @@ function retainedPropertyCalc(sitesArr,sc){
    table (one alternative catalog drawn per year by weight, then a
    Poisson draw per event); per-location perils decompose each site
    ladder into frequency bands with midpoint losses. Deterministic seed.
+
+   Task 3 extension: every drawn occurrence also draws an ARRIVAL MONTH
+   from its peril's climatology and retains that occurrence's BI through
+   the full seasonal terms chain (waiting per event, indemnity, limit),
+   so the bad year is the joint property + BI year, not property with
+   BI riding at expected level. The aggregate cap stays a property-
+   program cap: it never truncates BI.
    ------------------------------------------------------------ */
+/* cumulative month tables for the simulation's arrival-month draws */
+function biCumOf(timing){
+  const c=[];let a=0;
+  for(let m=0;m<12;m++){a+=timing[m];c.push(a);}
+  c[11]=1;return c;
+}
+function biDrawMonth(cum,rnd){
+  const u=rnd();
+  for(let m=0;m<12;m++)if(u<=cum[m])return m;
+  return 11;
+}
+/* the 12 monthly retained-BI values for one event loss at one site,
+   precomputed once so the year loop is a table lookup */
+function biMonthlyRetained(lossUsd,terms,econ){
+  const out=new Array(12);
+  for(let m=0;m<12;m++)out[m]=biEventSplit(lossUsd,terms,econ,m).retained;
+  return out;
+}
 function tcorRng(seed){let a=seed>>>0;return function(){
   a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);
   t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
@@ -360,10 +387,14 @@ function simulateRetainedYears(sitesArr,sc,opts){
   const pk=resultsPack&&resultsPack.data;
   const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
   const rnd=tcorRng(seed);
+  const econOf={},termsOf={};
+  sitesArr.forEach(s=>{econOf[s.id]=biEconOf(s);termsOf[s.id]=biTermsOf(s);});
+  const tcCum=biCumOf(BI_TC_MONTH_W),flatCum=biCumOf(BI_TIMING_FLAT);
   /* pre-resolve hurricane events to campus groups, grouped by country:
      each country's catalog is independent (its sites are disjoint), so
      every simulated year draws ONE alternative source per country by
-     weight and then Poisson-draws that source's events */
+     weight and then Poisson-draws that source's events. Each event also
+     carries its per-site monthly retained-BI table (Task 3). */
   let huCountries=null;
   if(evScen&&join&&join.matched>0){
     const byCountry={};
@@ -371,29 +402,37 @@ function simulateRetainedYears(sitesArr,sc,opts){
       const key=part.country||"?";
       (byCountry[key]||(byCountry[key]=[])).push({weight:+part.weight||0,
         events:(part.events||[]).map(e=>{
-          const groups={};
+          const groups={};const biRows=[];
           (e.sites||[]).forEach(pair=>{
             const s=join.map[pair[0]];if(!s)return;
             const g=ded.hurricane.basis==="per-occurrence-program"?"~program":campusKeyOf(s);
-            groups[g]=(groups[g]||0)+(+pair[1]||0);
+            const loss=+pair[1]||0;
+            groups[g]=(groups[g]||0)+loss;
+            if(loss>0)biRows.push(biMonthlyRetained(loss,termsOf[s.id],econOf[s.id]));
           });
-          return {freq:+e.freq||0,groups};
+          return {freq:+e.freq||0,groups,biRows};
         }).filter(e=>e.freq>0)});
     });
     huCountries=Object.keys(byCountry).map(k=>byCountry[k]);
   }
+  /* per-location bands carry their own monthly retained BI and the
+     arrival-month table of their peril, so one draw drives both sides */
   const siteBands=[];
   sitesArr.forEach(s=>{
     ["flood","general"].forEach(cls=>{
       TCOR_CLASS_PERILS[cls].forEach(hz=>{
         const lad=siteLadderFor(s,hz,sc,join);
+        const cum=(BI_PERIL_TIMING[hz]||BI_TIMING_FLAT)===BI_TC_MONTH_W?tcCum:flatCum;
         ladderBands(lad.rps,lad.losses).forEach(b=>
-          siteBands.push({rate:b.rate,loss:b.loss,ded:ded[cls].amountUsd}));
+          siteBands.push({rate:b.rate,loss:b.loss,ded:ded[cls].amountUsd,
+            biMonthly:biMonthlyRetained(b.loss,termsOf[s.id],econOf[s.id]),cum}));
       });
     });
   });
-  /* degraded hurricane in the simulation: campus-comonotonic bands */
-  let huBands=null;
+  /* degraded hurricane in the simulation: campus-comonotonic bands for
+     property; per-site tc_joint bands for BI (labeled approximation:
+     without an event table the two sides draw independently) */
+  let huBands=null,huBiBands=null;
   if(!huCountries){
     const groups={};
     sitesArr.forEach(s=>{
@@ -408,10 +447,17 @@ function simulateRetainedYears(sitesArr,sc,opts){
       ladderBands(rps,campusLoss).forEach(b=>
         huBands.push({rate:b.rate,loss:b.loss,ded:ded.hurricane.amountUsd}));
     }
+    huBiBands=[];
+    sitesArr.forEach(s=>{
+      const lad=siteLadderFor(s,"tc_joint",sc,join);
+      ladderBands(lad.rps,lad.losses).forEach(b=>
+        huBiBands.push({rate:b.rate,
+          biMonthly:biMonthlyRetained(b.loss,termsOf[s.id],econOf[s.id])}));
+    });
   }
-  const totals=new Array(years),hits=new Array(years);
+  const totals=new Array(years),hits=new Array(years),biTotals=new Array(years);
   for(let y=0;y<years;y++){
-    let ret=0,nHits=0;
+    let ret=0,nHits=0,biRet=0;
     if(huCountries){
       huCountries.forEach(srcs=>{
         /* draw one alternative catalog by weight, then its events */
@@ -423,6 +469,9 @@ function simulateRetainedYears(sitesArr,sc,opts){
             for(const g in e.groups){
               ret+=Math.min(e.groups[g],ded.hurricane.amountUsd);nHits++;
             }
+            /* one arrival month per occurrence drives every hit site's BI */
+            const m=biDrawMonth(tcCum,rnd);
+            for(const row of e.biRows)biRet+=row[m];
           }
         });
       });
@@ -431,34 +480,57 @@ function simulateRetainedYears(sitesArr,sc,opts){
         const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
         for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
       });
+      huBiBands.forEach(b=>{
+        const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
+        for(let k=0;k<n;k++)biRet+=b.biMonthly[biDrawMonth(tcCum,rnd)];
+      });
     }
     siteBands.forEach(b=>{
       const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
-      for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
+      for(let k=0;k<n;k++){
+        ret+=Math.min(b.loss,b.ded);nHits++;
+        biRet+=b.biMonthly[biDrawMonth(b.cum,rnd)];
+      }
     });
     totals[y]=cap!=null?Math.min(ret,cap):ret;
     hits[y]=nHits;
+    biTotals[y]=biRet;
   }
-  const sorted=totals.slice().sort((a,b)=>a-b);
-  const q=p=>sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];
+  const qOf=arr=>{
+    const sorted=arr.slice().sort((a,b)=>a-b);
+    const q=p=>sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];
+    return {mean:arr.reduce((a,x)=>a+x,0)/arr.length,
+            median:q(0.5),p90:q(0.9),p99:q(0.99)};
+  };
+  const prop=qOf(totals),bi=qOf(biTotals);
+  const combined=qOf(totals.map((x,i)=>x+biTotals[i]));
   return {years,seed,capUsd:cap,
-    mean:totals.reduce((a,x)=>a+x,0)/years,
-    median:q(0.5),p90:q(0.9),p99:q(0.99),
+    mean:prop.mean,median:prop.median,p90:prop.p90,p99:prop.p99,
+    bi,combined,
     meanHits:hits.reduce((a,x)=>a+x,0)/years,
     basis:(huCountries?"event table":"ladder bands (labeled approximation)")
-      +(cap!=null?", annual aggregate cap applied per simulated year":"")};
+      +(cap!=null?", annual aggregate cap applied per simulated year (property program only)":"")
+      +"; BI retained per occurrence with a seasonal arrival-month draw (Task 3)"};
 }
 
 /* ------------------------------------------------------------
-   Retained business interruption, INTERIM chain (labeled; the full
-   Task 3 module - archetype downtime, seasonality, timeshare revenue,
-   regional demand shock - replaces the transform, not the terms math).
-   Per event: damage ratio -> downtime days (the app's linear reopen
-   model) -> gross BI -> retained = waiting period (always) + downtime
-   beyond the indemnity period + insurable BI beyond the limit. The
-   frequent small piece (waiting) and the rare large piece (overage) are
-   kept separate; the BI & EE declared value caps insurable BI when no
-   explicit limit is set.
+   Retained business interruption: the BI module (overhaul Task 3).
+   The interim linear transform is retired. Chain per event:
+   damage ratio -> downtime days (the Hazus RES4 piecewise nodes on
+   the operator's reopen anchor, with the REDi impeding-factor floor
+   once damage is structural) -> a seasonal calendar walk over the
+   downtime window (regional monthly revenue weights, the event's
+   arrival month drawn from the peril's climatology: hurricanes land
+   in the September trough but long downtime eats the winter peak) ->
+   gross BI on the LOSSABLE share of daily GOP (the vacation-ownership
+   fee stream keeps flowing through a closure) -> the unchanged policy
+   terms split: waiting period retained on every event, downtime
+   beyond the indemnity period, insurable BI beyond the limit. All
+   constants live in the sourced assumptions registry.
+   The regional demand shock (undamaged sites in a hit region lose
+   transient demand; NO physical-damage trigger, so standard BI never
+   pays it) is computed on the event table and rides as a FLAGGED
+   indirect line, never inside retained BI or the TCOR total.
    ------------------------------------------------------------ */
 function biTermsOf(s){
   const t=tcorProgram.bi;
@@ -470,29 +542,100 @@ function biTermsOf(s){
       :((+s.bi_ee_usd>0)?"BI & EE declared value":"none on file (overage reads zero, labeled)"),
     provenance:t.provenance};
 }
-function biSplitForLoss(lossUsd,s,terms,econ){
-  const dmg=econ.value>0?Math.min(lossUsd/econ.value,1):0;
-  const down=dmg*econ.maxDownDays;
-  const gross=econ.daily*down;
-  const waiting=econ.daily*Math.min(down,terms.waitingDays);
-  const beyondIndem=econ.daily*Math.max(down-terms.indemnityDays,0);
+const BI_MONTH_DAYS=30.44;
+const BI_TIMING_FLAT=[1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12];
+/* event-arrival climatology per peril: TC-driven perils land on the
+   hurricane calendar; the rest carry no asserted timing */
+const BI_PERIL_TIMING={tc_joint:BI_TC_MONTH_W,prain:BI_TC_MONTH_W,
+                       rflood:BI_TIMING_FLAT,wfire:BI_TIMING_FLAT};
+function biSeasonShapeOf(s){
+  return BI_SEASON_SHAPES[slrRegionOf(+s.latitude,+s.longitude)]||BI_SEASON_SHAPES.global_mean;
+}
+/* revenue-weighted equivalent days of a downtime window starting at the
+   beginning of month m0 (0-11): the seasonal calendar walk */
+function biSeasonDays(shape,m0,days){
+  let left=days,m=m0,acc=0;
+  while(left>0){
+    const take=Math.min(left,BI_MONTH_DAYS);
+    acc+=shape[m%12]*take;left-=take;
+    if(++m-m0>600)break;
+  }
+  return acc;
+}
+/* damage ratio -> downtime days: piecewise Hazus RES4 nodes as fractions
+   of the operator's reopen anchor, then the REDi impeding floor once
+   damage is structural (external processes the operator cannot
+   compress: inspection, financing, contractor mobilization, permits) */
+function biDowntimeDays(dmg,maxDownDays){
+  if(!(dmg>0)||!(maxDownDays>0))return 0;
+  const N=BI_DOWNTIME_NODES;
+  let f=1;
+  if(dmg<1){
+    for(let i=1;i<N.length;i++){
+      if(dmg<=N[i][0]){
+        f=N[i-1][1]+(N[i][1]-N[i-1][1])*(dmg-N[i-1][0])/(N[i][0]-N[i-1][0]);
+        break;
+      }
+    }
+  }
+  let d=f*maxDownDays;
+  if(dmg>=BI_IMPEDING_THRESH)d=Math.max(d,BI_IMPEDING_DAYS);
+  return d;
+}
+/* per-site BI economics: seasonal shape, the lossable share of daily
+   GOP after the vacation-ownership continuing stream, the reopen anchor */
+function biEconOf(s){
+  const a=assumeFor(s);
+  const gop=siteRevenue(s)*a.gopMargin;
+  const tshare=Math.min(Math.max(+s.timeshare_share||0,0),1);
+  const continueShare=tshare*BI_TIMESHARE_CONTINUING;
+  return {value:+s.asset_value_usd||0,gop,daily:gop/365,
+    dailyLossable:(gop/365)*(1-continueShare),
+    continueShare,tshare,
+    maxDownDays:a.reopenMonths/12*365,
+    shape:biSeasonShapeOf(s)};
+}
+/* the terms split for ONE event loss arriving at month m0. The waiting
+   period is the window's first days, the indemnity period its first
+   terms.indemnityDays: both priced at the season they actually fall in. */
+function biEventSplit(lossUsd,terms,econ,m0){
+  const dmg=econ.value>0?Math.min(Math.max(lossUsd,0)/econ.value,1):0;
+  const down=biDowntimeDays(dmg,econ.maxDownDays);
+  if(!(down>0))return {gross:0,waiting:0,overage:0,retained:0,downDays:0};
+  const k=econ.dailyLossable;
+  const segAll=biSeasonDays(econ.shape,m0,down);
+  const segWait=biSeasonDays(econ.shape,m0,Math.min(down,terms.waitingDays));
+  const segIndem=biSeasonDays(econ.shape,m0,Math.min(down,terms.indemnityDays));
+  const gross=k*segAll,waiting=k*segWait,beyondIndem=k*(segAll-segIndem);
   const insurable=Math.max(gross-waiting-beyondIndem,0);
   const overLimit=terms.limitUsd!=null?Math.max(insurable-terms.limitUsd,0):0;
   return {gross,waiting,overage:beyondIndem+overLimit,
           retained:waiting+beyondIndem+overLimit,downDays:down};
+}
+/* expectation over the peril's event-arrival climatology */
+function biEventSplitTimed(lossUsd,terms,econ,timing){
+  const out={gross:0,waiting:0,overage:0,retained:0,downDays:0};
+  for(let m=0;m<12;m++){
+    const w=timing[m];if(!(w>0))continue;
+    const b=biEventSplit(lossUsd,terms,econ,m);
+    out.gross+=w*b.gross;out.waiting+=w*b.waiting;
+    out.overage+=w*b.overage;out.retained+=w*b.retained;
+    out.downDays+=w*b.downDays;
+  }
+  return out;
 }
 function retainedBICalc(sitesArr,sc){
   const join=packJoin(sitesArr,sc);
   const pk=resultsPack&&resultsPack.data;
   const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
   const perSite={};let waiting=0,overage=0,gross=0;
-  const econOf={};
+  const econOf={},termsOf={};
   sitesArr.forEach(s=>{
-    const a=assumeFor(s);
-    const gop=siteRevenue(s)*a.gopMargin;
-    econOf[s.id]={value:+s.asset_value_usd||0,daily:gop/365,
-                  maxDownDays:a.reopenMonths/12*365};
-    perSite[s.id]={gross:0,waiting:0,overage:0,retained:0,basis:"interim BI chain (Task 3 pending)"};
+    econOf[s.id]=biEconOf(s);termsOf[s.id]=biTermsOf(s);
+    perSite[s.id]={gross:0,waiting:0,overage:0,retained:0,
+      basis:"BI module: Hazus/REDi downtime, seasonal calendar walk"
+        +(econOf[s.id].tshare>0?", vacation-ownership continuing share "
+          +Math.round(econOf[s.id].continueShare*100)+"%":"")};
   });
   /* hurricane: per event when the table is joined (the waiting period
      applies per occurrence, which per-year averages cannot represent) */
@@ -505,7 +648,7 @@ function retainedBICalc(sitesArr,sc){
         const f=+e.freq||0;if(f<=0)return;
         (e.sites||[]).forEach(pair=>{
           const s=join.map[pair[0]];if(!s)return;
-          const b=biSplitForLoss(+pair[1]||0,s,biTermsOf(s),econOf[s.id]);
+          const b=biEventSplitTimed(+pair[1]||0,termsOf[s.id],econOf[s.id],BI_TC_MONTH_W);
           const ps=perSite[s.id];
           ps.gross+=w*f*b.gross;ps.waiting+=w*f*b.waiting;
           ps.overage+=w*f*b.overage;ps.retained+=w*f*b.retained;
@@ -514,35 +657,105 @@ function retainedBICalc(sitesArr,sc){
     });
   }
   sitesArr.forEach(s=>{
-    const terms=biTermsOf(s),econ=econOf[s.id];
+    const terms=termsOf[s.id],econ=econOf[s.id];
     const perils=huEventBased?["rflood","prain","wfire"]
                              :["tc_joint","rflood","prain","wfire"];
     perils.forEach(hz=>{
       const lad=siteLadderFor(s,hz,sc,join);
+      const timing=BI_PERIL_TIMING[hz]||BI_TIMING_FLAT;
+      /* the per-rung terms split once, then the same trapezoid integral
+         per field (every field is non-decreasing in the rung loss) */
+      const F={gross:[],waiting:[],overage:[],retained:[]};
+      lad.losses.forEach(L=>{
+        const b=biEventSplitTimed(Math.max(+L||0,0),terms,econ,timing);
+        F.gross.push(b.gross);F.waiting.push(b.waiting);
+        F.overage.push(b.overage);F.retained.push(b.retained);
+      });
       const ps=perSite[s.id];
-      ps.gross+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).gross);
-      ps.waiting+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).waiting);
-      ps.overage+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).overage);
-      ps.retained+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).retained);
+      ps.gross+=ladderIntegral(lad.rps,F.gross);
+      ps.waiting+=ladderIntegral(lad.rps,F.waiting);
+      ps.overage+=ladderIntegral(lad.rps,F.overage);
+      ps.retained+=ladderIntegral(lad.rps,F.retained);
     });
     gross+=perSite[s.id].gross;waiting+=perSite[s.id].waiting;
     overage+=perSite[s.id].overage;
   });
+  /* regional demand shock: event table only (it needs event structure to
+     hang on), portfolio TIV as the destination proxy, flagged always */
+  const demandPerSite={};sitesArr.forEach(s=>demandPerSite[s.id]=0);
+  let demandTotal=0;
+  if(huEventBased){
+    const regionOf={},regTiv={};
+    sitesArr.forEach(s=>{
+      const r=slrRegionOf(+s.latitude,+s.longitude);
+      regionOf[s.id]=r;regTiv[r]=(regTiv[r]||0)+(+s.asset_value_usd||0);
+    });
+    const W=BI_DEMAND_SHOCK.months*BI_MONTH_DAYS;
+    evScen.forEach(part=>{
+      const w=+part.weight||0;
+      (part.events||[]).forEach(e=>{
+        const f=+e.freq||0;if(f<=0)return;
+        const dmgTiv={},downOf={};
+        (e.sites||[]).forEach(pair=>{
+          const s=join.map[pair[0]];if(!s)return;
+          const econ=econOf[s.id];
+          const dmg=econ.value>0?Math.min((+pair[1]||0)/econ.value,1):0;
+          downOf[s.id]=biDowntimeDays(dmg,econ.maxDownDays);
+          if(dmg>=BI_IMPEDING_THRESH){
+            const r=regionOf[s.id];
+            dmgTiv[r]=(dmgTiv[r]||0)+econ.value;
+          }
+        });
+        for(const reg in dmgTiv){
+          const R=regTiv[reg]>0?dmgTiv[reg]/regTiv[reg]:0;
+          if(R<BI_DEMAND_SHOCK.min_severity)continue;
+          const shock0=Math.min(BI_DEMAND_SHOCK.cap,BI_DEMAND_SHOCK.gain*R);
+          sitesArr.forEach(s=>{
+            if(regionOf[s.id]!==reg)return;
+            const econ=econOf[s.id];
+            /* the shock decays linearly over the window and bites only
+               while the site is OPEN: closed forward-looking exposure
+               integrates to shock0 x (W - ownDown)^2 / 2W */
+            const open=Math.max(W-(downOf[s.id]||0),0);
+            const g=econ.dailyLossable*shock0*open*open/(2*W);
+            demandPerSite[s.id]+=w*f*g;demandTotal+=w*f*g;
+          });
+        }
+      });
+    });
+  }
   return {perSite,gross,waiting,overage,retained:waiting+overage,
     transferred:gross-waiting-overage,
-    basis:"interim BI chain: linear damage-to-downtime, revenue-proxy GOP, "
-      +(huEventBased?"hurricane terms applied per event":"no event table: hurricane terms applied on ladders")
-      +"; seasonality, timeshare revenue split, and regional demand shock arrive with the BI module (Task 3)",
+    demandShock:{total:demandTotal,perSite:demandPerSite,flagged:true,
+      excludedFromTotal:true,
+      basis:huEventBased
+        ?"regional demand shock on the event table: sites in a hit region lose transient demand while open (no physical-damage trigger, so standard BI never pays it); severity-banded to the 2017-2019 record, flagged, never in the TCOR total"
+        :"not computed: the demand shock needs the results pack's event table"},
+    basis:"BI module (Task 3): Hazus RES4 damage-to-downtime with the REDi "
+      +BI_IMPEDING_DAYS+"-day impeding floor, regional seasonality x hurricane "
+      +"landfall climatology, vacation-ownership continuing share; "
+      +(huEventBased?"hurricane terms applied per event":"no event table: hurricane terms applied on ladders (labeled)"),
     termsProvenance:tcorProgram.bi.provenance};
 }
 
 /* ------------------------------------------------------------
-   Premium (interim allocation; the full Task 4 module adds the
-   technical-vs-actual gap surface). Actual per-site premium wins when
-   the profile carries it (SOV AIG columns via schema v3); else the
+   Premium module (Task 4): allocation + the technical-vs-actual gap
+   surface. Actual per-site premium wins when the profile carries it
+   (SOV columns via schema v3 / the Task 8 importer); else the
    technical benchmark: transferred expected loss (property + insurable
    BI) times the program loading factor. A known program total rescales
    the technical allocation, labeled.
+
+   The gap surface (additive; nothing above changes): per-site rate per
+   $100 TIV on both bases, the signed actual-vs-technical gap, and the
+   portfolio position: the IMPLIED market load (actual premium over
+   modeled transferred expected loss, computed only on the sites whose
+   premium is on file) beside the assumed load, plus the over/under
+   split. The implied load is the renewal conversation's anchor: it is
+   what the market is actually charging per dollar of modeled transfer,
+   so a repriced technical benchmark and the payoff engine's negotiated
+   savings can stand on the market's own number instead of an
+   assumption whenever the SOV carries premiums.
    ------------------------------------------------------------ */
 function premiumCalc(sitesArr,sc,prop,bi){
   const load=tcorProgram.premium.loadFactor!=null?tcorProgram.premium.loadFactor
@@ -553,11 +766,12 @@ function premiumCalc(sitesArr,sc,prop,bi){
     const transProp=TCOR_CLASSES.reduce((a,c)=>a+Math.max(p[c].gross-p[c].retained,0),0);
     const b=bi.perSite[s.id];
     const transBi=Math.max((b.gross||0)-(b.retained||0),0);
-    const technical=(transProp+transBi)*load;
+    const transferredEl=transProp+transBi;
+    const technical=transferredEl*load;
     technicalTotal+=technical;
     const actual=+s.premium_annual_usd>0?+s.premium_annual_usd:null;
     if(actual!=null){actualTotal+=actual;nActual++;}
-    perSite[s.id]={technical,actual,
+    perSite[s.id]={technical,actual,transferredEl,
       allocated:actual!=null?actual:technical,
       basis:actual!=null?"actual (per-site premium on file)"
         :"technical benchmark (modeled transferred loss x "+load+" load)"};
@@ -576,9 +790,39 @@ function premiumCalc(sitesArr,sc,prop,bi){
     });
     allocBasis="program annual premium allocated by modeled transferred expected loss";
   }
+  /* the gap surface: rates, signed gaps, implied market load */
+  let tiv=0,tivActual=0,actTransEl=0,overTech=0,underTech=0;
+  sitesArr.forEach(s=>{
+    const v=+s.asset_value_usd||0;tiv+=v;
+    const ps=perSite[s.id];
+    ps.ratePer100=v>0?ps.allocated/v*100:null;
+    ps.technicalRatePer100=v>0?ps.technical/v*100:null;
+    if(ps.actual!=null){
+      tivActual+=v;actTransEl+=ps.transferredEl;
+      ps.gapUsd=ps.actual-ps.technical;
+      ps.gapPct=ps.technical>0?(ps.actual/ps.technical-1)*100:null;
+      if(ps.gapUsd>0)overTech+=ps.gapUsd;else underTech-=ps.gapUsd;
+    }else{ps.gapUsd=null;ps.gapPct=null;}
+  });
+  const impliedLoad=(nActual>0&&actTransEl>0)?actualTotal/actTransEl:null;
   return {perSite,technicalTotal,actualTotal,nActual,load,
     allocatedTotal:sitesArr.reduce((a,s)=>a+perSite[s.id].allocated,0),
-    allocBasis};
+    allocBasis,
+    position:{impliedLoad,assumedLoad:load,
+      loadBasis:impliedLoad!=null
+        ?"implied by the "+nActual+" premium"+(nActual>1?"s":"")+" on file (actual premium / modeled transferred expected loss)"
+        :"assumed (no per-site premiums on file)",
+      tivShareWithActual:tiv>0?tivActual/tiv:0,
+      overTechnicalUsd:overTech,underTechnicalUsd:underTech,
+      gapTotalUsd:overTech-underTech,
+      note:"gaps read on sites with an actual premium only; a positive gap "
+        +"means paying above the modeled technical benchmark"}};
+}
+/* the loading factor negotiated savings should stand on: the market's own
+   implied load when premiums are on file, else the assumed program load */
+function premiumLoadEff(prem){
+  return (prem&&prem.position&&prem.position.impliedLoad!=null)
+    ?prem.position.impliedLoad:(prem?prem.load:1.5);
 }
 
 /* ------------------------------------------------------------
@@ -620,10 +864,13 @@ function tcorSite(s,sc,ctx){
       mitigation:{value:mitigation,basis:+s.mitigation_annual_usd>0?"site risk-control spend on file":"program allocation by TIV"},
       admin:{value:admin,basis:"program admin allocated by TIV"}
     },
-    indirect:{value:b.gross*tcorProgram.indirect.rebookShare,flagged:true,
-      excludedFromTotal:true,
-      basis:"flagged estimate ("+Math.round(tcorProgram.indirect.rebookShare*100)
-        +"% of gross BI): guest rebooking and reputation; never added to the TCOR total"},
+    indirect:{value:b.gross*tcorProgram.indirect.rebookShare
+        +((ctx.bi.demandShock&&ctx.bi.demandShock.perSite[s.id])||0),
+      rebooking:b.gross*tcorProgram.indirect.rebookShare,
+      demandShock:(ctx.bi.demandShock&&ctx.bi.demandShock.perSite[s.id])||0,
+      flagged:true,excludedFromTotal:true,
+      basis:"flagged estimate: guest rebooking ("+Math.round(tcorProgram.indirect.rebookShare*100)
+        +"% of gross BI) plus the regional demand shock at open sites; never added to the TCOR total"},
     quality:{estimate:missing.length>0||ctx.prop.classes.hurricane.basis!=="event",
       missing,
       propertyBasis:ctx.prop.classes.hurricane.basis,
