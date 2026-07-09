@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 
-ASSUMPTIONS_VERSION = "1"       # bump when any effective value changes
+ASSUMPTIONS_VERSION = "2"       # bump when any effective value changes
 
 SCEN_KEYS = ["present"] + [f"{p}_{h}" for h in (2030, 2050, 2080)
                            for p in ("ssp126", "ssp245", "ssp585")]
@@ -364,6 +364,177 @@ def appraisal_defaults():
 
 
 # ---------------------------------------------------------------------------
+# BI module (overhaul Task 3): the constants behind the seasonality-weighted,
+# timeshare-aware downtime chain and the bad-year BI distribution. Everything
+# here is screening grade with a named source; the operator's reopenMonths
+# stays the full-reconstruction ANCHOR and these shapes act on it.
+# ---------------------------------------------------------------------------
+
+# Monthly share of US hurricane LANDFALL risk (sums to 1.0): what matters
+# for BI is when damaging events ARRIVE. Aug-Oct carries ~93% of US
+# landfalls (87% of hurricane days, 96% of major-hurricane days), peak
+# 10 September.
+BI_TC_MONTH_WEIGHTS = {
+    "value": [0.00, 0.00, 0.00, 0.00, 0.00, 0.04,
+              0.05, 0.30, 0.42, 0.16, 0.03, 0.00],
+    "units": "share of annual US hurricane-landfall risk by calendar month "
+             "(sum 1)",
+    "baseline": "1851-2010 US major-hurricane landfalls (NOAA HURDAT)",
+    "citation": "NOAA NHC tropical cyclone climatology: season June 1 - "
+                "November 30, peak ~10 September; Aug-Oct holds ~93% of US "
+                "landfalls and 96% of major-hurricane days; monthly major "
+                "landfall counts 1851-2010 (Jun 2, Jul 4, Aug 30, Sep 44, "
+                "Oct 16 of 96) rounded to screening shares",
+}
+
+# Monthly revenue weights by portfolio region (mean 1.0 each). The shapes
+# carry the decision-relevant asymmetry: hurricanes arrive in the LOW season
+# (Aug-Oct trough) but resort downtime that stretches past December eats the
+# HIGH season (winter peak), which a flat daily-GOP model cannot see. Keyed
+# to the same region boxes as the SLR tables (one regional footprint).
+BI_SEASON_SHAPES = {
+    "gulf":             [1.15, 1.30, 1.35, 1.15, 1.00, 0.95,
+                         1.00, 0.80, 0.60, 0.75, 0.90, 1.05],
+    "florida_atlantic": [1.25, 1.45, 1.50, 1.20, 0.90, 0.85,
+                         0.90, 0.70, 0.50, 0.65, 0.85, 1.25],
+    "caribbean":        [1.40, 1.55, 1.55, 1.25, 0.85, 0.70,
+                         0.85, 0.70, 0.55, 0.60, 0.85, 1.15],
+    "hawaii":           [1.10, 1.05, 1.00, 0.95, 0.90, 1.10,
+                         1.20, 1.15, 0.80, 0.80, 0.90, 1.05],
+    "global_mean":      [1.00] * 12,
+}
+BI_SEASON_META = {
+    "units": "monthly revenue weight, normalized to mean 1.0 per region "
+             "(each row sums to 12)",
+    "baseline": "pre-pandemic STR / HVS / DBEDT lodging seasonality",
+    "citation": "monthly RevPAR shapes, screening grade: Caribbean "
+                "September runs ~60% below the February peak (HVS 'The "
+                "Seasonality Issue'; STR occupancy Feb-Apr high-70s vs "
+                "September trough); Florida beach product peaks "
+                "February-March and bottoms in September (Visit Florida "
+                "STR; Tampa/Naples RevPAR series); the Gulf shape is the "
+                "Florida shape flattened; Hawaii is mildest with dual "
+                "peaks (DBEDT hotel performance, ~1.3:1 peak:trough). "
+                "Outside every region box the flat shape applies (no "
+                "seasonality is asserted where none is known)",
+}
+
+# Damage ratio -> downtime, as a piecewise-linear fraction of the site's
+# full-reconstruction downtime anchor (the operator's reopenMonths), plus an
+# impeding-factor floor once damage crosses the structural threshold.
+BI_DOWNTIME = {
+    "nodes": [[0.0, 0.0], [0.02, 0.03], [0.10, 0.09],
+              [0.40, 0.75], [1.0, 1.0]],
+    "impeding_days": 120,
+    "impeding_threshold": 0.10,
+    "units": "damage ratio -> fraction of the reopen anchor (the "
+             "operator's reopenMonths); impeding floor in days once the "
+             "threshold is crossed",
+    "baseline": "FEMA Hazus 5.1 EQ TM Tables 11-2..11-9 (RES4 temporary "
+                "lodging)",
+    "citation": "Hazus RES4 damage-state repair-cost ratios {2%, 10%, "
+                "~41%, 100%} map to BI downtime {~14, 45, 360, 480} days "
+                "(recovery time x interruption multiplier); encoded as "
+                "fractions of the complete-damage anchor {0.03, 0.09, "
+                "0.75, 1.0} so the operator's reopenMonths stays the "
+                "anchor. The REDi impeding factors (inspection 5d + "
+                "contractor mobilization 23wk for an insured owner, "
+                "engineering and permitting largely in parallel) add a "
+                "~120-day floor once damage is structural (>=10%); "
+                "consistent with observed resort restorations (Westin St. "
+                "John 16 months; SW Florida beachfront 14-18+ months "
+                "after Ian). The old linear chain is retired: it priced a "
+                "10%-damaged resort at ~5 weeks of downtime",
+}
+
+# Share of a pure vacation-ownership site's revenue that CONTINUES through a
+# closure. Owner maintenance fees and club dues are contractual and keep
+# flowing while the resort is shut; transient rental, sales-preview, and
+# ancillary spend stop. A site's timeshare_share field scales this.
+BI_TIMESHARE_CONTINUING = {
+    "value": 0.65,
+    "units": "fraction of vacation-ownership revenue that continues during "
+             "closure",
+    "baseline": "MVW FY2023 revenue mix",
+    "citation": "vacation-ownership fee streams are contractual and keep "
+                "flowing while a resort is shut: maintenance-fee-funded "
+                "management fees and cost reimbursements plus financing "
+                "income were ~57% of Marriott Vacations Worldwide FY2023 "
+                "revenue (10-K), fees remain due at closed resorts (Fla. "
+                "Stat. 721.15; Westin St. John billed owners through its "
+                "16-month closure), and MVW's 2017-hurricane BI recovery "
+                "(~$38M over 2018-19) was small against ~$2B+ annual "
+                "revenue. At-risk share = 1 - 0.65 = rental + ancillary + "
+                "tour flow; set timeshare_share per site (1.0 = pure VO)",
+}
+
+# Regional demand shock after a major hurricane: undamaged sites in the
+# affected region lose transient demand too, and standard BI does NOT cover
+# it (no physical-damage trigger), so it is a FLAGGED indirect estimate,
+# never inside the TCOR total.
+BI_DEMAND_SHOCK = {
+    "cap": 0.6,
+    "gain": 1.2,
+    "months": 8,
+    "min_severity": 0.02,
+    "units": "onset demand-loss share = min(cap, gain x R) where R is the "
+             "share of regional insured value at structurally damaged "
+             "sites (damage >= the impeding threshold), decaying linearly "
+             "to zero over `months`; computed only when R >= min_severity",
+    "baseline": "2017-2019 basin events (STR / IDB / DBEDT-class sources)",
+    "citation": "severity-banded to the observed record: minor events "
+                "(R~0.1) ~12% demand loss (post-Irma Keys/Florida, "
+                "recovered within months); major (R~0.3) ~35% (Grand "
+                "Bahama -34% after Dorian; Caribbean -16.5% region-wide "
+                "September 2017); severe (R>0.5) ~60% with the longest "
+                "tail (USVI bookings -78%, Puerto Rico ~11 months to "
+                "recover air arrivals). Linear decay over 8 months "
+                "approximates the observed exponential recovery (tau 2-10 "
+                "months by severity). R on portfolio TIV proxies the "
+                "destination's room stock offline (assumes the portfolio "
+                "is representative); the shock has no physical-damage "
+                "trigger, is NOT covered by standard BI, and rides as a "
+                "FLAGGED indirect estimate, never inside the TCOR total",
+}
+
+# ---------------------------------------------------------------------------
+# Premium module (Task 4) + TCOR-aware payoff engine: how much of a modeled
+# transferred-loss reduction becomes premium at renewal. Retained savings
+# accrue automatically; premium savings must be NEGOTIATED, and the market
+# evidence is that realization is bounded and discretionary. The engine
+# therefore reports BCR both WITHOUT any credit (certain only) and WITH the
+# credit at this realization factor, and never blends the two silently.
+# ---------------------------------------------------------------------------
+
+PREMIUM_CREDIT_REALIZATION = {
+    "value": 0.5,
+    "range": [0.0, 1.0],
+    "units": "fraction of the technical premium saving (transferred-loss "
+             "reduction x load) an owner should expect to realize at "
+             "renewal with a documented submission",
+    "baseline": "n/a",
+    "citation": "bounded by the evidence poles: statutory wind-portion "
+                "credits where mandated run 20-60% (Alabama/Louisiana "
+                "FORTIFIED; Florida 627.0629 wind credits), while "
+                "discretionary commercial recognition is far weaker "
+                "(schedule-rating caps ~25%; FM Global's resilience credit "
+                "is a flat 5-10% of premium; Marsh reports recognition is "
+                "ad hoc; RFF finds mandated wildfire discounts ~1/10 of "
+                "annualized retrofit cost). 0.5 is the central ask for a "
+                "documented, modeled submission; the without-credit BCR is "
+                "always shown beside it. The dual framing has precedent: "
+                "owner-perspective analyses count premium savings (Kousky "
+                "& Kunreuther 2014; RFF WP 25-30; NIBS Mitigation Saves "
+                "stakeholder allocation) while societal BCAs exclude them "
+                "as transfers (FEMA BCA / OMB A-94), and NIST SP 1197's "
+                "rule (count premium savings OR avoided payouts, never "
+                "both) is satisfied by construction: certain savings are "
+                "retained-loss reductions, the credit prices only the "
+                "transferred slice",
+}
+
+
+# ---------------------------------------------------------------------------
 # App code generation. The offline single-file app cannot import Python, so
 # the shared constants are emitted as a generated JS module the assembler
 # embeds (app/src/05_assumptions.js). Deterministic output (no timestamps),
@@ -418,6 +589,24 @@ def to_app_js():
         "// site (capped; LABELED interim); a grid carrying flame-length-\n"
         "// conditioned ratios in v25 supersedes it per site\n"
         f"const FIRE_COND_INTERIM={_js(scalar('fire_cond_interim'))};\n"
+        "// BI module (Task 3): monthly share of Atlantic TC activity\n"
+        "// (NOAA NHC climatology; sums to 1), regional monthly revenue\n"
+        "// weights (mean 1 per region, same boxes as SLR), the HAZUS/REDi\n"
+        "// damage-to-downtime nodes with the impeding-factor floor, the\n"
+        "// continuing share of vacation-ownership revenue, and the\n"
+        "// post-Maria/Irma regional demand-shock parameterization (see\n"
+        "// the registry for the per-entry citations).\n"
+        f"const BI_TC_MONTH_W={_js(BI_TC_MONTH_WEIGHTS['value'])};\n"
+        f"const BI_SEASON_SHAPES={_js(BI_SEASON_SHAPES)};\n"
+        f"const BI_DOWNTIME_NODES={_js(BI_DOWNTIME['nodes'])};\n"
+        f"const BI_IMPEDING_DAYS={_js(BI_DOWNTIME['impeding_days'])};"
+        f"const BI_IMPEDING_THRESH={_js(BI_DOWNTIME['impeding_threshold'])};\n"
+        f"const BI_TIMESHARE_CONTINUING={_js(BI_TIMESHARE_CONTINUING['value'])};\n"
+        f"const BI_DEMAND_SHOCK={_js({k: BI_DEMAND_SHOCK[k] for k in ('cap', 'gain', 'months', 'min_severity')})};\n"
+        "// premium module (Task 4) / payoff engine: share of the technical\n"
+        "// premium saving assumed negotiable at renewal (documented range\n"
+        "// 0..1; the without-credit BCR is always shown beside it)\n"
+        f"const PREMIUM_CREDIT_REALIZATION={_js(PREMIUM_CREDIT_REALIZATION['value'])};\n"
     )
 
 

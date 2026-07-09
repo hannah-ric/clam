@@ -95,7 +95,11 @@ function adaptedFinSite(s,sc,mods){
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
   const heatCost=(gop/365)*excess*a.heatDrop*(mods.heatMult==null?1:mods.heatMult);
-  return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
+  /* curves ride along (additive) so the TCOR payoff engine can read the
+     per-return-period loss reduction a measure causes; no figure above
+     changes (parity-pinned) */
+  return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost,
+    curves:{tc:w.curve,cflood:cf.curve,rflood:rf.curve,prain:pv.curve,wfireFrac:fFrac}};
 }
 function adaptedTotal(sitesArr,sc,mods){
   let d=0,b=0,h=0;
