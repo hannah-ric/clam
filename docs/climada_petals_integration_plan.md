@@ -1,7 +1,7 @@
 # CLIMADA Petals Integration Plan
 ## Resort Portfolio Risk-to-Value: extending from single-peril CLIMADA Core to multi-peril Petals
 
-Prepared 1 July 2026. Reviewed against CLIMADA Core 6.1.x and CLIMADA Petals 6.x documentation and source, and against the current project codebase (refresh_hazard.py, check_climada.py, list_tc_datasets.py, diagnose_network.py, TNL_Resort_Climate_Risk_Explorer.html v1.5, hazard_grid.csv).
+Prepared 1 July 2026. Reviewed against CLIMADA Core 6.1.x and CLIMADA Petals 6.x documentation and source, and against the current project codebase (refresh_hazard.py, check_climada.py, list_datasets.py, diagnose_network.py, TNL_Resort_Climate_Risk_Explorer.html v1.5, hazard_grid.csv).
 
 ---
 

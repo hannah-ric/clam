@@ -32,12 +32,12 @@ Five places, four relationships. Nothing else exists.
   |  setup_env.sh adds Petals + xarray/netcdf4/rasterio to this
   |  SAME environment; there is exactly one environment, ever.
   v
-  YOUR MAC: the rtv folder (the VS Code project)
+  YOUR MAC: the repository root (the VS Code project)
   |  Python scripts that USE climada_env, plus their outputs.
   |  The pipeline's entire product is two files:
   |      hazard_grid.csv  +  hazard_grid_meta.json
   v
-  THE BROWSER: TNL_Resort_Climate_Risk_Explorer_v17.html
+  THE BROWSER: app/TNL_Resort_Climate_Risk_Explorer_v210.html
   |  Opened by double-click, runs entirely offline, holds all
   |  vulnerability, financial, adaptation, and insurance logic.
   |  It NEVER talks to CLIMADA or the internet. The CSV + JSON
@@ -58,10 +58,10 @@ and outputs; and Power BI keeps drinking from the same export tap it always
 has.
 
 =============================================================================
-SECTION 2: YOUR EXISTING rtv FOLDER, FILE BY FILE
+SECTION 2: YOUR EXISTING REPOSITORY, FILE BY FILE
 =============================================================================
 
-This is the reconciliation that was missing. Open your current rtv folder
+This is the reconciliation that was missing. Open the repository root
 and apply exactly this disposition. Nothing outside this table exists in the
 final state.
 
@@ -75,7 +75,7 @@ REPLACE (2 files; keep the old ones in an archive subfolder if you like):
                               provenance sidecar). Same filename, drop-in.
     TNL_Resort_Climate_Risk_Explorer.html
                               v1.5 is REPLACED as the thing you open by
-                              TNL_Resort_Climate_Risk_Explorer_v17.html.
+                              TNL_Resort_Climate_Risk_Explorer_v210.html.
                               Keep the v1.5 file itself: it is the patch
                               source that regenerates v1.6 and v1.7.
 
@@ -93,9 +93,10 @@ ADD (the 18 new files delivered in this conversation):
     Pipeline:        refresh_heat.py, merge_grids.py, validate_grid.py
     Orchestration:   setup_env.sh, run_pipeline.sh
     Tools:           convert_dem.py, list_datasets.py, check_phase1.py
-    App + lineage:   TNL_Resort_Climate_Risk_Explorer_v17.html,
+    App + lineage:   TNL_Resort_Climate_Risk_Explorer_v210.html (deployable),
                      TNL_Resort_Climate_Risk_Explorer_v16.html (lineage),
-                     patch_frontend.py, patch_frontend_p4.py
+                     TNL_Resort_Climate_Risk_Explorer_v113.html (lineage),
+                     patch_frontend.py through patch_frontend_p10.py
     Tests:           test_gridops.py, test_phase23_ops.py,
                      test_pipeline_sim.py, test_frontend.py
     Docs:            FULL_EXECUTION_PLAN.md (this file), RUNBOOK.md,
@@ -121,14 +122,14 @@ data. It disappears the moment you drop the new files in Step 24.
 =============================================================================
 SECTION 3: EXECUTION, EVERY STEP IN ORDER
 =============================================================================
-Numbered straight through. Terminal = VS Code terminal in the rtv folder,
+Numbered straight through. Terminal = VS Code terminal in the repository root,
 prompt showing (climada_env) from Step 4 onward. Your Mac's zsh runs the .sh
 scripts natively with `bash script.sh`.
 
 PART A: RECONCILE AND UPGRADE (Steps 1 to 8, about an hour plus downloads)
 
-Step 1. In the rtv folder, make an `archive` subfolder and move into it: the
-old refresh_hazard.py, list_tc_datasets.py, the old hazard_grid.csv, and any
+Step 1. In the repository root, make an `archive` subfolder and move into it: the
+old refresh_hazard.py, the old hazard_grid.csv, and any
 Streamlit-era files from the Section 2 delete list.
 
 Step 2. Copy the 18 new files from Section 2's ADD list into the folder,
@@ -165,7 +166,7 @@ Step 8. Run the code safety net once, as a baseline:
     python test_gridops.py
     python test_phase23_ops.py
     python test_pipeline_sim.py
-    python test_frontend.py TNL_Resort_Climate_Risk_Explorer_v17.html
+    python test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
 All four must pass (they need no CLIMADA; the last needs node, which comes
 with your system or via `brew install node`; skip it if node is absent and
 rely on the shipped verification).
@@ -212,7 +213,7 @@ Step 17. Gate (same command). rflood section appears.
 
 Step 18. The FLOPROS decision, once: open hazard_grid_meta.json, read the
 rflood members. Protection mentioned (flopros or a standard)? Set
-RFLOOD_GRID_INCLUDES_PROTECTION to true in the v17 HTML. No protection?
+RFLOOD_GRID_INCLUDES_PROTECTION to true in app/src/05_assumptions.js (then reassemble). No protection?
 Change nothing. Ambiguous? python list_datasets.py river_flood USA and bring
 me the output. Phase 2 done.
 
@@ -236,7 +237,7 @@ The old latitude formula had that backwards; the data does not.
 
 PART F: PHASE 4, SHIP TO THE APP (Steps 23 to 26)
 
-Step 23. Double-click TNL_Resort_Climate_Risk_Explorer_v17.html. Expect the
+Step 23. Double-click app/TNL_Resort_Climate_Risk_Explorer_v210.html. Expect the
 localStorage note from Section 2: an amber 1/4 badge from the old grid is
 normal at this moment.
 
@@ -325,9 +326,10 @@ Changed or new in this final pass (download these fresh):
 
 Unchanged from earlier in this conversation (already in your downloads and
 in this conversation's output list; no new copies needed):
-    TNL_Resort_Climate_Risk_Explorer_v17.html    the app (v1.7)
+    app/TNL_Resort_Climate_Risk_Explorer_v210.html    the deployable (v2.3.0)
     TNL_Resort_Climate_Risk_Explorer_v16.html    patch lineage
-    patch_frontend.py, patch_frontend_p4.py      patch lineage
+    TNL_Resort_Climate_Risk_Explorer_v113.html   patch lineage
+    patch_frontend.py through patch_frontend_p10.py patch lineage
     merge_grids.py, convert_dem.py, list_datasets.py
     test_gridops.py, test_phase23_ops.py, test_pipeline_sim.py,
     test_frontend.py

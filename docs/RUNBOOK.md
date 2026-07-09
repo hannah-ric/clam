@@ -1,5 +1,8 @@
 # Runbook: Phases 0-3 (multi-scenario wind, Petals surge, river flood, data-driven heat)
 
+Current deployable: `app/TNL_Resort_Climate_Risk_Explorer_v210.html` (assembled from
+`app/src/`). The sections below retain historical v1.6/v1.7 patch notes for context.
+
 This runbook covers the full hazard pipeline: the v3 refresh_hazard.py (wind +
 surge + river flood from CLIMADA/Petals), the new refresh_heat.py (heat
 indicators from observed climatology plus AR6 warming shifts), the merge and
@@ -19,8 +22,9 @@ merge_grids.py : concatenates grid CSVs into the ONE file the app consumes
 validate_grid.py v2 : acceptance test, now heat- and rflood-aware. Ship only
   on exit 0.
 patch_frontend.py : produces the v1.6 app from the v1.5 HTML (5 surgical
-  edits; aborts untouched if the source has drifted). Already applied:
-  TNL_Resort_Climate_Risk_Explorer_v16.html is the deployable file.
+  edits; aborts untouched if the source has drifted). The current deployable is
+  app/TNL_Resort_Climate_Risk_Explorer_v210.html (assembled from app/src/).
+  TNL_Resort_Climate_Risk_Explorer_v16.html remains as a lineage checkpoint.
 test_frontend.py : functional tests of the patched app logic in node; rerun
   after ANY future HTML edit.
 
@@ -65,7 +69,7 @@ CoastalDEM is the drop-in upgrade when granted.
     python refresh_heat.py                  # heat (first run downloads ~2 GB, cached)
     python merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
     python validate_grid.py hazard_grid.csv # ship only on RESULT: shippable
-    python test_frontend.py TNL_Resort_Climate_Risk_Explorer_v16.html
+    python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
 
 Then drop hazard_grid.csv into the v1.6 app and commit hazard_grid_meta.json
 beside it as the provenance record. Iterating? --countries VIR PRI,
@@ -137,7 +141,7 @@ Updated run order (only the last two lines changed):
     python refresh_heat.py
     python merge_grids.py hazard_grid.csv heat_grid.csv -o hazard_grid.csv
     python validate_grid.py hazard_grid.csv hazard_grid_meta.json
-    python test_frontend.py TNL_Resort_Climate_Risk_Explorer_v17.html
+    python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
 
 Then drop BOTH hazard_grid.csv and hazard_grid_meta.json onto the app's
 hazard zone. The validator's new section H hard-fails if the sidecar claims a

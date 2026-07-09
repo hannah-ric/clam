@@ -56,8 +56,8 @@ USB stick. The file is public data; there is nothing sensitive about moving
 it that way.
 
 **Step 4. Move the downloaded file into your project folder.**
-Drag SRTM15_V2.7.nc from your Downloads folder into the rtv folder (your existing project folder)
-(the one with all the .py files). It must sit next to convert_dem.py.
+Drag SRTM15_V2.7.nc from your Downloads folder into the repository root
+(the folder with pipeline/ and app/).
 
 **Step 5. Convert and crop it with one command.**
 The file you downloaded is in a scientific format (.nc) and covers the whole
@@ -110,7 +110,7 @@ on Windows, run once:  setx RTV_TOPO_PATH "D:\dems\SRTM15+V2.0.tiff"
 ## Opening it
 
 1. Open VS Code.
-2. File menu, then "Open Folder...", and pick your rtv folder (your existing project folder).
+2. File menu, then "Open Folder...", and pick the repository root (the CLAM project).
 3. The Explorer sidebar (the two-pages icon, top left, or Ctrl+Shift+E) now
    shows every file.
 
@@ -121,7 +121,7 @@ mental buckets: things YOU RUN, things that RUN THEMSELVES when called, and
 things you NEVER TOUCH.
 
 ```
-RTV  (your existing project folder)
+CLAM  (repository root)
 |
 |  THE TWO BUTTONS YOU PRESS
 |-- setup_env.sh                 run once (upgrades your existing climada_env)
@@ -141,7 +141,7 @@ RTV  (your existing project folder)
 |-- convert_dem.py               one-time DEM converter (Part 1, Step 5)
 |
 |  THE APP AND ITS BUILD CHAIN
-|-- TNL_Resort_Climate_Risk_Explorer_v17.html    THE app; open in a browser
+|-- app/TNL_Resort_Climate_Risk_Explorer_v210.html    THE app; open in a browser
 |-- patch_frontend.py            history: built v1.6 from the original
 |-- patch_frontend_p4.py         history: built v1.7 from v1.6
 |
@@ -168,7 +168,7 @@ RTV  (your existing project folder)
 
 REMEMBER: day to day you interact with exactly three things. run_pipeline.sh
 to make the data, the two hazard_grid files to drop into the app, and the
-v17 HTML file, which you open in a browser like any web page.
+v210 HTML file, which you open in a browser like any web page.
 
 ## Three one-time VS Code settings
 
@@ -238,7 +238,7 @@ reuses the caches and is far shorter. Worked when: same two closing lines as
 the rehearsal.
 
 **Next step 4. Load the app.**
-Double-click TNL_Resort_Climate_Risk_Explorer_v17.html (it opens in your
+Double-click app/TNL_Resort_Climate_Risk_Explorer_v210.html (it opens in your
 browser; nothing installs, nothing leaves your machine). Click the Method &
 data tab. Drag BOTH hazard_grid.csv and hazard_grid_meta.json onto the
 hazard drop zone at the same time. Worked when: the badge in the top bar
