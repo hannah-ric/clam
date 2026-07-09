@@ -22,8 +22,8 @@ And the whole four-peril copy corpus is swept.
 
 Twenty exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p10.py TNL_Resort_Climate_Risk_Explorer_v112.html \
-                                     TNL_Resort_Climate_Risk_Explorer_v113.html
+Usage:  python patch_frontend_p10.py Resort_Climate_Risk_Explorer_v112.html \
+                                     Resort_Climate_Risk_Explorer_v113.html
 """
 
 import sys
@@ -62,13 +62,13 @@ EDITS = [
 
 # 4 -- the downloadable template carries the wildfire fields ---------------------------
 ("""    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated\\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true\\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,\\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,\\n";""",
+    "Example Beachfront Resort,Coastal Collection,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true\\n"+
+    "Example Inland Resort,Heritage Stays,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,\\n"+
+    "Example Island Resort,Island Collection,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,\\n";""",
  """    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated,wui_class,defensible_space_m,roof_class_a\\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,,intermix,10,false\\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,,,,\\n";"""),
+    "Example Beachfront Resort,Coastal Collection,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true,,,\\n"+
+    "Example Inland Resort,Heritage Stays,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,,intermix,10,false\\n"+
+    "Example Island Resort,Island Collection,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,,,,\\n";"""),
 
 # 5 -- risk drivers derive from the acute peril list --------------------------------------
 ("""  const items=[

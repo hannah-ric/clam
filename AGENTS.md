@@ -22,7 +22,7 @@ gates and opening the app HTML in a browser.
 - Run the gates after any code change; run `tests/test_frontend.py` after any app edit.
 
 ### The app
-- Deployable: `app/TNL_Resort_Climate_Risk_Explorer_v210.html`, opened directly via
+- Deployable: `app/Resort_Climate_Risk_Explorer_v210.html`, opened directly via
   `file://` in a browser (fully offline, zero network calls since v3). It ships with a built-in
   sample portfolio: use the "Load the sample and explore" button (or `loadSample()`), so no
   pipeline output is needed to exercise the risk engine end to end.

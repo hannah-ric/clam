@@ -6,7 +6,7 @@ node, exactly like test_frontend.py (everything up to the end of restore()).
 The one test that matters most: six sites in one campus hit by one modeled
 hurricane retain ONE shared per-occurrence deductible, never six.
 
-Usage:  python tests/test_tcor.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
+Usage:  python tests/test_tcor.py app/Resort_Climate_Risk_Explorer_v210.html
 """
 
 import re
@@ -335,5 +335,5 @@ def main(html_path: str) -> int:
 
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else \
-        "app/TNL_Resort_Climate_Risk_Explorer_v210.html"
+        "app/Resort_Climate_Risk_Explorer_v210.html"
     raise SystemExit(main(path))

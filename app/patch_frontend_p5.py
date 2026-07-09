@@ -17,8 +17,8 @@ the full event sets.
 
 Eight exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p5.py TNL_Resort_Climate_Risk_Explorer_v17.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v18.html
+Usage:  python patch_frontend_p5.py Resort_Climate_Risk_Explorer_v17.html \
+                                    Resort_Climate_Risk_Explorer_v18.html
 """
 
 import sys

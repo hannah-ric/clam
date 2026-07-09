@@ -43,16 +43,16 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
 
 echo
 echo "== 3  frontend functional tests (v2.1.0 surface) ====================="
-python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
-python3 tests/test_tcor.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
+python3 tests/test_frontend.py app/Resort_Climate_Risk_Explorer_v210.html
+python3 tests/test_tcor.py app/Resort_Climate_Risk_Explorer_v210.html
 python3 tests/test_app_parity.py
 
 echo
 echo "== 4  app lineage reproducibility ==================================="
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-python3 app/patch_frontend.py app/TNL_Resort_Climate_Risk_Explorer.html "$TMP/v16.html"
-cmp "$TMP/v16.html" app/TNL_Resort_Climate_Risk_Explorer_v16.html
+python3 app/patch_frontend.py app/Resort_Climate_Risk_Explorer.html "$TMP/v16.html"
+cmp "$TMP/v16.html" app/Resort_Climate_Risk_Explorer_v16.html
 echo "ok  regenerated v1.6 is byte-identical to the committed v1.6"
 python3 app/patch_frontend_p4.py "$TMP/v16.html" "$TMP/v17.html"
 python3 app/patch_frontend_p5.py "$TMP/v17.html" "$TMP/v18.html"
@@ -61,7 +61,7 @@ python3 app/patch_frontend_p7.py "$TMP/v19.html" "$TMP/v110.html"
 python3 app/patch_frontend_p8.py "$TMP/v110.html" "$TMP/v111.html"
 python3 app/patch_frontend_p9.py "$TMP/v111.html" "$TMP/v112.html"
 python3 app/patch_frontend_p10.py "$TMP/v112.html" "$TMP/v113.html"
-cmp "$TMP/v113.html" app/TNL_Resort_Climate_Risk_Explorer_v113.html
+cmp "$TMP/v113.html" app/Resort_Climate_Risk_Explorer_v113.html
 echo "ok  patch chain v1.5 -> v1.13 is byte-identical to the committed v1.13"
 python3 pipeline/assumptions.py --check
 python3 app/assemble_app.py --check
@@ -69,7 +69,7 @@ python3 app/assemble_app.py --check
 echo
 echo "== 5  style guard ===================================================="
 # Frozen lineage files predate the project style sweep and stay verbatim.
-ALLOW='^app/TNL_Resort_Climate_Risk_Explorer\.html$|^app/TNL_Resort_Climate_Risk_Explorer_v16\.html$|^docs/climada_petals_integration_plan\.md$'
+ALLOW='^app/Resort_Climate_Risk_Explorer\.html$|^app/Resort_Climate_Risk_Explorer_v16\.html$|^docs/climada_petals_integration_plan\.md$'
 BAD=$(git ls-files | grep -Ev "$ALLOW" | xargs grep -l "$(printf '\xe2\x80\x94')" 2>/dev/null || true)
 if [ -n "$BAD" ]; then
   echo "FAIL: em dash found outside the frozen lineage files:"

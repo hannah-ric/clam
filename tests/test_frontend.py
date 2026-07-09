@@ -8,7 +8,7 @@ no-grid regression) AND the Phase 4 trust surface (CSV loader per-peril
 bookkeeping, provenance sidecar intake and rejection, badge and Method-tab
 rendering, partial-coverage flagging, persistence round trip).
 
-Usage:  python test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
+Usage:  python test_frontend.py app/Resort_Climate_Risk_Explorer_v210.html
 Rerun after ANY future edit to the HTML.
 """
 

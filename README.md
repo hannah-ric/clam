@@ -31,7 +31,7 @@ with Petals 6.2.0 is the current intended pairing: same major, Petals minor ahea
   |      hazard_grid.csv  +  hazard_grid_meta.json
   |  gated by validate_grid.py (ship only on exit 0)
   v
-  THE APP (app/TNL_Resort_Climate_Risk_Explorer_v210.html, the deployable)
+  THE APP (app/Resort_Climate_Risk_Explorer_v210.html, the deployable)
   |  Opened by double-click, runs entirely offline. Holds all
   |  vulnerability, financial, adaptation, and insurance logic.
   |  The CSV + JSON pair dropped on its Method tab is the only bridge.
@@ -232,7 +232,7 @@ The app's source of truth is `app/src/`: a shell head, nine readable JS domain
 modules (hazard engine, finance, adaptation, uncertainty, state and INFO copy,
 render, executive home, intake, persist and wiring), and a shell tail, concatenated in MANIFEST
 order. `python3 app/assemble_app.py` joins them into the deployable
-(`TNL_Resort_Climate_Risk_Explorer_v210.html`), still a single self-contained
+(`Resort_Climate_Risk_Explorer_v210.html`), still a single self-contained
 file that opens from file:// with nothing to install. To change the app: edit
 the module, reassemble, run the gates. `assemble_app.py --check` (a CI gate)
 fails if the committed deployable ever drifts from the source, and

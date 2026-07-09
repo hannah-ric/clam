@@ -17,8 +17,8 @@ needs the site's wui_class. Every new constant is documented in place.
 
 Fifteen exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p9.py TNL_Resort_Climate_Risk_Explorer_v111.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v112.html
+Usage:  python patch_frontend_p9.py Resort_Climate_Risk_Explorer_v111.html \
+                                    Resort_Climate_Risk_Explorer_v112.html
 """
 
 import sys
