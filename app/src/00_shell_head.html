@@ -12,31 +12,31 @@
 <style>
   /* ============================================================
      Design tokens. Restyling the app means editing THIS block.
-     Layer 1: the TNL brand palette (named). Layer 2: semantic
+     Layer 1: the brand palette (named). Layer 2: semantic
      tokens the components consume. Layer 3: type, space, chart
      chrome. Fonts are local-first (Fraunces / Archivo when the
      machine has them) with system fallbacks, so the file stays
      fully offline: no CDN fonts, ever.
      ============================================================ */
   :root{
-    /* layer 1: TNL palette */
-    --tnl-nero:#15202B; --tnl-dune:#E6E1D4; --tnl-vista:#0F3A4B;
-    --tnl-sand:#F6F4EF; --tnl-sky:#7FD0C4;
-    --tnl-vista-2:#12586F; --tnl-vista-3:#1E7FA6;
+    /* layer 1: brand palette */
+    --brand-nero:#15202B; --brand-dune:#E6E1D4; --brand-vista:#0F3A4B;
+    --brand-sand:#F6F4EF; --brand-sky:#7FD0C4;
+    --brand-vista-2:#12586F; --brand-vista-3:#1E7FA6;
     /* layer 2: semantic */
-    --bg:var(--tnl-sand); --surface:#FFFFFF; --surface-2:#FBFAF6;
-    --ink:var(--tnl-nero); --ink-2:#43535F; --muted:#66727D;
-    --line:var(--tnl-dune); --line-2:#EFEDE4;
-    --primary:var(--tnl-vista); --primary-2:var(--tnl-vista-2); --focus:var(--tnl-vista-3);
-    --heading:var(--tnl-vista); --accent:var(--tnl-sky);
+    --bg:var(--brand-sand); --surface:#FFFFFF; --surface-2:#FBFAF6;
+    --ink:var(--brand-nero); --ink-2:#43535F; --muted:#66727D;
+    --line:var(--brand-dune); --line-2:#EFEDE4;
+    --primary:var(--brand-vista); --primary-2:var(--brand-vista-2); --focus:var(--brand-vista-3);
+    --heading:var(--brand-vista); --accent:var(--brand-sky);
     --good:#2E8B6F; --bad:#B23A32;
     --on-primary:#FFFFFF; --sel:#EEF6F4; --note-bg:#F2F6F3;
-    --link:var(--tnl-vista-2); --on-accent:#08323C; --scrim:rgba(21,32,43,.45);
+    --link:var(--brand-vista-2); --on-accent:#08323C; --scrim:rgba(21,32,43,.45);
     --warn-bg:#F7EFE2; --warn-ink:#7A4A08; --warn-line:#E7D4B2;
     --ok-bg:#E9F4EF; --ok-ink:#175E46; --ok-line:#BFDFD2;
     --alert-bg:#FBF2F1; --alert-ink:#8F2119; --alert-line:#E4B7B2;
     /* top bar (always dark, in both themes) */
-    --topbar-bg:var(--tnl-vista); --topbar-line:#0A2A37; --topbar-ink:#EAF1F2;
+    --topbar-bg:var(--brand-vista); --topbar-line:#0A2A37; --topbar-ink:#EAF1F2;
     --topbar-muted:#A5C4CE; --topbar-field:#0C3242; --topbar-field-line:#1C566B;
     --topbar-field-hover:#10445A;
     /* risk-band scale, dark enough that white pill/cell text clears WCAG 3:1
@@ -779,7 +779,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="kicker">Travel + Leisure Co. &middot; Corporate Responsibility</span>
+    <span class="kicker">Illustrative Resort Group &middot; Climate Risk</span>
     <span class="name">Resort Portfolio <b>Risk-to-Value</b></span>
   </div>
   <div class="searchwrap">
@@ -1416,7 +1416,7 @@
 </main>
 
 <div class="foot-legal advanced-only">
-  Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
+  Screening and appraisal tool for internal planning. Sample asset values are illustrative fictions for exploration only. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
   <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.0.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall), WebGL climate map (MapLibre GL, offline Natural Earth basemap, per-peril hazard surfaces, event footprints, accumulation, pathway timeline with modeled-vs-interpolated labeling), TCOR board one-pager, over the classic workspace in Advanced: scenario timeline, score tracing, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Zero network calls. Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 

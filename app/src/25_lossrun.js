@@ -1,6 +1,6 @@
 /* ============================================================
    Loss-run calibration (overhaul Task 5)
-   TNL's actual claims history is the anchor that grounds the modeled
+   The portfolio owner's actual claims history is the anchor that grounds the modeled
    TCOR. This module ingests the loss run (claims report), maps claimants
    to sites and Coverage Major to CLAM's peril/coverage classes, groups
    claims into events (so a storm that hit six sites is ONE occurrence,

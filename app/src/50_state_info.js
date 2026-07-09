@@ -1,18 +1,18 @@
 const SAMPLE=[
-  ["Club Wyndham Ocean Walk","Club Wyndham",29.2247,-81.0068,58000000,{construction:"masonry",year_built:2002}],
-  ["Club Wyndham Sea Gardens","Club Wyndham",26.2731,-80.0906,42000000,{construction:"masonry",year_built:1988}],
-  ["Margaritaville Rio Mar","Margaritaville",18.3797,-65.8083,51000000,{construction:"engineered",year_built:1996,defended:true}],
-  ["Club Wyndham Bonnet Creek","Club Wyndham",28.3402,-81.5460,73000000,{construction:"engineered",year_built:2011}],
-  ["WorldMark New Orleans","WorldMark",29.9536,-90.0653,31000000,{construction:"masonry",year_built:1970,defended:true}],
-  ["Club Wyndham Kona Hawaiian","Club Wyndham",19.6406,-155.9967,39000000,{construction:"frame",year_built:1992}],
-  ["Shell Vacations Kauai Coast","Shell Vacations Club",22.0731,-159.3200,28000000,{construction:"frame",year_built:1987}],
-  ["Club Wyndham Galveston","Club Wyndham",29.2810,-94.7940,34000000,{construction:"masonry",year_built:1999,defended:true}],
-  ["WorldMark San Antonio","WorldMark",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
-  ["Club Wyndham Myrtle Beach","Club Wyndham",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
-  ["Margaritaville St Thomas","Margaritaville",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
+  ["Atlantic Vista Resort","Coastal Collection",29.2247,-81.0068,58000000,{construction:"masonry",year_built:2002}],
+  ["Coral Harbor Resort","Coastal Collection",26.2731,-80.0906,42000000,{construction:"masonry",year_built:1988}],
+  ["Palma Bay Resort","Island Collection",18.3797,-65.8083,51000000,{construction:"engineered",year_built:1996,defended:true}],
+  ["Lakeview Gardens Resort","Coastal Collection",28.3402,-81.5460,73000000,{construction:"engineered",year_built:2011}],
+  ["French Quarter Suites","Heritage Stays",29.9536,-90.0653,31000000,{construction:"masonry",year_built:1970,defended:true}],
+  ["Kona Shores Resort","Pacific Collection",19.6406,-155.9967,39000000,{construction:"frame",year_built:1992}],
+  ["Napali Coast Lodge","Pacific Collection",22.0731,-159.3200,28000000,{construction:"frame",year_built:1987}],
+  ["Seawall Point Resort","Coastal Collection",29.2810,-94.7940,34000000,{construction:"masonry",year_built:1999,defended:true}],
+  ["Riverwalk Court","Heritage Stays",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
+  ["Grand Strand Resort","Coastal Collection",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
+  ["Cane Bay Resort","Island Collection",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
   /* wui_class makes the sample demonstrate the wildfire peril out of the box:
-     Palm Springs sits against the San Jacinto wildland edge (illustrative) */
-  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999,wui_class:"interface",defensible_space_m:20}],
+     Desert Canyons sits against the San Jacinto wildland edge (illustrative) */
+  ["Desert Canyons Lodge","Mountain & Desert",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999,wui_class:"interface",defensible_space_m:20}],
 ];
 let sites=[];
 let hazardGrid=null;       // {rows, meta}: the loaded grid and its summary
@@ -139,7 +139,7 @@ const INFO={
     "<p>The pipeline also writes <code>hazard_grid_meta.json</code>. Drop it on the same zone to attach the run record (date, CLIMADA and Petals versions, datasets matched, DEM, anything skipped) to the badge and the Method tab.</p>"},
   tiv:{t:"Total insured value",b:
     "<p>The combined value of every site in the portfolio. All dollar losses are measured against it.</p>"+
-    "<p>Sample values are illustrative and are not actual Travel + Leisure Co. figures.</p>"},
+    "<p>Sample values are illustrative fictions for exploration only.</p>"},
   ead:{t:"Expected annual damage (EAD)",b:
     "<p>The <b>average</b> loss per year from this peril, blending frequent-small and rare-large events into one number.</p>"+
     "<p>We compute the damage at the six tabulated return periods (1-in-10 up to 1-in-500) and take the area under the loss-versus-frequency curve, <b>extended below 1-in-10</b>: the intensity curve is extrapolated to 1-in-5 and 1-in-2 and run through the same damage curve, so frequent events count instead of being silently floored at zero. Calm sites are unchanged (the damage threshold or freeboard zeroes the extension); chronically-exposed ones stop hiding their frequent losses. The results pack's event math never had the floor.</p>",
@@ -165,7 +165,7 @@ const INFO={
   brand:{t:"Expected annual damage by brand",b:
     "<p>Where expected loss concentrates by brand, so you can see which banner carries the exposure.</p>"},
   namedInsured:{t:"Named insured aggregation",b:
-    "<p>A single physical <b>site</b> (a resort campus) can carry several <b>named insured</b> parties: an owners' association (HOA) and the operating company (TNL), for example, each insuring different buildings on the same land.</p>"+
+    "<p>A single physical <b>site</b> (a resort campus) can carry several <b>named insured</b> parties: an owners' association (HOA) and the operating company, for example, each insuring different buildings on the same land.</p>"+
     "<p>The map shows <b>one marker per physical site</b>, so the portfolio reads as sites rather than duplicate pins stacked at the same coordinates. Everywhere the split matters, a <b>breakout</b> reports each named insured's value, expected annual damage, and share of the site total, so you can see <b>who is impacted and to what degree</b>.</p>"+
     "<p>Records are grouped by <code>site_id</code> when present, otherwise by exact coordinates. A portfolio with neither draws one marker per record, exactly as before.</p>",
     s:"A display and rollup lens: it groups the same per-record figures, changing none of them."},
@@ -349,7 +349,7 @@ const INFO={
     "<p>The modeled columns state their source (CLIMADA grid or interim screening model). Interim figures are for exploration; load a grid before putting these numbers in front of an underwriter.</p>"},
   tcor:{t:"Total Cost of Risk (TCOR)",b:
     "<p>What climate risk actually costs per year, all in: <b>retained property loss</b> (the deductibles' side of damage) + <b>retained business interruption</b> (waiting periods, losses beyond the BI limit or indemnity period) + <b>allocated insurance premium</b> + <b>annualized risk-control spend</b> + <b>program admin</b>. Indirect costs (guest rebooking, reputation) ride along as a flagged estimate and are never inside the total.</p>"+
-    "<p>The insurance program transfers most physical damage, so gross damage is an INPUT here, not the headline: it enters the waterfall at the top, the transferred share leaves to the insurer, and what remains (plus BI and premium) is TNL's cost. Every TCOR figure carries its basis; a figure standing on defaults or interim curves says so.</p>",
+    "<p>The insurance program transfers most physical damage, so gross damage is an INPUT here, not the headline: it enters the waterfall at the top, the transferred share leaves to the insurer, and what remains (plus BI and premium) is the portfolio owner's retained cost. Every TCOR figure carries its basis; a figure standing on defaults or interim curves says so.</p>",
     s:"Deductible and BI terms are program parameters (edit at renewal); defaults are documented placeholders, not policy facts."},
   tcorAgg:{t:"The aggregation rule",b:
     "<p>Hurricane carries a <b>per-occurrence deductible shared across the campus's sites hit by the same storm</b>: retained loss is computed once per modeled event across those sites (from the results pack's per-event table) and then summed over events. Summing per-site hurricane deductibles would count one occurrence six times at a six-site campus, so it is never done here.</p>"+
@@ -359,7 +359,7 @@ const INFO={
     "<p>Across ~245 sites, small events trip the general-property and flood deductibles often. No single-site view shows that cost: it lives in the frequency band (1-in-10 and more frequent), summed across the whole portfolio. The event math never had a 1-in-10 floor, and the pack's frequent-loss ladders extend to 1-in-2 so this layer is integrated explicitly.</p>"+
     "<p>The figure shown is the expected annual retained loss from that frequent band plus the expected number of deductible-triggering events per year. The loss run calibrates it: if deductibles actually trigger far more or less often than modeled, the calibration panel says so.</p>"},
   biRetained:{t:"Retained business interruption",b:
-    "<p>BI is the largest retained exposure: the waiting period (a time deductible) bites on EVERY event, and the rare event that blows through the BI limit or the period of indemnity leaves the excess with TNL. Both pieces are modeled separately: the frequent small piece and the rare large piece.</p>"+
+    "<p>BI is the largest retained exposure: the waiting period (a time deductible) bites on EVERY event, and the rare event that blows through the BI limit or the period of indemnity leaves the excess retained. Both pieces are modeled separately: the frequent small piece and the rare large piece.</p>"+
     "<p>The current chain is the interim one - damage ratio to downtime via the reopen assumption, times daily gross operating profit, with the BI &amp; EE declared value as the ceiling when no explicit limit is on file. The full BI module (archetype- and peril-specific downtime, seasonality weighting, timeshare revenue structure, regional demand shock at undamaged resorts) replaces the transform; the terms math stays.</p>",
     s:"BI terms (waiting period, limit, indemnity) are program parameters; defaults are flagged on every figure they touch."},
   lossrun:{t:"Loss-run calibration",b:
@@ -497,7 +497,7 @@ function drawMarkers(scored){
   if(!mapOk)return;
   markers.forEach(m=>map.removeLayer(m));markers=[];
   // one marker per PHYSICAL site: records sharing a site_id (or, absent that,
-  // exact coordinates) are aggregated, so an HOA record and a TNL record at the
+  // exact coordinates) are aggregated, so an HOA record and an operating-company record at the
   // same campus draw a single marker sized by the site's total value, with a
   // named-insured breakout in the popup. A portfolio with no site_id and
   // distinct coordinates draws one marker per record, exactly as before.
