@@ -319,7 +319,7 @@ is now app/src/: a shell head, eight readable JS domain modules (hazard engine,
 finance, adaptation, uncertainty, state and INFO copy, render, intake, persist
 and wiring), and a shell tail, concatenated in MANIFEST order by
 app/assemble_app.py into the same zero-install single-file deployable
-(TNL_Resort_Climate_Risk_Explorer_v210.html). The split from v1.13 was proven
+(Resort_Climate_Risk_Explorer_v210.html). The split from v1.13 was proven
 lossless byte for byte before any edit. The refactor inside the source made the
 peril set registry-driven: scorePhysTotal, the financial by-peril split, and
 the Power BI export all iterate the ACUTE registry, with the export column

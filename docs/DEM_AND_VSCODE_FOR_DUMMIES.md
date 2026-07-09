@@ -141,7 +141,7 @@ CLAM  (repository root)
 |-- convert_dem.py               one-time DEM converter (Part 1, Step 5)
 |
 |  THE APP AND ITS BUILD CHAIN
-|-- app/TNL_Resort_Climate_Risk_Explorer_v210.html    THE app; open in a browser
+|-- app/Resort_Climate_Risk_Explorer_v210.html    THE app; open in a browser
 |-- patch_frontend.py            history: built v1.6 from the original
 |-- patch_frontend_p4.py         history: built v1.7 from v1.6
 |
@@ -238,7 +238,7 @@ reuses the caches and is far shorter. Worked when: same two closing lines as
 the rehearsal.
 
 **Next step 4. Load the app.**
-Double-click app/TNL_Resort_Climate_Risk_Explorer_v210.html (it opens in your
+Double-click app/Resort_Climate_Risk_Explorer_v210.html (it opens in your
 browser; nothing installs, nothing leaves your machine). Click the Method &
 data tab. Drag BOTH hazard_grid.csv and hazard_grid_meta.json onto the
 hazard drop zone at the same time. Worked when: the badge in the top bar

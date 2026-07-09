@@ -13,8 +13,8 @@ financial layer), so unpriced exposure stays visible instead of absent.
 
 Two exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p8.py TNL_Resort_Climate_Risk_Explorer_v110.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v111.html
+Usage:  python patch_frontend_p8.py Resort_Climate_Risk_Explorer_v110.html \
+                                    Resort_Climate_Risk_Explorer_v111.html
 """
 
 import sys

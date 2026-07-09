@@ -13,8 +13,8 @@ canonical benefit-cost ratio, the prioritised resilience capex list.
 
 Four exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p6.py TNL_Resort_Climate_Risk_Explorer_v18.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v19.html
+Usage:  python patch_frontend_p6.py Resort_Climate_Risk_Explorer_v18.html \
+                                    Resort_Climate_Risk_Explorer_v19.html
 """
 
 import sys

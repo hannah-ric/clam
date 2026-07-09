@@ -14,8 +14,8 @@ every layer of this system keeps.
 
 Nine exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p7.py TNL_Resort_Climate_Risk_Explorer_v19.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v110.html
+Usage:  python patch_frontend_p7.py Resort_Climate_Risk_Explorer_v19.html \
+                                    Resort_Climate_Risk_Explorer_v110.html
 """
 
 import sys
@@ -98,13 +98,13 @@ function vulnOf(site){
 
 # 7 -- the downloadable template documents the new columns ---------------------------------
 ("""    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended\\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false\\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,\\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true\\n";""",
+    "Example Beachfront Resort,Coastal Collection,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false\\n"+
+    "Example Inland Resort,Heritage Stays,29.4241,-98.4936,22000000,USA,false,,frame,2005,\\n"+
+    "Example Island Resort,Island Collection,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true\\n";""",
  """    "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended,roof_type,roof_year,opening_protection,first_floor_elev_m,equipment_elevated\\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true\\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,\\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,\\n";"""),
+    "Example Beachfront Resort,Coastal Collection,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false,metal,2018,impact,1.2,true\\n"+
+    "Example Inland Resort,Heritage Stays,29.4241,-98.4936,22000000,USA,false,,frame,2005,,shingle,2005,none,,\\n"+
+    "Example Island Resort,Island Collection,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true,,,,,\\n";"""),
 
 # 8 -- version string --------------------------------------------------------------------------
 ("""v1.9 renewal & capital""",

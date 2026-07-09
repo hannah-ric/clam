@@ -216,7 +216,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="kicker">Travel + Leisure Co. &middot; Corporate Responsibility</span>
+    <span class="kicker">Illustrative Resort Group &middot; Climate Risk</span>
     <span class="name">Resort Portfolio <b>Risk-to-Value</b></span>
   </div>
   <div class="searchwrap">
@@ -660,7 +660,7 @@
 </main>
 
 <div class="foot-legal">
-  Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
+  Screening and appraisal tool for internal planning. Sample asset values are illustrative fictions for exploration only. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
   <br><span class="mono" style="font-size:10.5px">Resort Portfolio Risk-to-Value &middot; v1.5 trust &amp; depth &middot; perils: TC wind (Emanuel 2011), coastal &amp; riverine flood, extreme heat &middot; SSP-RCP scenarios &middot; measure library, ECA cost curve, waterfall, layering &middot; uncertainty bands, sensitivity tornado, site scorecards, vulnerability attributes, loss backtest &middot; runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
@@ -670,7 +670,7 @@
   <div class="modal">
     <h3>Add a site</h3>
     <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..."></div>
+    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Select an existing brand or type a new one"></div>
     <div class="grid2" style="gap:10px">
       <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
       <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
@@ -1165,18 +1165,18 @@ function tornadoSvg(u){
    App state
    ============================================================ */
 const SAMPLE=[
-  ["Club Wyndham Ocean Walk","Club Wyndham",29.2247,-81.0068,58000000,{construction:"masonry",year_built:2002}],
-  ["Club Wyndham Sea Gardens","Club Wyndham",26.2731,-80.0906,42000000,{construction:"masonry",year_built:1988}],
-  ["Margaritaville Rio Mar","Margaritaville",18.3797,-65.8083,51000000,{construction:"engineered",year_built:1996,defended:true}],
-  ["Club Wyndham Bonnet Creek","Club Wyndham",28.3402,-81.5460,73000000,{construction:"engineered",year_built:2011}],
-  ["WorldMark New Orleans","WorldMark",29.9536,-90.0653,31000000,{construction:"masonry",year_built:1970,defended:true}],
-  ["Club Wyndham Kona Hawaiian","Club Wyndham",19.6406,-155.9967,39000000,{construction:"frame",year_built:1992}],
-  ["Shell Vacations Kauai Coast","Shell Vacations Club",22.0731,-159.3200,28000000,{construction:"frame",year_built:1987}],
-  ["Club Wyndham Galveston","Club Wyndham",29.2810,-94.7940,34000000,{construction:"masonry",year_built:1999,defended:true}],
-  ["WorldMark San Antonio","WorldMark",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
-  ["Club Wyndham Myrtle Beach","Club Wyndham",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
-  ["Margaritaville St Thomas","Margaritaville",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
-  ["WorldMark Palm Springs","WorldMark",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999}],
+  ["Atlantic Vista Resort","Coastal Collection",29.2247,-81.0068,58000000,{construction:"masonry",year_built:2002}],
+  ["Coral Harbor Resort","Coastal Collection",26.2731,-80.0906,42000000,{construction:"masonry",year_built:1988}],
+  ["Palma Bay Resort","Island Collection",18.3797,-65.8083,51000000,{construction:"engineered",year_built:1996,defended:true}],
+  ["Lakeview Gardens Resort","Coastal Collection",28.3402,-81.5460,73000000,{construction:"engineered",year_built:2011}],
+  ["French Quarter Suites","Heritage Stays",29.9536,-90.0653,31000000,{construction:"masonry",year_built:1970,defended:true}],
+  ["Kona Shores Resort","Pacific Collection",19.6406,-155.9967,39000000,{construction:"frame",year_built:1992}],
+  ["Napali Coast Lodge","Pacific Collection",22.0731,-159.3200,28000000,{construction:"frame",year_built:1987}],
+  ["Seawall Point Resort","Coastal Collection",29.2810,-94.7940,34000000,{construction:"masonry",year_built:1999,defended:true}],
+  ["Riverwalk Court","Heritage Stays",29.4241,-98.4936,22000000,{construction:"frame",year_built:2005}],
+  ["Grand Strand Resort","Coastal Collection",33.6891,-78.8867,45000000,{construction:"masonry",year_built:2006}],
+  ["Cane Bay Resort","Island Collection",18.3358,-64.8963,47000000,{construction:"masonry",year_built:1989}],
+  ["Desert Canyons Lodge","Mountain & Desert",33.8303,-116.5453,17000000,{construction:"frame",year_built:1999}],
 ];
 let sites=[];
 let hazardGrid=null;       // {rows, meta} — badge/provenance for a loaded grid
@@ -1226,7 +1226,7 @@ const INFO={
     "<p>Drop a <b>CLIMADA hazard grid</b> on the Method tab to replace any peril with authoritative values. Perils not in the grid stay on the interim model. The badge in the top bar shows which source is live.</p>"},
   tiv:{t:"Total insured value",b:
     "<p>The combined value of every site in the portfolio. All dollar losses are measured against it.</p>"+
-    "<p>Sample values are illustrative and are not actual Travel + Leisure Co. figures.</p>"},
+    "<p>Sample values are illustrative and are illustrative fictions for exploration only.</p>"},
   ead:{t:"Expected annual damage (EAD)",b:
     "<p>The <b>average</b> loss per year from this peril, blending frequent-small and rare-large events into one number.</p>"+
     "<p>We compute the damage at six return periods (1-in-10 up to 1-in-500 years) and take the area under the loss-versus-frequency curve. Shown as dollars per year and as a share of value.</p>",
@@ -2362,9 +2362,9 @@ function downloadTemplate(){
   // Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, coastal.
   const csv=
     "name,brand,latitude,longitude,asset_value_usd,country,coastal,annual_revenue_usd,construction,year_built,defended\n"+
-    "Example Beachfront Resort,Club Wyndham,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false\n"+
-    "Example Inland Resort,WorldMark,29.4241,-98.4936,22000000,USA,false,,frame,2005,\n"+
-    "Example Island Resort,Margaritaville,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true\n";
+    "Example Beachfront Resort,Coastal Collection,27.9500,-82.4600,40000000,USA,true,14000000,masonry,2002,false\n"+
+    "Example Inland Resort,Heritage Stays,29.4241,-98.4936,22000000,USA,false,,frame,2005,\n"+
+    "Example Island Resort,Island Collection,18.3797,-65.8083,51000000,USA,true,18000000,engineered,2011,true\n";
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="rtv_site_template.csv";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);

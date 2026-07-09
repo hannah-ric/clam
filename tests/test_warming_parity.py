@@ -39,7 +39,7 @@ def deployable():
     def ver(p):
         m = re.search(r"_v(\d+)\.html$", p.name)
         return int(m.group(1)) if m else -1
-    apps = sorted(ROOT.glob("app/TNL_Resort_Climate_Risk_Explorer*.html"),
+    apps = sorted(ROOT.glob("app/Resort_Climate_Risk_Explorer*.html"),
                   key=ver)
     return apps[-1]
 

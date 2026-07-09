@@ -30,8 +30,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OLD = ROOT / "app/TNL_Resort_Climate_Risk_Explorer_v113.html"
-NEW = ROOT / "app/TNL_Resort_Climate_Risk_Explorer_v210.html"
+OLD = ROOT / "app/Resort_Climate_Risk_Explorer_v113.html"
+NEW = ROOT / "app/Resort_Climate_Risk_Explorer_v210.html"
 
 STUBS = """
 const _els={};

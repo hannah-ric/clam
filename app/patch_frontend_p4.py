@@ -15,8 +15,8 @@ hazNote narrows the disclosure caveat peril by peril instead of app-wide.
 
 Eleven exact-match edits; any miss aborts with no output written.
 
-Usage:  python patch_frontend_p4.py TNL_Resort_Climate_Risk_Explorer_v16.html \
-                                    TNL_Resort_Climate_Risk_Explorer_v17.html
+Usage:  python patch_frontend_p4.py Resort_Climate_Risk_Explorer_v16.html \
+                                    Resort_Climate_Risk_Explorer_v17.html
 """
 
 import sys
