@@ -89,6 +89,13 @@ function openForm(mode,site){
   set("mGround",s.ground_elev_m); set("mCellGround",s.cell_ground_elev_m);
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
+  /* v3.1 UX: sections open themselves when they carry data (editing), and
+     stay collapsed on a fresh add so the four required fields lead. Any
+     stale validation state from a previous visit is cleared. */
+  const more=g("mMoreWrap"),adv=g("mAdvWrap");
+  if(more)more.open=!!(s.brand||s.named_insured||s.site_id||s.site_name||s.annual_revenue_usd!=null||s.construction||s.year_built||s.defended);
+  if(adv)adv.open=!!(s.roof_type||s.roof_year||s.opening_protection||s.first_floor_elev_m!=null||s.equipment_elevated||s.wui_class||s.defensible_space_m!=null||s.archetype||s.ground_elev_m!=null||s.cell_ground_elev_m!=null);
+  clearFormErrors();
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
   try{_formReturn=document.activeElement;}catch(e){_formReturn=null;}
   g("addModal").classList.add("open");
@@ -100,8 +107,35 @@ function closeAdd(){
   if(_formReturn&&_formReturn.focus)try{_formReturn.focus();}catch(e){}
   _formReturn=null;
 }
+/* v3.1 UX: inline validation for the form's required fields. Each invalid
+   field is outlined and named in one message beside the buttons; the state
+   clears as the user types. The engine-level guard (siteRecordFromFields)
+   stays the source of truth and is unchanged. */
+const FORM_REQUIRED=["mName","mLat","mLon","mVal"];
+function clearFormErrors(){
+  const g=id=>document.getElementById(id);
+  FORM_REQUIRED.forEach(id=>{const el=g(id);if(el&&el.classList)el.classList.remove("invalid");});
+  const eb=g("mErr"); if(eb){eb.style.display="none";eb.textContent="";}
+}
+function validateForm(){
+  const g=id=>document.getElementById(id);
+  const errs=[];
+  const mark=(id,bad)=>{const el=g(id);if(el&&el.classList){if(bad)el.classList.add("invalid");else el.classList.remove("invalid");}
+    if(el&&el.setAttribute)el.setAttribute("aria-invalid",bad?"true":"false");};
+  const name=String(g("mName").value||"").trim(); mark("mName",!name); if(!name)errs.push("a site name");
+  const lat=parseFloat(g("mLat").value); const latBad=!isFinite(lat)||lat<-90||lat>90; mark("mLat",latBad); if(latBad)errs.push("a latitude between -90 and 90");
+  const lon=parseFloat(g("mLon").value); const lonBad=!isFinite(lon)||lon<-180||lon>180; mark("mLon",lonBad); if(lonBad)errs.push("a longitude between -180 and 180");
+  const val=parseFloat(g("mVal").value); const valBad=!isFinite(val)||val<0; mark("mVal",valBad); if(valBad)errs.push("a non-negative asset value");
+  const eb=g("mErr");
+  if(eb){
+    if(errs.length){eb.textContent="Still needed: "+errs.join(", ")+".";eb.style.display="";}
+    else{eb.style.display="none";eb.textContent="";}
+  }
+  return !errs.length;
+}
 function submitForm(){
   const g=id=>document.getElementById(id);
+  if(!validateForm())return;
   const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
     asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
     year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
@@ -155,14 +189,19 @@ function applyTheme(){
 function applyDensity(){
   try{ document.body.classList.toggle("compact",(ui.density||"comfortable")==="compact"); }catch(e){}
 }
-function closeDisplayMenu(){ closePortfolioMenu(); }
+/* v3.1 UX: display controls live in their own small modal (opened from the
+   Portfolio menu), so the menu itself stays a short list of actions. */
+function closeDisplayMenu(){
+  const m=document.getElementById("displayModal");
+  if(m&&m.classList)m.classList.remove("open");
+}
 function closePortfolioMenu(){
   const m=document.getElementById("portfolioMenu"),b=document.getElementById("portfolioBtn");
   if(m&&m.classList)m.classList.remove("open");
   if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
 }
 function syncDisplayMenu(){
-  const m=document.getElementById("portfolioMenu"); if(!m||!m.querySelectorAll)return;
+  const m=document.getElementById("displayModal"); if(!m||!m.querySelectorAll)return;
   m.querySelectorAll("[data-set-theme]").forEach(b=>b.setAttribute("aria-pressed",(ui.theme||"auto")===b.dataset.setTheme?"true":"false"));
   m.querySelectorAll("[data-set-density]").forEach(b=>b.setAttribute("aria-pressed",(ui.density||"comfortable")===b.dataset.setDensity?"true":"false"));
   const det=ui.simpleView?"essentials":"full";
@@ -330,7 +369,7 @@ function wire(){
   if(blb)blb.onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   const dcb=document.getElementById("decisionCompactBtn");
-  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};
+  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!decisionCompactOn();persist();renderDecision();};
   window.addEventListener("resize",()=>{if(typeof syncDecisionScroll==="function")syncDecisionScroll();});
   // brand filter persists like every other view preference
   brandFilter=(ui.views&&ui.views.brand)||"";
@@ -363,6 +402,9 @@ function wire(){
   document.getElementById("mCancel").onclick=closeAdd;
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
   document.getElementById("mAdd").onclick=submitForm;
+  // required fields clear their invalid outline as soon as the user types
+  FORM_REQUIRED.forEach(id=>{const el=document.getElementById(id);
+    if(el)el.addEventListener("input",()=>{if(el.classList)el.classList.remove("invalid");if(el.setAttribute)el.setAttribute("aria-invalid","false");});});
   document.getElementById("focusClose").onclick=closeScorecard;
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
@@ -390,10 +432,18 @@ function wire(){
       pMenu.classList.toggle("open",open);pBtn.setAttribute("aria-expanded",open?"true":"false");};
     pMenu.addEventListener("click",e=>e.stopPropagation());
     pMenu.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closePortfolioMenu));
-    pMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
-    pMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
-    pMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
   }
+  const dModal=document.getElementById("displayModal");
+  if(dModal){
+    dModal.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
+    dModal.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
+    dModal.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
+    dModal.addEventListener("click",e=>{if(e.target.id==="displayModal")closeDisplayMenu();});
+    const dClose=document.getElementById("displayClose");
+    if(dClose)dClose.onclick=closeDisplayMenu;
+  }
+  const dsBtn=document.getElementById("displaySettingsBtn");
+  if(dsBtn)dsBtn.onclick=()=>{closePortfolioMenu();syncDisplayMenu();if(dModal&&dModal.classList)dModal.classList.add("open");};
   const pMethod=document.getElementById("portfolioMethodBtn");
   if(pMethod)pMethod.onclick=()=>{setAdvancedMode(true);switchTab("method");};
   const pTmpl=document.getElementById("portfolioTmplBtn");
@@ -439,11 +489,20 @@ function wire(){
   Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});
   syncFinAssume();
   // hazard drop: grid CSV(s) + JSON sidecar(s), loaded as one batch so multiple
-  // CSVs merge instead of the last one silently replacing the rest
+  // CSVs merge instead of the last one silently replacing the rest.
+  // v3.1 UX: step 2 is gated until step 1 (a portfolio) is loaded, so new
+  // users cannot mis-sequence the walkthrough; the loaders are untouched.
   const hd=document.getElementById("hazDrop"),hf=document.getElementById("hazFile");
-  hd.onclick=()=>hf.click();
+  const hazGateBlocked=()=>{
+    if(sites.length)return false;
+    toast("Load your sites first (step 1). Use the sample portfolio or drop your site CSV, then load climate data.");
+    return true;
+  };
+  hd.onclick=()=>{ if(hazGateBlocked())return; hf.click(); };
   hf.onchange=()=>{ routeHazFiles(hf.files); hf.value=""; };
-  dropZoneMulti(hd,routeHazFiles);
+  dropZoneMulti(hd,files=>{ if(hazGateBlocked())return; routeHazFiles(files); });
+  const msb=document.getElementById("methodSampleBtn");
+  if(msb)msb.onclick=loadSample;
   // site drop
   const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
   sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};

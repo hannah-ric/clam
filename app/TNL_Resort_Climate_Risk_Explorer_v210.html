@@ -257,6 +257,9 @@
   .infopop .close{position:absolute;top:9px;right:10px;width:20px;height:20px;border:none;background:none;
     color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0}
   .infopop .close:hover{color:var(--ink)}
+  .infopop details.more{margin-top:6px}
+  .infopop details.more summary{cursor:pointer;font-size:12px;color:var(--link);font-weight:500;list-style-position:inside}
+  .infopop details.more[open] summary{margin-bottom:6px}
 
   .skip{position:absolute;left:-9999px;top:0;z-index:3000;background:var(--surface);color:var(--ink);
     padding:10px 16px;border-radius:0 0 8px 0;border:1px solid var(--line);font-size:13px}
@@ -272,6 +275,9 @@
   .field input[type=number],.field input[type=text]{
     padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;width:100%;
   }
+  .req{color:var(--alert-ink);font-weight:600;margin-left:1px}
+  .field input.invalid{border-color:var(--alert-ink);background:var(--alert-bg)}
+  .ferr{color:var(--alert-ink);font-size:12.5px;margin:2px 0 8px;font-weight:500}
   input[type=range]{width:100%}
   .measure{border:1px solid var(--line);border-radius:9px;padding:14px 16px;margin-bottom:12px;background:var(--surface-2)}
   .measure .mh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
@@ -287,6 +293,10 @@
   .drop:hover,.drop.over{border-color:var(--focus);background:var(--sel);color:var(--primary)}
   .drop .big{font-weight:600;color:var(--heading);margin-bottom:3px}
   .drop small{color:var(--muted)}
+  .drop.gated{opacity:.55;cursor:not-allowed}
+  .drop.gated:hover{border-color:var(--muted);background:var(--surface-2);color:var(--ink-2)}
+  .starthere{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--on-primary);background:var(--primary);border-radius:99px;padding:3px 10px;margin-left:8px;vertical-align:middle}
 
   /* Method tab guided path */
   .stepflow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px}
@@ -325,6 +335,16 @@
     color:var(--ink);font:inherit;font-size:12.5px}
   /* decision view: sticky first column + scroll affordance */
   .decision-scroll{overflow-x:auto;position:relative;-webkit-overflow-scrolling:touch}
+  .decision-scroll .tbl tr.thgroup th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;text-align:left;border-bottom:none;padding-bottom:2px;background:var(--surface)}
+  .decision-scroll .tbl tr.thgroup th+th{border-left:1px solid var(--line-2);padding-left:10px}
+  .tolstatus{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
+  .tolstatus .tolchip{display:inline-flex;align-items:center;gap:7px;font-weight:600;border-radius:99px;padding:4px 12px;font-size:12.5px}
+  .tolstatus .tolchip .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .tolstatus .tolchip.ok{background:var(--sel);color:var(--good)}
+  .tolstatus .tolchip.ok .dot{background:var(--good)}
+  .tolstatus .tolchip.breach{background:var(--alert-bg);color:var(--alert-ink)}
+  .tolstatus .tolchip.breach .dot{background:var(--alert-ink)}
   .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(21,32,43,.12)}
   html[data-theme="dark"] .decision-scroll.is-scrollable{box-shadow:inset -10px 0 10px -8px rgba(0,0,0,.35)}
   .decision-scroll .tbl th:first-child,.decision-scroll .tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
@@ -775,33 +795,14 @@
       <button type="button" class="info on-dark" data-info="interim" aria-label="Where the hazard data comes from" aria-expanded="false">i</button>
     </span>
     <div class="exportwrap">
-      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Portfolio, display options, and guide">Portfolio &#9662;</button>
-      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio, display, and guide" style="width:300px">
+      <button class="btn ghost" id="portfolioBtn" aria-haspopup="true" aria-expanded="false" aria-controls="portfolioMenu" title="Portfolio, guide, and display settings">Portfolio &#9662;</button>
+      <div class="exportmenu" id="portfolioMenu" role="menu" aria-label="Portfolio and guide" style="width:300px">
         <button class="mi" role="menuitem" id="portfolioGuideBtn"><b>Guide</b><small>What this tool does and how to read it</small></button>
         <button class="mi" role="menuitem" id="sampleBtn"><b>Load sample portfolio</b><small>12 illustrative resorts to explore the tool</small></button>
         <button class="mi" role="menuitem" id="portfolioMethodBtn"><b>Upload your site list</b><small>Opens Method &amp; data to drop in a CSV</small></button>
         <button class="mi" role="menuitem" id="portfolioTmplBtn"><b>Download site template</b><small>Required columns and optional profile fields</small></button>
         <div class="dm-sep" style="height:1px;background:var(--line);margin:8px 11px"></div>
-        <div class="dm-sec">Theme</div>
-        <div class="dm-seg" role="group" aria-label="Theme">
-          <button type="button" data-set-theme="light">Light</button>
-          <button type="button" data-set-theme="dark">Dark</button>
-          <button type="button" data-set-theme="auto">System</button>
-        </div>
-        <div class="dm-sec">Density</div>
-        <div class="dm-seg" role="group" aria-label="Density">
-          <button type="button" data-set-density="comfortable">Comfortable</button>
-          <button type="button" data-set-density="compact">Compact</button>
-        </div>
-        <div class="dm-sec">Detail level</div>
-        <div class="dm-seg" role="group" aria-label="Detail level">
-          <button type="button" data-set-detail="full">Full</button>
-          <button type="button" data-set-detail="essentials">Essentials</button>
-        </div>
-        <div class="dm-hint">Essentials hides the specialist panels (model definition, uncertainty, backtest). The trust surface always stays.</div>
-        <div class="dm-sec">Summary panels</div>
-        <div class="dm-checks" id="dmPanels"></div>
-        <div class="dm-hint">Display choices never change a computed figure or an export.</div>
+        <button class="mi" role="menuitem" id="displaySettingsBtn"><b>Display settings</b><small>Theme, density, detail level, and Summary panels</small></button>
       </div>
     </div>
     <button type="button" class="btn ghost" id="advancedBtn" aria-pressed="false"
@@ -925,6 +926,7 @@
       <h2 class="sec">Portfolio climate risk at a glance</h2>
       <p class="sub" id="sumSub"></p>
       <div class="note" id="dataBanner" style="margin-bottom:14px"></div>
+      <div class="panel tolstatus" id="tolStatusCard" style="display:none"></div>
       <div class="panel scrubbar">
         <span class="scrublabel">Timeline</span>
         <div id="scrubSteps" class="scrubsteps" role="group" aria-label="Scenario timeline"></div>
@@ -939,7 +941,7 @@
       <div class="panel" id="decisionPanel">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px">
           <h3 style="margin:0">Decision view<button type="button" class="info" data-info="decision" aria-label="How to read the decision view" aria-expanded="false">i</button></h3>
-          <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Hide flood depth and downtime columns">Fewer columns</button>
+          <button type="button" class="lightbtn decision-compact-toggle" id="decisionCompactBtn" title="Show or hide the physical-impact columns (flood depth and downtime at the rare year)">Fewer columns</button>
         </div>
         <div id="decisionHost"></div>
       </div>
@@ -1310,8 +1312,8 @@
     </div>
     <div class="grid2">
       <div class="panel">
-        <h3><span class="stepnum">1</span>Sites data</h3>
-        <div class="hint">Start here. Load or replace the portfolio; every tab fills in immediately.</div>
+        <h3><span class="stepnum">1</span>Sites data<span class="starthere" id="siteStartHere" style="display:none">Start here</span></h3>
+        <div class="hint">Load or replace the portfolio; every tab fills in immediately.</div>
         <div id="siteDrop" class="drop">
           <div class="big">Drop your site CSV here</div>
           <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name.</small>
@@ -1319,8 +1321,9 @@
         <input type="file" id="siteFile" accept=".csv" hidden>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="lightbtn" id="tmplBtn">Download site template</button>
+          <button class="lightbtn" id="methodSampleBtn">Load sample portfolio</button>
         </div>
-        <p class="hint" style="margin-top:10px">To load the sample portfolio, use <b>Portfolio</b> in the top bar.</p>
+        <p class="hint" style="margin-top:10px">The sample portfolio (12 illustrative resorts) is the fastest way to explore before uploading your own list.</p>
       </div>
       <div class="panel">
         <h3><span class="stepnum">2</span>Hazard source</h3>
@@ -1439,16 +1442,40 @@
   </div>
 </div>
 
+<div class="modal-bg" id="displayModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Display settings" style="width:min(420px,94vw);max-height:90vh;overflow:auto">
+    <h3 style="margin:0 0 4px">Display settings</h3>
+    <p class="hint" style="margin:0 0 8px">Display choices never change a computed figure or an export.</p>
+    <div class="dm-sec" style="margin-left:0;margin-right:0">Theme</div>
+    <div class="dm-seg" role="group" aria-label="Theme" style="padding-left:0;padding-right:0">
+      <button type="button" data-set-theme="light">Light</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+      <button type="button" data-set-theme="auto">System</button>
+    </div>
+    <div class="dm-sec" style="margin-left:0;margin-right:0">Density</div>
+    <div class="dm-seg" role="group" aria-label="Density" style="padding-left:0;padding-right:0">
+      <button type="button" data-set-density="comfortable" title="More spacing and larger type">Comfortable</button>
+      <button type="button" data-set-density="compact" title="Tighter rows and smaller type, more on screen">Compact</button>
+    </div>
+    <div class="dm-sec" style="margin-left:0;margin-right:0">Detail level</div>
+    <div class="dm-seg" role="group" aria-label="Detail level" style="padding-left:0;padding-right:0">
+      <button type="button" data-set-detail="full">Full</button>
+      <button type="button" data-set-detail="essentials">Essentials</button>
+    </div>
+    <div class="dm-hint" style="padding-left:0;padding-right:0">Essentials hides the specialist panels (model definition, uncertainty, backtest). The trust surface always stays.</div>
+    <div class="dm-sec" style="margin-left:0;margin-right:0">Summary panels</div>
+    <div class="dm-checks" id="dmPanels" style="padding-left:0;padding-right:0"></div>
+    <div class="row">
+      <button class="lightbtn primary" id="displayClose">Done</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="addModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formTitle" style="width:min(580px,94vw);max-height:90vh;overflow:auto">
     <h3 id="formTitle">Add a site</h3>
-    <div class="field"><label>Name</label><input type="text" id="mName" placeholder="Resort name"></div>
-    <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Club Wyndham, WorldMark..." list="brandList"><datalist id="brandList"></datalist></div>
-    <div class="grid2" style="gap:10px">
-      <div class="field"><label>Named insured (optional)</label><input type="text" id="mNamedInsured" placeholder="HOA, operating company..."></div>
-      <div class="field"><label>Site ID (groups insureds into one site)</label><input type="text" id="mSiteId" placeholder="e.g. CAMPUS-BEACH"></div>
-    </div>
-    <div class="field"><label>Site name (campus display, optional)</label><input type="text" id="mSiteName" placeholder="blank = use the name above"></div>
+    <p class="hint" style="margin:0 0 10px">Only the fields marked <span class="req">*</span> are required. Everything else refines the estimate and can be added later via Edit site.</p>
+    <div class="field"><label>Name <span class="req" title="Required">*</span></label><input type="text" id="mName" placeholder="Resort name"></div>
     <div class="field">
       <label>Location (search a place, or type coordinates below)</label>
       <div class="searchwrap" style="width:100%">
@@ -1457,21 +1484,31 @@
       </div>
     </div>
     <div class="grid2" style="gap:10px">
-      <div class="field"><label>Latitude</label><input type="number" id="mLat" step="0.0001"></div>
-      <div class="field"><label>Longitude</label><input type="number" id="mLon" step="0.0001"></div>
+      <div class="field"><label>Latitude <span class="req" title="Required">*</span></label><input type="number" id="mLat" step="0.0001" placeholder="-90 to 90"></div>
+      <div class="field"><label>Longitude <span class="req" title="Required">*</span></label><input type="number" id="mLon" step="0.0001" placeholder="-180 to 180"></div>
     </div>
-    <div class="grid2" style="gap:10px">
-      <div class="field"><label>Asset value (USD)</label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
-      <div class="field"><label>Annual revenue (USD, optional)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
-    </div>
-    <div class="grid2" style="gap:10px">
-      <div class="field"><label>Construction</label>
-        <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+    <div class="field" style="max-width:56%"><label>Asset value (USD) <span class="req" title="Required">*</span></label><input type="number" id="mVal" step="1000000" placeholder="40000000"></div>
+    <details id="mMoreWrap" style="margin:2px 0 12px">
+      <summary style="cursor:pointer;font-size:12.5px;color:var(--link);font-weight:500">More details: brand, insured parties, revenue, construction (all optional)</summary>
+      <div class="hint" style="margin:8px 0 10px">Blank fields fall back to the portfolio defaults; fill in what you know.</div>
+      <div class="field"><label>Brand</label><input type="text" id="mBrand" placeholder="Select an existing brand or type a new one" list="brandList"><datalist id="brandList"></datalist></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Named insured</label><input type="text" id="mNamedInsured" placeholder="HOA, operating company..."></div>
+        <div class="field"><label>Site ID (groups insureds into one site)</label><input type="text" id="mSiteId" placeholder="e.g. CAMPUS-BEACH"></div>
       </div>
-      <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
-    </div>
-    <div class="field"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
-    <details style="margin:2px 0 12px">
+      <div class="field"><label>Site name (campus display)</label><input type="text" id="mSiteName" placeholder="blank = use the name above"></div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Annual revenue (USD)</label><input type="number" id="mRev" step="1000000" placeholder="blank = 35% of value"></div>
+        <div class="field"><label>Year built</label><input type="number" id="mYear" step="1" placeholder="e.g. 2004"></div>
+      </div>
+      <div class="grid2" style="gap:10px">
+        <div class="field"><label>Construction</label>
+          <select id="mConstr"><option value="">Not specified</option><option value="frame">Frame (wood)</option><option value="masonry">Masonry</option><option value="engineered">Engineered / concrete</option></select>
+        </div>
+        <div class="field" style="align-self:end"><label style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="mDefended" style="width:auto">Coastally defended (levee, seawall, or elevated site)</label></div>
+      </div>
+    </details>
+    <details id="mAdvWrap" style="margin:2px 0 12px">
       <summary style="cursor:pointer;font-size:12.5px;color:var(--link);font-weight:500">Advanced: sharpens the insurance view (all optional)</summary>
       <div class="hint" style="margin:8px 0 10px">These are the documented "secondary modifiers" underwriters price on. Leave blank if unknown; blanks reproduce the basic estimate.</div>
       <div class="grid2" style="gap:10px">
@@ -1503,6 +1540,7 @@
         <span class="hint">Shifts the damage curves by structural form and siting; the fields above keep refining envelope condition on top.</span>
       </div>
     </details>
+    <div class="ferr" id="mErr" role="alert" style="display:none"></div>
     <div class="row">
       <button class="lightbtn" id="mCancel">Cancel</button>
       <button class="lightbtn primary" id="mAdd">Add site</button>
@@ -3837,7 +3875,10 @@ let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",s
      compact), and per-panel visibility on the Summary tab (panels[key]=false
      hides; anything else shows). simpleView above remains the detail-level
      flag (true = essentials). */
-  theme:"auto",density:"comfortable",panels:{},decisionCompact:false,dismissedInterimBanner:false};
+  /* decisionCompact defaults ON (v3.1 UX): the decision view lands with the
+     scannable column set; "All columns" persists an explicit false. Legacy
+     saved sessions carry their own value and are untouched by the default. */
+  theme:"auto",density:"comfortable",panels:{},decisionCompact:true,dismissedInterimBanner:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -4158,10 +4199,19 @@ function ensureInfoPop(){
   document.body.appendChild(_infoPop);
   return _infoPop;
 }
+/* v3.1 UX: one reading rhythm for every popover. The first paragraph is the
+   takeaway; bodies of three or more paragraphs collapse the rest behind a
+   "More detail" disclosure so no popover demands a long read up front. The
+   authored content strings are untouched (tests pin their wording). */
+function infoBodyHtml(b){
+  const parts=String(b).split(/(?=<p[ >])/).filter(x=>x.trim());
+  if(parts.length<3)return b;
+  return parts[0]+'<details class="more"><summary>More detail</summary>'+parts.slice(1).join("")+'</details>';
+}
 function showInfo(btn){
   const c=INFO[btn.dataset.info];if(!c)return;
   const pop=ensureInfoPop();
-  pop.innerHTML='<button class="close" aria-label="Close explanation">&times;</button><h4>'+esc(c.t)+'</h4>'+c.b+(c.s?'<div class="src">'+c.s+'</div>':"");
+  pop.innerHTML='<button class="close" aria-label="Close explanation">&times;</button><h4>'+esc(c.t)+'</h4>'+infoBodyHtml(c.b)+(c.s?'<div class="src">'+c.s+'</div>':"");
   pop.classList.add("open");
   const r=btn.getBoundingClientRect();
   const pw=pop.offsetWidth,ph=pop.offsetHeight,vw=document.documentElement.clientWidth,vh=document.documentElement.clientHeight;
@@ -4195,7 +4245,7 @@ function showMapUnavailable(){
      under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
   if(el.classList&&el.classList.add)el.classList.add("mapless");
-  el.innerHTML='<div class="mapless-msg">The climate map lives on the command view (top bar: Command view): real hazard surfaces, TCOR-encoded sites, and the pathway timeline, fully offline. This legacy pins-map area is retired; every figure and analysis works without it.</div>';
+  el.innerHTML='<div class="mapless-msg">The map is not shown here. Use the <b>Command view</b> (top bar) for the climate map and its timeline; every figure and analysis on this page works without the map.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
@@ -5624,6 +5674,9 @@ function render(){
    why-these-numbers trace. Physical units lead; the qualitative bands stay
    on the ratings surfaces. */
 let decisionSort={key:"ead",dir:-1};
+/* v3.1 UX: compact is the landing state; only an explicit, persisted false
+   (the user clicked "All columns") widens the table. */
+function decisionCompactOn(){ return !(ui&&ui.decisionCompact===false); }
 function syncDecisionScroll(){
   const el=document.getElementById("decisionScroll");
   if(!el||!el.classList||el.scrollWidth==null)return;
@@ -5634,7 +5687,7 @@ function renderDecision(){
   const host=document.getElementById("decisionHost"); if(!host)return;
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
-  const compact=!!(ui&&ui.decisionCompact);
+  const compact=decisionCompactOn();
   const cbtn=document.getElementById("decisionCompactBtn");
   if(cbtn){cbtn.textContent=compact?"All columns":"Fewer columns";if(cbtn.setAttribute)cbtn.setAttribute("aria-pressed",compact?"true":"false");}
   const rows=decisionRows(sites,scenario,tolAf());
@@ -5650,7 +5703,12 @@ function renderDecision(){
   const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
   const th=(label,key,num,title)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer"'+(title?' title="'+esc(title)+'"':'')+'>'
     +label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
-  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead><tr>'+
+  /* v3.1 UX: a group row chunks the columns into four readable families
+     (who / cost / physical impact / action / status), so the table scans in
+     blocks instead of ten equal-weight headers. Display-only. */
+  const grp=(label,span)=>'<th colspan="'+span+'" scope="colgroup">'+label+'</th>';
+  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead>'+
+    '<tr class="thgroup">'+grp("Site",1)+grp("Driver &amp; cost",3)+(compact?"":grp("1-in-100 impact",2))+grp("Best action",2)+grp("Status &amp; data",2)+'</tr><tr>'+
     th("Site","name")+th("Main driver","dom")+
     th("Rare extreme year damage","dmg100",1,"Loss at a ~1% annual chance return period (1-in-100)")+
     th("Expected annual cost ($/yr)","ead",1,"Average yearly climate cost at this scenario")+
@@ -5885,12 +5943,40 @@ function tolAf(){
   return annuity(hv===""?APPRAISAL_DEFAULTS.horizonYears:+hv,
                  (dv===""?APPRAISAL_DEFAULTS.discountPct:+dv)/100);
 }
+/* v3.1 UX: the tolerance position is a decision driver, so a compact status
+   strip stays on the Summary tab even while the full threshold panel is
+   hidden by the default panel set. The strip reads the same toleranceFlags
+   as the panel and computes nothing new. */
+function revealTolerancePanel(){
+  if(!ui.panels)ui.panels={};
+  ui.panels.tolerance=true;persist();applyPanelPrefs();
+  const p=document.getElementById("tolPanel");
+  if(p&&p.scrollIntoView)try{p.scrollIntoView({behavior:"smooth",block:"start"});}catch(e){}
+}
+function renderToleranceStatus(t){
+  const card=document.getElementById("tolStatusCard"); if(!card)return;
+  if(!sites.length){card.style.display="none";card.innerHTML="";return;}
+  const nBr=t.siteBreaches.length;
+  const breach=t.anyBreach;
+  const bits=[];
+  if(nBr)bits.push("<b>"+nBr+" site"+(nBr>1?"s":"")+"</b> over the site threshold");
+  if(t.portBreach)bits.push("portfolio expected cost over its threshold");
+  if(t.varBreach)bits.push("rare extreme year over its threshold");
+  card.style.display="";
+  card.innerHTML=
+    '<span class="tolchip '+(breach?"breach":"ok")+'"><span class="dot"></span>'+(breach?"Over tolerance":"Within tolerance")+'</span>'+
+    '<span style="flex:1;min-width:200px">'+(breach
+      ?bits.join(" \u00b7 ")+" at "+esc(SCEN_LABEL[scenario]||scenario)+"."
+      :"Every site, the portfolio, and the tail sit inside your stated thresholds at "+esc(SCEN_LABEL[scenario]||scenario)+".")+'</span>'+
+    '<button type="button" class="lightbtn" onclick="revealTolerancePanel()">Review thresholds</button>';
+}
 function renderTolerance(){
   const host=document.getElementById("tolBody"); if(!host)return;
   const panel=document.getElementById("tolPanel");
-  if(!sites.length){ if(panel)panel.style.display="none"; return; }
+  if(!sites.length){ if(panel)panel.style.display="none"; renderToleranceStatus(null); return; }
   if(panel)panel.style.display="block";
   const t=toleranceFlags(sites,scenario,tolAf());
+  renderToleranceStatus(t);
   const fld=(key,label,val,step,unit)=>'<div class="field" style="margin-bottom:4px"><label>'+label+'</label>'+
     '<input type="number" data-tol="'+key+'" min="0" step="'+step+'" value="'+val+'" style="width:100%"> <span class="hint">'+unit+'</span></div>';
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
@@ -5933,7 +6019,7 @@ function renderTolerance(){
   if(ro&&ro.innerHTML)ro.innerHTML+=" "+(t.anyBreach
     ?'Against the stated risk tolerance, <b>'+(t.siteBreaches.length?t.siteBreaches.length+" site"+(t.siteBreaches.length>1?"s":""):"")+
       (t.siteBreaches.length&&(t.portBreach||t.varBreach)?" and ":"")+
-      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; see Position vs tolerance below.'
+      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; Review thresholds on the tolerance strip shows the detail.'
     :"The portfolio sits within its stated risk tolerance at this scenario.");
 }
 function renderOverview(scored){
@@ -6716,7 +6802,23 @@ function metaSourceLine(s){
   if(s.years&&s.years.length)bits.push("climatology "+esc(s.years[0])+"-"+esc(s.years[s.years.length-1]));
   return bits.join(" \u00b7 ");
 }
+/* v3.1 UX: the Method tab walks new users through step 1 before step 2. With
+   no portfolio loaded, the sites panel carries a "Start here" badge and the
+   hazard drop zone reads gated (the click/drop guard lives in wire()). Pure
+   display: data loaders are untouched. */
+function updateMethodGate(){
+  const gate=!sites.length;
+  const hd=document.getElementById("hazDrop");
+  if(hd&&hd.classList){
+    if(gate)hd.classList.add("gated"); else hd.classList.remove("gated");
+    hd.title=gate?"Load your sites first (step 1). Hazard data is reported against the loaded portfolio.":"";
+    if(hd.setAttribute)hd.setAttribute("aria-disabled",gate?"true":"false");
+  }
+  const sh=document.getElementById("siteStartHere");
+  if(sh&&sh.style)sh.style.display=gate?"":"none";
+}
 function renderHazProv(){
+  updateMethodGate();
   const badge=document.getElementById("hazBadge"),text=document.getElementById("hazText");
   const auth=perilAuthority();
   const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"+(a.nSites?", "+a.sitesModeled+"/"+a.nSites+" sites within coverage":"")):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';
@@ -7717,6 +7819,13 @@ function openForm(mode,site){
   set("mGround",s.ground_elev_m); set("mCellGround",s.cell_ground_elev_m);
   g("mNamedInsured").value=s.named_insured||""; g("mSiteId").value=s.site_id||""; g("mSiteName").value=s.site_name||"";
   g("mGeo").value=""; g("mGeoResults").classList.remove("open");
+  /* v3.1 UX: sections open themselves when they carry data (editing), and
+     stay collapsed on a fresh add so the four required fields lead. Any
+     stale validation state from a previous visit is cleared. */
+  const more=g("mMoreWrap"),adv=g("mAdvWrap");
+  if(more)more.open=!!(s.brand||s.named_insured||s.site_id||s.site_name||s.annual_revenue_usd!=null||s.construction||s.year_built||s.defended);
+  if(adv)adv.open=!!(s.roof_type||s.roof_year||s.opening_protection||s.first_floor_elev_m!=null||s.equipment_elevated||s.wui_class||s.defensible_space_m!=null||s.archetype||s.ground_elev_m!=null||s.cell_ground_elev_m!=null);
+  clearFormErrors();
   _editId=(mode==="edit"&&s.id!=null)?s.id:null;
   try{_formReturn=document.activeElement;}catch(e){_formReturn=null;}
   g("addModal").classList.add("open");
@@ -7728,8 +7837,35 @@ function closeAdd(){
   if(_formReturn&&_formReturn.focus)try{_formReturn.focus();}catch(e){}
   _formReturn=null;
 }
+/* v3.1 UX: inline validation for the form's required fields. Each invalid
+   field is outlined and named in one message beside the buttons; the state
+   clears as the user types. The engine-level guard (siteRecordFromFields)
+   stays the source of truth and is unchanged. */
+const FORM_REQUIRED=["mName","mLat","mLon","mVal"];
+function clearFormErrors(){
+  const g=id=>document.getElementById(id);
+  FORM_REQUIRED.forEach(id=>{const el=g(id);if(el&&el.classList)el.classList.remove("invalid");});
+  const eb=g("mErr"); if(eb){eb.style.display="none";eb.textContent="";}
+}
+function validateForm(){
+  const g=id=>document.getElementById(id);
+  const errs=[];
+  const mark=(id,bad)=>{const el=g(id);if(el&&el.classList){if(bad)el.classList.add("invalid");else el.classList.remove("invalid");}
+    if(el&&el.setAttribute)el.setAttribute("aria-invalid",bad?"true":"false");};
+  const name=String(g("mName").value||"").trim(); mark("mName",!name); if(!name)errs.push("a site name");
+  const lat=parseFloat(g("mLat").value); const latBad=!isFinite(lat)||lat<-90||lat>90; mark("mLat",latBad); if(latBad)errs.push("a latitude between -90 and 90");
+  const lon=parseFloat(g("mLon").value); const lonBad=!isFinite(lon)||lon<-180||lon>180; mark("mLon",lonBad); if(lonBad)errs.push("a longitude between -180 and 180");
+  const val=parseFloat(g("mVal").value); const valBad=!isFinite(val)||val<0; mark("mVal",valBad); if(valBad)errs.push("a non-negative asset value");
+  const eb=g("mErr");
+  if(eb){
+    if(errs.length){eb.textContent="Still needed: "+errs.join(", ")+".";eb.style.display="";}
+    else{eb.style.display="none";eb.textContent="";}
+  }
+  return !errs.length;
+}
 function submitForm(){
   const g=id=>document.getElementById(id);
+  if(!validateForm())return;
   const raw={name:g("mName").value,brand:g("mBrand").value,latitude:g("mLat").value,longitude:g("mLon").value,
     asset_value_usd:g("mVal").value,annual_revenue_usd:g("mRev").value,construction:g("mConstr").value,
     year_built:g("mYear").value,defended:g("mDefended").checked,roof_type:g("mRoofType").value,
@@ -7783,14 +7919,19 @@ function applyTheme(){
 function applyDensity(){
   try{ document.body.classList.toggle("compact",(ui.density||"comfortable")==="compact"); }catch(e){}
 }
-function closeDisplayMenu(){ closePortfolioMenu(); }
+/* v3.1 UX: display controls live in their own small modal (opened from the
+   Portfolio menu), so the menu itself stays a short list of actions. */
+function closeDisplayMenu(){
+  const m=document.getElementById("displayModal");
+  if(m&&m.classList)m.classList.remove("open");
+}
 function closePortfolioMenu(){
   const m=document.getElementById("portfolioMenu"),b=document.getElementById("portfolioBtn");
   if(m&&m.classList)m.classList.remove("open");
   if(b&&b.setAttribute)b.setAttribute("aria-expanded","false");
 }
 function syncDisplayMenu(){
-  const m=document.getElementById("portfolioMenu"); if(!m||!m.querySelectorAll)return;
+  const m=document.getElementById("displayModal"); if(!m||!m.querySelectorAll)return;
   m.querySelectorAll("[data-set-theme]").forEach(b=>b.setAttribute("aria-pressed",(ui.theme||"auto")===b.dataset.setTheme?"true":"false"));
   m.querySelectorAll("[data-set-density]").forEach(b=>b.setAttribute("aria-pressed",(ui.density||"comfortable")===b.dataset.setDensity?"true":"false"));
   const det=ui.simpleView?"essentials":"full";
@@ -7958,7 +8099,7 @@ function wire(){
   if(blb)blb.onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   const dcb=document.getElementById("decisionCompactBtn");
-  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};
+  if(dcb)dcb.onclick=()=>{ui.decisionCompact=!decisionCompactOn();persist();renderDecision();};
   window.addEventListener("resize",()=>{if(typeof syncDecisionScroll==="function")syncDecisionScroll();});
   // brand filter persists like every other view preference
   brandFilter=(ui.views&&ui.views.brand)||"";
@@ -7991,6 +8132,9 @@ function wire(){
   document.getElementById("mCancel").onclick=closeAdd;
   document.getElementById("addModal").addEventListener("click",e=>{if(e.target.id==="addModal")closeAdd();});
   document.getElementById("mAdd").onclick=submitForm;
+  // required fields clear their invalid outline as soon as the user types
+  FORM_REQUIRED.forEach(id=>{const el=document.getElementById(id);
+    if(el)el.addEventListener("input",()=>{if(el.classList)el.classList.remove("invalid");if(el.setAttribute)el.setAttribute("aria-invalid","false");});});
   document.getElementById("focusClose").onclick=closeScorecard;
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
@@ -8018,10 +8162,18 @@ function wire(){
       pMenu.classList.toggle("open",open);pBtn.setAttribute("aria-expanded",open?"true":"false");};
     pMenu.addEventListener("click",e=>e.stopPropagation());
     pMenu.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closePortfolioMenu));
-    pMenu.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
-    pMenu.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
-    pMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
   }
+  const dModal=document.getElementById("displayModal");
+  if(dModal){
+    dModal.querySelectorAll("[data-set-theme]").forEach(b=>b.onclick=()=>{ui.theme=b.dataset.setTheme;persist();applyTheme();syncDisplayMenu();});
+    dModal.querySelectorAll("[data-set-density]").forEach(b=>b.onclick=()=>{ui.density=b.dataset.setDensity;persist();applyDensity();syncDisplayMenu();});
+    dModal.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
+    dModal.addEventListener("click",e=>{if(e.target.id==="displayModal")closeDisplayMenu();});
+    const dClose=document.getElementById("displayClose");
+    if(dClose)dClose.onclick=closeDisplayMenu;
+  }
+  const dsBtn=document.getElementById("displaySettingsBtn");
+  if(dsBtn)dsBtn.onclick=()=>{closePortfolioMenu();syncDisplayMenu();if(dModal&&dModal.classList)dModal.classList.add("open");};
   const pMethod=document.getElementById("portfolioMethodBtn");
   if(pMethod)pMethod.onclick=()=>{setAdvancedMode(true);switchTab("method");};
   const pTmpl=document.getElementById("portfolioTmplBtn");
@@ -8067,11 +8219,20 @@ function wire(){
   Object.keys(finInit).forEach(id=>{const el=document.getElementById(id);if(el){el.value=finInit[id];el.oninput=syncFinAssume;}});
   syncFinAssume();
   // hazard drop: grid CSV(s) + JSON sidecar(s), loaded as one batch so multiple
-  // CSVs merge instead of the last one silently replacing the rest
+  // CSVs merge instead of the last one silently replacing the rest.
+  // v3.1 UX: step 2 is gated until step 1 (a portfolio) is loaded, so new
+  // users cannot mis-sequence the walkthrough; the loaders are untouched.
   const hd=document.getElementById("hazDrop"),hf=document.getElementById("hazFile");
-  hd.onclick=()=>hf.click();
+  const hazGateBlocked=()=>{
+    if(sites.length)return false;
+    toast("Load your sites first (step 1). Use the sample portfolio or drop your site CSV, then load climate data.");
+    return true;
+  };
+  hd.onclick=()=>{ if(hazGateBlocked())return; hf.click(); };
   hf.onchange=()=>{ routeHazFiles(hf.files); hf.value=""; };
-  dropZoneMulti(hd,routeHazFiles);
+  dropZoneMulti(hd,files=>{ if(hazGateBlocked())return; routeHazFiles(files); });
+  const msb=document.getElementById("methodSampleBtn");
+  if(msb)msb.onclick=loadSample;
   // site drop
   const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
   sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};
