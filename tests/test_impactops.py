@@ -463,6 +463,80 @@ def test_site_rp_losses():
     ok("site_rp_losses: step exceedance per site, monotone, opt-in")
 
 
+def test_event_outputs():
+    """TCOR Task A: sparse per-event rows, joint event sets, ladders."""
+    # sparse rows: floor drops small entries, zero-freq events vanish,
+    # catalog names win over the source:index fallback
+    losses = np.array([[50_000.0, 400.0], [0.0, 0.0], [900.0, 2_000.0]])
+    freq = np.array([0.02, 0.0, 0.5])
+    rows = ri.sparse_event_rows(losses, freq, ["KATRINA", "X", "SMALL"],
+                                "present", floor_usd=1000.0, site_offset=10)
+    assert [r["id"] for r in rows] == ["KATRINA", "SMALL"]
+    assert rows[0]["sites"] == [[10, 50_000.0]], "floor drops site 1's 400"
+    assert rows[1]["sites"] == [[11, 2_000.0]], "site 0's 900 under floor"
+    rows_noname = ri.sparse_event_rows(losses, freq, None, "src", 1000.0)
+    assert rows_noname[0]["id"] == "src:0" and rows_noname[1]["id"] == "src:2"
+
+    # build_event_sets: joint wind+surge adds per event within one source;
+    # weights renormalize over present sources; kept vs total AAL recorded
+    prep = {"wind": {"present": {"freq": np.array([0.01, 0.02]),
+                                 "int": np.array([[70.0, 65.0],
+                                                  [45.0, 30.0]]),
+                                 "event_name": ["ALPHA", "BETA"]}},
+            "surge": {("present", "present"):
+                      {"int": np.array([[2.0, 1.8], [0.8, 0.0]])}},
+            "rflood": {}}
+    vals = np.array([2e6, 3e6])
+    es = ri.build_event_sets(prep, "present", vals, np.ones(2),
+                             np.full(2, ri.FB_COAST), floor_usd=1.0)
+    assert len(es) == 1 and es[0]["weight"] == 1.0
+    assert es[0]["source"] == "present"
+    ids = [e["id"] for e in es[0]["events"]]
+    assert ids == ["ALPHA", "BETA"]
+    # per-event joint loss equals wind + surge at that event for that site
+    wl = ri.wind_losses(prep["wind"]["present"]["int"], vals, np.ones(2))
+    sl = ri.flood_losses(prep["surge"][("present", "present")]["int"], vals,
+                         np.full(2, ri.FB_COAST))
+    want = wl + sl
+    got = {(e["id"], j): l for e in es[0]["events"] for j, l in e["sites"]}
+    assert abs(got[("ALPHA", 0)] - want[0, 0]) < 0.01
+    assert abs(got[("ALPHA", 1)] - want[0, 1]) < 0.01
+    # bookkeeping: kept == total when the floor keeps everything, and the
+    # recorded AAL reconciles with eval_scenario's tc + cflood
+    r = ri.eval_scenario(prep, "present", vals, np.ones(2),
+                         np.full(2, ri.FB_COAST), np.full(2, ri.FB_RIVER))
+    joint_aal = r["tc"]["aal"] + r["cflood"]["aal"]
+    assert abs(es[0]["aal_usd"] - joint_aal) < 0.05
+    assert abs(es[0]["kept_aal_usd"] - es[0]["aal_usd"]) < 0.05
+
+    # ladders: sub-1-in-10 band present, monotone with rarity, and the
+    # tc_joint column dominates its components at every point
+    lad = ri.build_frequent_ladders(prep, "present", vals, np.ones(2),
+                                    np.full(2, ri.FB_COAST),
+                                    np.full(2, ri.FB_RIVER))
+    assert set(lad) >= {"tc", "cflood", "tc_joint"}
+    for p in lad:
+        for a, b in zip(ri.LADDER_RPS, ri.LADDER_RPS[1:]):
+            assert (lad[p][b] >= lad[p][a] - 1e-9).all(), (p, a, b)
+    for rp in ri.LADDER_RPS:
+        assert (lad["tc_joint"][rp] >= lad["tc"][rp] - 1e-9).all()
+        assert (lad["tc_joint"][rp] >= lad["cflood"][rp] - 1e-9).all()
+    # the 1-in-50 event (freq 0.02) is visible at RP 50 and beyond
+    assert lad["tc"][50][0] > 0
+
+    # combiners: country tagging and zero-fill alignment
+    combined = ri.combine_event_sets([("USA", {"present": es}),
+                                      ("BHS", {})])
+    assert [p["country"] for p in combined["present"]] == ["USA"]
+    lads = ri.combine_ladders([("USA", {"present": lad}),
+                               ("BHS", {})], [2, 3])
+    rows2 = lads["present"]["tc_joint"]
+    assert len(rows2) == 5, "BHS zero-fills to keep pack site order"
+    assert rows2[2:] == [[0.0] * len(ri.LADDER_RPS)] * 3
+    assert rows2[0][-1] > 0
+    ok("event outputs: sparse rows, joint event sets, ladders, combiners")
+
+
 def test_annuity():
     # 25 years at 3%: standard annuity factor ~17.413
     assert abs(ri.annuity(25, 0.03) - 17.4131) < 5e-4
@@ -529,6 +603,7 @@ if __name__ == "__main__":
     test_archetype_differentiation()
     test_depth_at_structure()
     test_site_rp_losses()
+    test_event_outputs()
     test_annuity()
     test_named_insured_rollup()
     print("\nALL IMPACT-OP TESTS PASSED")

@@ -270,6 +270,111 @@ def main(path: str, meta_path: str | None = None) -> int:
                f"({len(deferred)} deferred), ordering and BCRs reconcile "
                f"({plan.get('scenario')})")
 
+    # I. event sets (TCOR Task A, optional section) -----------------------------------------
+    # The per-event joint wind+surge table is the shared hurricane
+    # deductible's hard dependency: if it is present it must be internally
+    # sound (ids unique per source, frequencies positive, site indices in
+    # range, per-country weights normalized) and must RECONCILE with the
+    # scenario's tc + cflood AAL, with the floor-dropped remainder bounded.
+    ev = pack.get("event_sets")
+    if ev:
+        i_bad = False
+        n_sites = int(pack["sites"].get("count") or 0)
+        floor = float(ev.get("floor_usd") or 0.0)
+        for k, parts in (ev.get("scenarios") or {}).items():
+            if k not in scen:
+                i_bad |= fail(f"event_sets: scenario {k} absent from pack")
+                continue
+            by_country = {}
+            kept_total = 0.0
+            aal_total = 0.0
+            for p in parts:
+                by_country.setdefault(p.get("country", "?"), 0.0)
+                by_country[p.get("country", "?")] += float(p["weight"])
+                kept_total += p["weight"] * float(p.get("kept_aal_usd", 0.0))
+                aal_total += p["weight"] * float(p.get("aal_usd", 0.0))
+                ids = [e["id"] for e in p["events"]]
+                if len(ids) != len(set(ids)):
+                    i_bad |= fail(f"event_sets {k}/{p.get('source')}: "
+                                  f"duplicate event ids within one source")
+                for e in p["events"]:
+                    if not (float(e["freq"]) > 0):
+                        i_bad |= fail(f"event_sets {k}/{p.get('source')}: "
+                                      f"event {e['id']} has non-positive "
+                                      f"frequency")
+                        break
+                    if any(j < 0 or j >= n_sites or l < floor - 0.01
+                           or l != l for j, l in e["sites"]):
+                        i_bad |= fail(f"event_sets {k}/{p.get('source')}: "
+                                      f"event {e['id']} carries a site index "
+                                      f"out of range or a loss below the "
+                                      f"floor")
+                        break
+            for iso3, wsum in by_country.items():
+                if abs(wsum - 1.0) > 0.01:
+                    i_bad |= fail(f"event_sets {k}: source weights for "
+                                  f"{iso3} sum to {wsum:.3f}, not 1")
+            bp = scen[k]["portfolio"].get("by_peril_aal_usd", {})
+            joint = float(bp.get("tc", 0.0)) + float(bp.get("cflood", 0.0))
+            if aal_total > 0 and not rel_close(aal_total, joint, 0.02):
+                i_bad |= fail(f"event_sets {k}: weighted event AAL "
+                              f"({aal_total:,.0f}) does not reconcile with "
+                              f"tc + cflood AAL ({joint:,.0f})")
+            if aal_total > 0:
+                dropped = (aal_total - kept_total) / aal_total
+                if dropped > 0.10:
+                    i_bad |= fail(f"event_sets {k}: the floor dropped "
+                                  f"{dropped:.1%} of the joint AAL; the "
+                                  f"attritional layer would be understated "
+                                  f"(lower --event-floor)")
+                elif dropped > 0.02:
+                    warn(f"event_sets {k}: floor dropped {dropped:.1%} of "
+                         f"joint AAL; acceptable but review --event-floor")
+        hard |= i_bad
+        if not i_bad:
+            n_ev = sum(len(p["events"])
+                       for parts in (ev.get("scenarios") or {}).values()
+                       for p in parts)
+            ok(f"event sets: ids, weights, indices, and AAL reconciliation "
+               f"sound ({n_ev} events across "
+               f"{len(ev.get('scenarios') or {})} scenario(s))")
+    else:
+        warn("no event_sets section: the shared per-occurrence hurricane "
+             "deductible cannot be computed at event level from this pack; "
+             "TCOR consumers fall back to labeled approximations")
+
+    # I2. frequent-loss ladders (optional section) -------------------------------------------
+    lad = pack.get("frequent_losses")
+    if lad:
+        l_bad = False
+        rps_l = lad.get("ladder_rps") or []
+        n_sites = int(pack["sites"].get("count") or 0)
+        if sorted(rps_l) != rps_l or not rps_l or rps_l[0] >= 10:
+            l_bad |= fail("frequent_losses: ladder_rps must ascend and reach "
+                          "into the sub-1-in-10 attritional band")
+        for k, by_peril in (lad.get("scenarios") or {}).items():
+            for p, rows in by_peril.items():
+                if len(rows) != n_sites:
+                    l_bad |= fail(f"frequent_losses {k}/{p}: {len(rows)} "
+                                  f"rows for {n_sites} sites")
+                    continue
+                for r in rows:
+                    if len(r) != len(rps_l) or any(
+                            x < 0 or x != x for x in r) or any(
+                            r[i] > r[i + 1] + 0.01
+                            for i in range(len(r) - 1)):
+                        l_bad |= fail(f"frequent_losses {k}/{p}: a site row "
+                                      f"is malformed, negative, or decreases "
+                                      f"with rarity")
+                        break
+        hard |= l_bad
+        if not l_bad:
+            ok(f"frequent-loss ladders: shape and monotonicity sound "
+               f"(rps {rps_l})")
+    else:
+        warn("no frequent_losses section: per-location deductible math and "
+             "the attritional layer fall back to the app's interim curves")
+
     # H. provenance cross-check ------------------------------------------------------------
     if meta_path:
         print(f"\nProvenance cross-check against {meta_path}:")

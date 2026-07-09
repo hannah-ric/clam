@@ -2178,6 +2178,966 @@ function aggregatePortfolio(sites,sc){
 }
 
 /* ============================================================
+   TCOR engine (overhaul Tasks 1 + 2)
+   Total Cost of Risk is the tool's output; physical damage is an input.
+   TCOR per site per year = retained property loss + retained business
+   interruption + allocated premium + annualized risk-control spend +
+   allocated program admin. Indirect costs (guest rebooking, reputation)
+   ride along as a FLAGGED estimate and are never added to the total.
+
+   THE AGGREGATION RULE (the single most important correctness rule):
+   - hurricane (joint wind+surge events) carries ONE per-occurrence
+     deductible shared across the sites the event touched (the Campus
+     grouping): retained loss is computed at the EVENT level from the
+     results pack's per-event table and then summed across events. It is
+     NEVER the sum of per-site hurricane deductibles.
+   - flood and general property carry per-location deductibles: retained
+     loss integrates each site's own loss ladder and sums per site.
+   Portfolio TCOR is therefore event-level for correlated perils and
+   site-level for the rest - not a column total.
+
+   Everything here READS hazard/event outputs (results pack event_sets and
+   frequent_losses, or the app's interim curves as a LABELED fallback);
+   nothing here re-derives or alters the hazard science. Every estimate
+   carries a basis label; a TCOR built on fallbacks says so.
+   ============================================================ */
+
+/* Program parameters. Deductibles are confidential and change at renewal,
+   so they are PARAMETERS with documented defaults, never hardcoded facts.
+   basis: "per-occurrence-campus" shares one hurricane deductible across a
+   campus's sites per event (the SOV's Campus Code is the sharing unit);
+   "per-occurrence-program" shares one across the whole portfolio per
+   event; "per-location" applies per site per event. */
+let tcorProgram={
+  deductibles:{
+    hurricane:{amountUsd:1000000,basis:"per-occurrence-campus"},
+    flood:{amountUsd:100000,basis:"per-location"},
+    general:{amountUsd:50000,basis:"per-location"}
+  },
+  /* peril -> deductible class; surge rides with wind under the hurricane
+     occurrence by default (named-storm basis); reclassify at renewal if
+     the program treats surge as flood */
+  perilClass:{tc:"hurricane",cflood:"hurricane",rflood:"flood",prain:"flood",wfire:"general"},
+  aggregateCapUsd:null,          // optional annual aggregate retention cap
+  bi:{waitingDays:3,limitUsd:null,indemnityDays:365,provenance:"default"},
+  premium:{programAnnualUsd:null,loadFactor:null},
+  adminAnnualUsd:0,              // program/broker admin, allocated by TIV
+  mitigationAnnualUsd:0,         // portfolio risk-control spend, by TIV
+  indirect:{rebookShare:0.15},   // flagged-estimate factor on gross BI
+  simYears:1000,simSeed:20260709 // seeded year simulation (cap + bad year)
+};
+const TCOR_CLASSES=["hurricane","flood","general"];
+function perilClassOf(hz){ return tcorProgram.perilClass[hz]||"general"; }
+
+/* Campus grouping: the hurricane-deductible-sharing unit. Comes from the
+   SOV (campus_code / campus_name, schema v3); absent that, each site is
+   its own unit, which is FLAGGED because it removes sharing and thereby
+   overstates retained hurricane loss. */
+function campusKeyOf(s){
+  const c=String(s&&(s.campus_code!=null?s.campus_code:(s.campus_name!=null?s.campus_name:""))).trim();
+  return c?("campus:"+c.toLowerCase()):("site:"+(s?s.id:"?"));
+}
+function campusDataShare(arr){
+  if(!arr||!arr.length)return 0;
+  return arr.filter(s=>String(s.campus_code!=null?s.campus_code:(s.campus_name!=null?s.campus_name:"")).trim()).length/arr.length;
+}
+
+/* Join the results pack's per_site order to the app's site list, by
+   site_id first and name second. Unjoined pack rows are counted, never
+   silently dropped: their losses surface as unjoinedLoss. */
+function packJoin(sitesArr,sc){
+  const pk=resultsPack&&resultsPack.data;
+  if(!pk||!pk.scenarios||!pk.scenarios[sc])return null;
+  const ps=pk.scenarios[sc].per_site||[];
+  const bySid={},byName={};
+  sitesArr.forEach(s=>{
+    const sid=String(s.site_id==null?"":s.site_id).trim().toLowerCase();
+    if(sid&&!bySid[sid])bySid[sid]=s;
+    const nm=String(s.name==null?"":s.name).trim().toLowerCase();
+    if(nm&&!byName[nm])byName[nm]=s;
+  });
+  const map=ps.map(x=>{
+    const sid=String(x.site_id==null?"":x.site_id).trim().toLowerCase();
+    if(sid&&bySid[sid])return bySid[sid];
+    return byName[String(x.name==null?"":x.name).trim().toLowerCase()]||null;
+  });
+  const idxOf={};map.forEach((s,i)=>{if(s&&idxOf[s.id]==null)idxOf[s.id]=i;});
+  return {map,idxOf,matched:map.filter(Boolean).length,total:ps.length};
+}
+
+/* ------------------------------------------------------------
+   Event-level retained engine (pure): the aggregation rule itself.
+   parts: [{weight, events:[{id,freq,sites:[[idx,lossUsd],...]}]}] - the
+   pack's event_sets shape (sources are alternative catalogs blended by
+   weight; countries' parts simply add because their sites are disjoint).
+   resolve(idx) -> {id:appSiteId, campus:key} or null when unjoined.
+   Per event: site losses group by campus; each campus retains
+   min(campus loss, deductible) ONCE; the retained amount allocates back
+   to sites pro-rata to their loss so per-site rows still sum to the
+   event-level truth. "per-occurrence-program" groups everything.
+   ------------------------------------------------------------ */
+function eventRetained(parts,resolve,dedUsd,basis){
+  let annualGross=0,annualRetained=0,occFreq=0,hitFreq=0,fullDedFreq=0,unjoinedLoss=0;
+  const perSite={};
+  (parts||[]).forEach(part=>{
+    const w=+part.weight||0;
+    (part.events||[]).forEach(e=>{
+      const f=+e.freq||0;if(f<=0)return;
+      const groups={};let total=0;
+      (e.sites||[]).forEach(pair=>{
+        const r=resolve(pair[0]),loss=+pair[1]||0;
+        if(!r){unjoinedLoss+=w*f*loss;return;}
+        const g=basis==="per-occurrence-program"?"~program":r.campus;
+        (groups[g]||(groups[g]=[])).push([r.id,loss]);total+=loss;
+      });
+      if(!(total>0))return;
+      let evRetained=0;
+      for(const g in groups){
+        const gl=groups[g].reduce((a,x)=>a+x[1],0);
+        const gr=Math.min(gl,dedUsd);
+        evRetained+=gr;
+        if(gl>=dedUsd)fullDedFreq+=w*f;
+        groups[g].forEach(x=>{
+          const ps=perSite[x[0]]||(perSite[x[0]]={gross:0,retained:0});
+          ps.gross+=w*f*x[1];
+          ps.retained+=w*f*gr*(gl?x[1]/gl:0);
+        });
+      }
+      annualGross+=w*f*total;
+      annualRetained+=w*f*evRetained;
+      occFreq+=w*f;
+      if(evRetained>0)hitFreq+=w*f;
+    });
+  });
+  return {annualGross,annualRetained,annualTransferred:annualGross-annualRetained,
+          occFreq,hitFreq,fullDedFreq,perSite,unjoinedLoss};
+}
+
+/* ------------------------------------------------------------
+   Ladder math (pure). A ladder is a site's own loss at each return
+   period, LADDER-convention: rps ascending (2..500), losses non-
+   decreasing with rarity. The integral is the same trapezoid over
+   exceedance frequency that siteEad and layerStatsCalc use, plus the
+   flat tail beyond the largest RP (the pack's recorded convention);
+   events more frequent than the first rung are below the ladder's
+   resolution and enter as zero (conservative-low, documented).
+   ------------------------------------------------------------ */
+function ladderIntegral(rps,losses,tr,fMin){
+  tr=tr||(L=>L);fMin=fMin||0;
+  const pts=rps.map((rp,i)=>({f:1/rp,L:tr(Math.max(+losses[i]||0,0))}))
+    .filter(p=>p.f>=fMin).sort((a,b)=>b.f-a.f);
+  if(!pts.length)return 0;
+  let s=0;
+  for(let i=0;i<pts.length-1;i++)s+=0.5*(pts[i].L+pts[i+1].L)*(pts[i].f-pts[i+1].f);
+  if(fMin<=1/rps[rps.length-1])s+=pts[pts.length-1].L*pts[pts.length-1].f;
+  return s;
+}
+/* the largest annual exceedance frequency at which the ladder loss
+   reaches thr (step convention, matching the ladder's own basis) */
+function ladderFreqAt(rps,losses,thr){
+  for(let i=0;i<rps.length;i++)if((+losses[i]||0)>=thr)return 1/rps[i];
+  return 0;
+}
+function ladderRetained(rps,losses,dedUsd){
+  return {gross:ladderIntegral(rps,losses),
+          retained:ladderIntegral(rps,losses,L=>Math.min(L,dedUsd)),
+          hitFreq:ladderFreqAt(rps,losses,1),
+          fullDedFreq:ladderFreqAt(rps,losses,dedUsd)};
+}
+
+/* ------------------------------------------------------------
+   Site loss ladders: pack first (authoritative event outputs down to
+   1-in-2), else the app's interim curves extended below 1-in-10 in loss
+   space with exactly subTenPts' log-linear rule (LABELED interim).
+   "tc_joint" is the same-catalog wind+surge sum, the hurricane
+   occurrence basis.
+   ------------------------------------------------------------ */
+const TCOR_LADDER_RPS=[2,5,10,25,50,100,250,500];
+function interimLossLadder(s,hz,sc){
+  const r=hzSite(s,hz,sc);const by={};
+  ((r&&r.curve)||[]).forEach(c=>{by[c.rp]=Math.max(c.loss||0,0);});
+  const l10=by[10]||0,l25=by[25]||0;
+  const b=Math.max((l25-l10)/(Math.log(25)-Math.log(10)),0);
+  const sub=rp=>Math.max(l10-b*(Math.log(10)-Math.log(rp)),0);
+  return {rps:TCOR_LADDER_RPS,
+          losses:[sub(2),sub(5)].concat(RPS.map(rp=>by[rp]||0)),
+          basis:"interim"};
+}
+function siteLadderFor(s,hz,sc,join){
+  const pk=resultsPack&&resultsPack.data;
+  const fl=pk&&pk.frequent_losses;
+  if(fl&&fl.scenarios&&fl.scenarios[sc]&&fl.scenarios[sc][hz]
+     &&join&&join.idxOf[s.id]!=null){
+    const row=fl.scenarios[sc][hz][join.idxOf[s.id]];
+    if(row&&row.length===(fl.ladder_rps||[]).length)
+      return {rps:fl.ladder_rps.slice(),losses:row.slice(),basis:"pack"};
+  }
+  if(hz==="tc_joint"){
+    const a=interimLossLadder(s,"tc",sc),c=interimLossLadder(s,"cflood",sc);
+    return {rps:a.rps,losses:a.losses.map((x,i)=>x+(c.losses[i]||0)),
+            basis:"interim"};   // comonotonic wind+surge add, labeled
+  }
+  return interimLossLadder(s,hz,sc);
+}
+
+/* degraded hurricane path when no event table is loaded: within a campus,
+   nearby sites share storms, so campus loss at each frequency is the
+   comonotonic sum of member ladders and ONE deductible applies to it.
+   A LABELED approximation of the event math, never presented as it. */
+function campusLadderRetained(sitesArr,sc,join,dedUsd,basis){
+  const groups={};
+  sitesArr.forEach(s=>{
+    const g=basis==="per-occurrence-program"?"~program":campusKeyOf(s);
+    (groups[g]||(groups[g]=[])).push(s);
+  });
+  let annualGross=0,annualRetained=0,hitFreq=0,fullDedFreq=0;
+  const perSite={};
+  for(const g in groups){
+    const lads=groups[g].map(s=>({s,lad:siteLadderFor(s,"tc_joint",sc,join)}));
+    const rps=lads[0].lad.rps;
+    const campusLoss=rps.map((_,i)=>lads.reduce((a,x)=>a+(+x.lad.losses[i]||0),0));
+    const r=ladderRetained(rps,campusLoss,dedUsd);
+    annualGross+=r.gross;annualRetained+=r.retained;
+    hitFreq+=r.hitFreq;fullDedFreq+=r.fullDedFreq;
+    const tot=lads.reduce((a,x)=>a+ladderIntegral(x.lad.rps,x.lad.losses),0);
+    lads.forEach(x=>{
+      const gi=ladderIntegral(x.lad.rps,x.lad.losses);
+      perSite[x.s.id]={gross:gi,retained:tot?r.retained*gi/tot:0};
+    });
+  }
+  return {annualGross,annualRetained,annualTransferred:annualGross-annualRetained,
+          hitFreq,fullDedFreq,perSite,unjoinedLoss:0};
+}
+
+/* ------------------------------------------------------------
+   Retained property (Task 2): event-level for hurricane, per-location
+   ladders for flood and general, plus the explicit attritional layer.
+   ------------------------------------------------------------ */
+const TCOR_CLASS_PERILS={flood:["rflood","prain"],general:["wfire"]};
+function retainedPropertyCalc(sitesArr,sc){
+  const ded=tcorProgram.deductibles;
+  const join=packJoin(sitesArr,sc);
+  const pk=resultsPack&&resultsPack.data;
+  const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
+  const out={classes:{},perSite:{},attritional:null,basisFlags:[]};
+  sitesArr.forEach(s=>{out.perSite[s.id]={};TCOR_CLASSES.forEach(c=>out.perSite[s.id][c]={gross:0,retained:0});});
+
+  let hu,huBasis;
+  if(evScen&&join&&join.matched>0){
+    const resolve=idx=>{const s=join.map[idx];return s?{id:s.id,campus:campusKeyOf(s)}:null;};
+    hu=eventRetained(evScen,resolve,ded.hurricane.amountUsd,ded.hurricane.basis);
+    huBasis="event";
+    if(hu.unjoinedLoss>0)out.basisFlags.push("hurricane: "+(join.total-join.matched)+" pack site(s) did not join the portfolio; their event losses are excluded and flagged");
+  }else{
+    hu=campusLadderRetained(sitesArr,sc,join,ded.hurricane.amountUsd,ded.hurricane.basis);
+    huBasis="campus-comonotonic approximation (no per-event table loaded)";
+    out.basisFlags.push("hurricane retained is a labeled approximation until a results pack with event_sets is loaded");
+  }
+  if(ded.hurricane.basis==="per-occurrence-campus"&&campusDataShare(sitesArr)<1)
+    out.basisFlags.push("campus grouping incomplete: sites without campus_code are their own sharing unit, which overstates retained hurricane loss");
+  out.classes.hurricane={annualGross:hu.annualGross,annualRetained:hu.annualRetained,
+    annualTransferred:hu.annualTransferred,hitFreq:hu.hitFreq,
+    fullDedFreq:hu.fullDedFreq||0,basis:huBasis,unjoinedLoss:hu.unjoinedLoss||0,
+    dedUsd:ded.hurricane.amountUsd,dedBasis:ded.hurricane.basis};
+  sitesArr.forEach(s=>{
+    const ps=hu.perSite[s.id];
+    if(ps){out.perSite[s.id].hurricane={gross:ps.gross,retained:ps.retained};}
+  });
+
+  /* per-location classes: each site's own ladder, one deductible per
+     occurrence per location, summed across sites (the rule for
+     uncorrelated perils) */
+  const ladBases={};
+  ["flood","general"].forEach(cls=>{
+    const d=ded[cls];
+    let gross=0,retained=0,hitFreq=0,fullDedFreq=0;
+    sitesArr.forEach(s=>{
+      TCOR_CLASS_PERILS[cls].forEach(hz=>{
+        const lad=siteLadderFor(s,hz,sc,join);
+        ladBases[lad.basis]=true;
+        const r=ladderRetained(lad.rps,lad.losses,d.amountUsd);
+        gross+=r.gross;retained+=r.retained;
+        hitFreq+=r.hitFreq;fullDedFreq+=r.fullDedFreq;
+        out.perSite[s.id][cls].gross+=r.gross;
+        out.perSite[s.id][cls].retained+=r.retained;
+      });
+    });
+    out.classes[cls]={annualGross:gross,annualRetained:retained,
+      annualTransferred:gross-retained,hitFreq,fullDedFreq,
+      basis:ladBases.pack?(ladBases.interim?"pack+interim ladders":"pack ladders"):"interim ladders",
+      dedUsd:d.amountUsd,dedBasis:d.basis};
+  });
+  if(ladBases.interim)out.basisFlags.push("some per-location ladders come from the interim model (no pack frequent_losses row for that site/peril): labeled estimate");
+
+  /* the attritional frequency layer (Task 2): across the portfolio, small
+     events trip the per-location deductibles often; the frequent band
+     (1-in-10 and more frequent) is a real annual cost no single-site or
+     tail view shows. Hurricane occurrence hits ride along as a count. */
+  const F_ATTR=0.1;
+  let attrRetained=0,attrHits=0;
+  sitesArr.forEach(s=>{
+    ["flood","general"].forEach(cls=>{
+      TCOR_CLASS_PERILS[cls].forEach(hz=>{
+        const lad=siteLadderFor(s,hz,sc,join);
+        attrRetained+=ladderIntegral(lad.rps,lad.losses,
+          L=>Math.min(L,ded[cls].amountUsd),F_ATTR);
+        const hf=ladderFreqAt(lad.rps,lad.losses,1);
+        if(hf>=F_ATTR)attrHits+=hf;
+      });
+    });
+  });
+  out.attritional={frequentBandRetained:attrRetained,
+    frequentHitsPerYear:attrHits,
+    hurricaneOccurrencesPerYear:out.classes.hurricane.hitFreq,
+    fMin:F_ATTR,
+    note:"expected annual retained loss and deductible hits from events at 1-in-10 frequency or more, summed across all sites"};
+
+  out.total={
+    annualGross:TCOR_CLASSES.reduce((a,c)=>a+out.classes[c].annualGross,0),
+    annualRetained:TCOR_CLASSES.reduce((a,c)=>a+out.classes[c].annualRetained,0)
+  };
+  out.total.annualTransferred=out.total.annualGross-out.total.annualRetained;
+  out.join=join?{matched:join.matched,total:join.total}:null;
+  return out;
+}
+
+/* ------------------------------------------------------------
+   Seeded year simulation: the exact treatment of the optional annual
+   aggregate retention cap, and the source of bad-year figures and the
+   attritional-year distribution. Hurricane years replay the pack's event
+   table (one alternative catalog drawn per year by weight, then a
+   Poisson draw per event); per-location perils decompose each site
+   ladder into frequency bands with midpoint losses. Deterministic seed.
+   ------------------------------------------------------------ */
+function tcorRng(seed){let a=seed>>>0;return function(){
+  a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);
+  t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+function poissonDraw(lambda,rnd){
+  if(lambda<=0)return 0;
+  const L=Math.exp(-lambda);let k=0,p=1;
+  do{k++;p*=rnd();}while(p>L&&k<50);
+  return k-1;
+}
+function ladderBands(rps,losses){
+  /* consecutive rungs become arrival bands: rate = f_k - f_{k+1} at the
+     midpoint loss; the rarest rung keeps its own rate at its own loss */
+  const pts=rps.map((rp,i)=>({f:1/rp,L:Math.max(+losses[i]||0,0)})).sort((a,b)=>b.f-a.f);
+  const bands=[];
+  for(let i=0;i<pts.length-1;i++){
+    const rate=pts[i].f-pts[i+1].f,L=0.5*(pts[i].L+pts[i+1].L);
+    if(rate>0&&L>0)bands.push({rate,loss:L});
+  }
+  const last=pts[pts.length-1];
+  if(last.f>0&&last.L>0)bands.push({rate:last.f,loss:last.L});
+  return bands;
+}
+function simulateRetainedYears(sitesArr,sc,opts){
+  opts=opts||{};
+  const years=opts.years||tcorProgram.simYears,seed=opts.seed||tcorProgram.simSeed;
+  const ded=tcorProgram.deductibles,cap=tcorProgram.aggregateCapUsd;
+  const join=packJoin(sitesArr,sc);
+  const pk=resultsPack&&resultsPack.data;
+  const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
+  const rnd=tcorRng(seed);
+  /* pre-resolve hurricane events to campus groups, grouped by country:
+     each country's catalog is independent (its sites are disjoint), so
+     every simulated year draws ONE alternative source per country by
+     weight and then Poisson-draws that source's events */
+  let huCountries=null;
+  if(evScen&&join&&join.matched>0){
+    const byCountry={};
+    evScen.forEach(part=>{
+      const key=part.country||"?";
+      (byCountry[key]||(byCountry[key]=[])).push({weight:+part.weight||0,
+        events:(part.events||[]).map(e=>{
+          const groups={};
+          (e.sites||[]).forEach(pair=>{
+            const s=join.map[pair[0]];if(!s)return;
+            const g=ded.hurricane.basis==="per-occurrence-program"?"~program":campusKeyOf(s);
+            groups[g]=(groups[g]||0)+(+pair[1]||0);
+          });
+          return {freq:+e.freq||0,groups};
+        }).filter(e=>e.freq>0)});
+    });
+    huCountries=Object.keys(byCountry).map(k=>byCountry[k]);
+  }
+  const siteBands=[];
+  sitesArr.forEach(s=>{
+    ["flood","general"].forEach(cls=>{
+      TCOR_CLASS_PERILS[cls].forEach(hz=>{
+        const lad=siteLadderFor(s,hz,sc,join);
+        ladderBands(lad.rps,lad.losses).forEach(b=>
+          siteBands.push({rate:b.rate,loss:b.loss,ded:ded[cls].amountUsd}));
+      });
+    });
+  });
+  /* degraded hurricane in the simulation: campus-comonotonic bands */
+  let huBands=null;
+  if(!huCountries){
+    const groups={};
+    sitesArr.forEach(s=>{
+      const g=ded.hurricane.basis==="per-occurrence-program"?"~program":campusKeyOf(s);
+      (groups[g]||(groups[g]=[])).push(s);
+    });
+    huBands=[];
+    for(const g in groups){
+      const lads=groups[g].map(s=>siteLadderFor(s,"tc_joint",sc,join));
+      const rps=lads[0].rps;
+      const campusLoss=rps.map((_,i)=>lads.reduce((a,l)=>a+(+l.losses[i]||0),0));
+      ladderBands(rps,campusLoss).forEach(b=>
+        huBands.push({rate:b.rate,loss:b.loss,ded:ded.hurricane.amountUsd}));
+    }
+  }
+  const totals=new Array(years),hits=new Array(years);
+  for(let y=0;y<years;y++){
+    let ret=0,nHits=0;
+    if(huCountries){
+      huCountries.forEach(srcs=>{
+        /* draw one alternative catalog by weight, then its events */
+        let u=rnd(),src=srcs[srcs.length-1];
+        for(const p of srcs){if(u<p.weight){src=p;break;}u-=p.weight;}
+        src.events.forEach(e=>{
+          const n=e.freq<0.05?(rnd()<e.freq?1:0):poissonDraw(e.freq,rnd);
+          for(let k=0;k<n;k++){
+            for(const g in e.groups){
+              ret+=Math.min(e.groups[g],ded.hurricane.amountUsd);nHits++;
+            }
+          }
+        });
+      });
+    }else{
+      huBands.forEach(b=>{
+        const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
+        for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
+      });
+    }
+    siteBands.forEach(b=>{
+      const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
+      for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
+    });
+    totals[y]=cap!=null?Math.min(ret,cap):ret;
+    hits[y]=nHits;
+  }
+  const sorted=totals.slice().sort((a,b)=>a-b);
+  const q=p=>sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];
+  return {years,seed,capUsd:cap,
+    mean:totals.reduce((a,x)=>a+x,0)/years,
+    median:q(0.5),p90:q(0.9),p99:q(0.99),
+    meanHits:hits.reduce((a,x)=>a+x,0)/years,
+    basis:(huCountries?"event table":"ladder bands (labeled approximation)")
+      +(cap!=null?", annual aggregate cap applied per simulated year":"")};
+}
+
+/* ------------------------------------------------------------
+   Retained business interruption, INTERIM chain (labeled; the full
+   Task 3 module - archetype downtime, seasonality, timeshare revenue,
+   regional demand shock - replaces the transform, not the terms math).
+   Per event: damage ratio -> downtime days (the app's linear reopen
+   model) -> gross BI -> retained = waiting period (always) + downtime
+   beyond the indemnity period + insurable BI beyond the limit. The
+   frequent small piece (waiting) and the rare large piece (overage) are
+   kept separate; the BI & EE declared value caps insurable BI when no
+   explicit limit is set.
+   ------------------------------------------------------------ */
+function biTermsOf(s){
+  const t=tcorProgram.bi;
+  const lim=(t.limitUsd!=null&&t.limitUsd>0)?t.limitUsd
+    :((+s.bi_ee_usd>0)?+s.bi_ee_usd:null);
+  return {waitingDays:t.waitingDays,indemnityDays:t.indemnityDays,
+    limitUsd:lim,
+    limitBasis:(t.limitUsd!=null&&t.limitUsd>0)?"program"
+      :((+s.bi_ee_usd>0)?"BI & EE declared value":"none on file (overage reads zero, labeled)"),
+    provenance:t.provenance};
+}
+function biSplitForLoss(lossUsd,s,terms,econ){
+  const dmg=econ.value>0?Math.min(lossUsd/econ.value,1):0;
+  const down=dmg*econ.maxDownDays;
+  const gross=econ.daily*down;
+  const waiting=econ.daily*Math.min(down,terms.waitingDays);
+  const beyondIndem=econ.daily*Math.max(down-terms.indemnityDays,0);
+  const insurable=Math.max(gross-waiting-beyondIndem,0);
+  const overLimit=terms.limitUsd!=null?Math.max(insurable-terms.limitUsd,0):0;
+  return {gross,waiting,overage:beyondIndem+overLimit,
+          retained:waiting+beyondIndem+overLimit,downDays:down};
+}
+function retainedBICalc(sitesArr,sc){
+  const join=packJoin(sitesArr,sc);
+  const pk=resultsPack&&resultsPack.data;
+  const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
+  const perSite={};let waiting=0,overage=0,gross=0;
+  const econOf={};
+  sitesArr.forEach(s=>{
+    const a=assumeFor(s);
+    const gop=siteRevenue(s)*a.gopMargin;
+    econOf[s.id]={value:+s.asset_value_usd||0,daily:gop/365,
+                  maxDownDays:a.reopenMonths/12*365};
+    perSite[s.id]={gross:0,waiting:0,overage:0,retained:0,basis:"interim BI chain (Task 3 pending)"};
+  });
+  /* hurricane: per event when the table is joined (the waiting period
+     applies per occurrence, which per-year averages cannot represent) */
+  let huEventBased=false;
+  if(evScen&&join&&join.matched>0){
+    huEventBased=true;
+    evScen.forEach(part=>{
+      const w=+part.weight||0;
+      (part.events||[]).forEach(e=>{
+        const f=+e.freq||0;if(f<=0)return;
+        (e.sites||[]).forEach(pair=>{
+          const s=join.map[pair[0]];if(!s)return;
+          const b=biSplitForLoss(+pair[1]||0,s,biTermsOf(s),econOf[s.id]);
+          const ps=perSite[s.id];
+          ps.gross+=w*f*b.gross;ps.waiting+=w*f*b.waiting;
+          ps.overage+=w*f*b.overage;ps.retained+=w*f*b.retained;
+        });
+      });
+    });
+  }
+  sitesArr.forEach(s=>{
+    const terms=biTermsOf(s),econ=econOf[s.id];
+    const perils=huEventBased?["rflood","prain","wfire"]
+                             :["tc_joint","rflood","prain","wfire"];
+    perils.forEach(hz=>{
+      const lad=siteLadderFor(s,hz,sc,join);
+      const ps=perSite[s.id];
+      ps.gross+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).gross);
+      ps.waiting+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).waiting);
+      ps.overage+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).overage);
+      ps.retained+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).retained);
+    });
+    gross+=perSite[s.id].gross;waiting+=perSite[s.id].waiting;
+    overage+=perSite[s.id].overage;
+  });
+  return {perSite,gross,waiting,overage,retained:waiting+overage,
+    transferred:gross-waiting-overage,
+    basis:"interim BI chain: linear damage-to-downtime, revenue-proxy GOP, "
+      +(huEventBased?"hurricane terms applied per event":"no event table: hurricane terms applied on ladders")
+      +"; seasonality, timeshare revenue split, and regional demand shock arrive with the BI module (Task 3)",
+    termsProvenance:tcorProgram.bi.provenance};
+}
+
+/* ------------------------------------------------------------
+   Premium (interim allocation; the full Task 4 module adds the
+   technical-vs-actual gap surface). Actual per-site premium wins when
+   the profile carries it (SOV AIG columns via schema v3); else the
+   technical benchmark: transferred expected loss (property + insurable
+   BI) times the program loading factor. A known program total rescales
+   the technical allocation, labeled.
+   ------------------------------------------------------------ */
+function premiumCalc(sitesArr,sc,prop,bi){
+  const load=tcorProgram.premium.loadFactor!=null?tcorProgram.premium.loadFactor
+    :(typeof adapt!=="undefined"&&adapt&&adapt.load?adapt.load:1.5);
+  const perSite={};let technicalTotal=0,actualTotal=0,nActual=0;
+  sitesArr.forEach(s=>{
+    const p=prop.perSite[s.id];
+    const transProp=TCOR_CLASSES.reduce((a,c)=>a+Math.max(p[c].gross-p[c].retained,0),0);
+    const b=bi.perSite[s.id];
+    const transBi=Math.max((b.gross||0)-(b.retained||0),0);
+    const technical=(transProp+transBi)*load;
+    technicalTotal+=technical;
+    const actual=+s.premium_annual_usd>0?+s.premium_annual_usd:null;
+    if(actual!=null){actualTotal+=actual;nActual++;}
+    perSite[s.id]={technical,actual,
+      allocated:actual!=null?actual:technical,
+      basis:actual!=null?"actual (per-site premium on file)"
+        :"technical benchmark (modeled transferred loss x "+load+" load)"};
+  });
+  let allocBasis="actual where on file, technical benchmark elsewhere";
+  const progTot=tcorProgram.premium.programAnnualUsd;
+  if(progTot>0&&technicalTotal>0){
+    /* a known program total rescales the technical allocations so the
+       sites without an actual premium share the real spend */
+    const techOnly=sitesArr.filter(s=>perSite[s.id].actual==null);
+    const techSum=techOnly.reduce((a,s)=>a+perSite[s.id].technical,0);
+    const rest=Math.max(progTot-actualTotal,0);
+    if(techSum>0)techOnly.forEach(s=>{
+      perSite[s.id].allocated=rest*perSite[s.id].technical/techSum;
+      perSite[s.id].basis="program total allocated by modeled transferred expected loss";
+    });
+    allocBasis="program annual premium allocated by modeled transferred expected loss";
+  }
+  return {perSite,technicalTotal,actualTotal,nActual,load,
+    allocatedTotal:sitesArr.reduce((a,s)=>a+perSite[s.id].allocated,0),
+    allocBasis};
+}
+
+/* ------------------------------------------------------------
+   The TCOR spine (Task 1): five parts, plus the flagged indirect
+   estimate that is NEVER in the total, plus a per-site quality mark
+   that names every fallback the figure is standing on.
+   ------------------------------------------------------------ */
+function tcorContext(sitesArr,sc){
+  const prop=retainedPropertyCalc(sitesArr,sc);
+  const bi=retainedBICalc(sitesArr,sc);
+  const prem=premiumCalc(sitesArr,sc,prop,bi);
+  const tiv=sitesArr.reduce((a,s)=>a+(+s.asset_value_usd||0),0)||1;
+  return {sc,prop,bi,prem,tiv};
+}
+function tcorSite(s,sc,ctx){
+  ctx=ctx||tcorContext([s],sc);
+  const p=ctx.prop.perSite[s.id];
+  const retainedProperty=TCOR_CLASSES.reduce((a,c)=>a+p[c].retained,0);
+  const b=ctx.bi.perSite[s.id];
+  const share=(+s.asset_value_usd||0)/ctx.tiv;
+  const mitigation=(+s.mitigation_annual_usd>0?+s.mitigation_annual_usd:0)
+    +tcorProgram.mitigationAnnualUsd*share;
+  const admin=tcorProgram.adminAnnualUsd*share;
+  const premium=ctx.prem.perSite[s.id].allocated;
+  const total=retainedProperty+b.retained+premium+mitigation+admin;
+  const missing=[];
+  if(!String(s.campus_code!=null?s.campus_code:"").trim())missing.push("campus grouping (SOV Campus Code)");
+  if(!(+s.annual_revenue_usd>0))missing.push("site revenue (BI uses the value-ratio proxy)");
+  if(!(+s.bi_ee_usd>0)&&tcorProgram.bi.limitUsd==null)missing.push("BI limit / BI & EE declared value");
+  if(!(+s.premium_annual_usd>0))missing.push("actual per-site premium");
+  if(tcorProgram.bi.provenance==="default")missing.push("BI policy terms (waiting period, indemnity) are defaults");
+  return {id:s.id,name:s.name,total,
+    components:{
+      retainedProperty:{value:retainedProperty,byClass:{
+        hurricane:p.hurricane.retained,flood:p.flood.retained,general:p.general.retained},
+        basis:ctx.prop.classes.hurricane.basis},
+      retainedBI:{value:b.retained,waiting:b.waiting,overage:b.overage,basis:b.basis},
+      premium:{value:premium,basis:ctx.prem.perSite[s.id].basis},
+      mitigation:{value:mitigation,basis:+s.mitigation_annual_usd>0?"site risk-control spend on file":"program allocation by TIV"},
+      admin:{value:admin,basis:"program admin allocated by TIV"}
+    },
+    indirect:{value:b.gross*tcorProgram.indirect.rebookShare,flagged:true,
+      excludedFromTotal:true,
+      basis:"flagged estimate ("+Math.round(tcorProgram.indirect.rebookShare*100)
+        +"% of gross BI): guest rebooking and reputation; never added to the TCOR total"},
+    quality:{estimate:missing.length>0||ctx.prop.classes.hurricane.basis!=="event",
+      missing,
+      propertyBasis:ctx.prop.classes.hurricane.basis,
+      note:"TCOR is an estimate; every fallback above widens it"}};
+}
+function tcorPortfolio(sitesArr,sc){
+  const ctx=tcorContext(sitesArr,sc);
+  const rows=sitesArr.map(s=>tcorSite(s,sc,ctx));
+  /* the portfolio number is the event-level engine's own total for the
+     correlated class plus per-location sums for the rest; the per-site
+     rows were ALLOCATED from those same totals, so the sum reconciles by
+     construction (asserted in tests), but the truth lives event-side */
+  const retainedProperty=ctx.prop.total.annualRetained;
+  const retainedBI=ctx.bi.retained;
+  const premium=ctx.prem.allocatedTotal;
+  const mitigation=rows.reduce((a,r)=>a+r.components.mitigation.value,0);
+  const admin=tcorProgram.adminAnnualUsd;
+  return {sc,rows,ctx,
+    components:{retainedProperty,retainedBI,premium,mitigation,admin},
+    total:retainedProperty+retainedBI+premium+mitigation+admin,
+    indirect:{value:rows.reduce((a,r)=>a+r.indirect.value,0),flagged:true,excludedFromTotal:true},
+    attritional:ctx.prop.attritional,
+    waterfall:{gross:ctx.prop.total.annualGross+ctx.bi.gross,
+      transferredProperty:ctx.prop.total.annualTransferred,
+      retainedProperty,transferredBI:ctx.bi.transferred,retainedBI,
+      premium,mitigation,admin},
+    basisFlags:ctx.prop.basisFlags.slice(),
+    estimate:rows.some(r=>r.quality.estimate)};
+}
+/* ============================================================
+   Loss-run calibration (overhaul Task 5)
+   TNL's actual claims history is the anchor that grounds the modeled
+   TCOR. This module ingests the loss run (claims report), maps claimants
+   to sites and Coverage Major to CLAM's peril/coverage classes, groups
+   claims into events (so a storm that hit six sites is ONE occurrence,
+   which also validates the shared-deductible logic), aggregates actual
+   retained loss by site / peril / year / event, and compares the model's
+   frequent layers against it.
+
+   Credibility limits, enforced in code: a few years of claims can
+   calibrate the BODY of the distribution (attritional hits, BI) but
+   NEVER the rare-cat tail. Named-catastrophe claims are split out and
+   reported, the tail stays modeled and labeled, and open claims are
+   flagged as developing (Net Incurred carries reserves that can move).
+   Where model and actuals disagree materially, the disagreement is the
+   headline, not a footnote.
+   ============================================================ */
+let lossRun=null;    // {claims, name, loaded, years, flags} or null
+
+/* header aliases: the report arrives from a TPA with names that drift */
+const LOSSRUN_ALIASES={
+  claim_no:["claim number","claim no","claim #","claim","claimnumber"],
+  date_of_loss:["date of loss","loss date","dol","date"],
+  claimant:["claimant name","claimant","insured location","location name","site"],
+  coverage:["coverage major","coverage","coverage line","line","peril"],
+  status:["status","claim status"],
+  carrier:["tpa/carrier","carrier","tpa"],
+  net_paid:["net paid","paid","net paid amount"],
+  net_outstanding:["net outstanding","outstanding","reserves","net outstanding amount"],
+  recovery:["recovery received","recovery","recoveries"],
+  net_incurred:["net incurred","incurred","net incurred amount","total incurred"],
+  area:["area of impact","area","impact area"],
+  description:["event description","description","loss description","cause"]
+};
+function lossrunHeaderMap(head){
+  const m={};
+  for(const key in LOSSRUN_ALIASES){
+    for(const alias of LOSSRUN_ALIASES[key]){
+      const i=head.indexOf(alias);
+      if(i>=0){m[key]=alias;break;}
+    }
+  }
+  return m;
+}
+function lossrunMoney(v){
+  if(v==null)return null;
+  const n=parseFloat(String(v).replace(/[$,()\s]/g,m=>m==="("?"-":""));
+  return isFinite(n)?n:null;
+}
+function lossrunDate(v){
+  const s=String(v==null?"":v).trim();if(!s)return null;
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m)return {y:+m[1],mo:+m[2],d:+m[3]};
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m){const y=+m[3]<100?2000+ +m[3]:+m[3];return {y,mo:+m[1],d:+m[2]};}
+  return null;
+}
+function lossrunDayNum(dt){ return dt?Math.floor(Date.UTC(dt.y,dt.mo-1,dt.d)/86400000):null; }
+
+/* Coverage Major -> CLAM peril/coverage class. Keyword rules, editable;
+   anything unmatched is FLAGGED unmapped, never silently bucketed. */
+function coverageClassOf(coverage){
+  const c=String(coverage==null?"":coverage).toLowerCase();
+  if(!c.trim())return null;
+  if(/named\s*storm|hurricane|wind|tropical|cyclone|hail/.test(c))return {cls:"hurricane",kind:"property"};
+  if(/business\s*int|time\s*element|\bbi\b|extra\s*expense|rental\s*income|loss\s*of\s*income/.test(c))return {cls:"bi",kind:"bi"};
+  if(/flood|surge|water\s*damage|storm\s*water/.test(c))return {cls:"flood",kind:"property"};
+  if(/fire|wildfire|smoke/.test(c))return {cls:"general",kind:"property"};
+  if(/property|all\s*risk|apd|building|equipment\s*breakdown/.test(c))return {cls:"general",kind:"property"};
+  return null;
+}
+
+/* claimant -> site: site_id, exact name, then containment either way on
+   normalized names. Unmatched claimants are flagged with their dollars. */
+function lossrunNorm(x){
+  return String(x==null?"":x).toLowerCase()
+    .replace(/\b(resort|club|villas?|inn|hotel|the|at|by|llc|inc|assn|association|hoa)\b/g," ")
+    .replace(/[^a-z0-9]+/g," ").trim();
+}
+function lossrunSiteMatch(claimant,sitesArr){
+  const cn=lossrunNorm(claimant);if(!cn)return null;
+  for(const s of sitesArr){
+    const sid=String(s.site_id==null?"":s.site_id).trim().toLowerCase();
+    if(sid&&sid===String(claimant).trim().toLowerCase())return s;
+  }
+  for(const s of sitesArr)if(lossrunNorm(s.name)===cn)return s;
+  for(const s of sitesArr){
+    const sn=lossrunNorm(s.name);
+    if(sn&&(cn.indexOf(sn)>=0||sn.indexOf(cn)>=0))return s;
+  }
+  return null;
+}
+
+function loadLossRun(text,name){
+  const {head,out}=parseCsv(text);
+  const cols=lossrunHeaderMap(head);
+  const need=["date_of_loss","claimant","coverage","net_incurred"];
+  const missing=need.filter(k=>!cols[k]&&!(k==="net_incurred"&&cols.net_paid));
+  if(missing.length){
+    toast("Loss run is missing required column(s): "+missing.join(", ")+".");
+    return;
+  }
+  const claims=[];let skipped=0,basisMismatch=0,basisChecked=0;
+  out.forEach(row=>{
+    const dt=lossrunDate(row.get(cols.date_of_loss));
+    if(!dt){skipped++;return;}
+    const paid=lossrunMoney(cols.net_paid?row.get(cols.net_paid):null);
+    const outst=lossrunMoney(cols.net_outstanding?row.get(cols.net_outstanding):null);
+    const rec=lossrunMoney(cols.recovery?row.get(cols.recovery):null);
+    let inc=lossrunMoney(cols.net_incurred?row.get(cols.net_incurred):null);
+    let incBasis="reported";
+    if(inc==null){
+      if(paid==null){skipped++;return;}
+      inc=(paid||0)+(outst||0)-(rec||0);incBasis="derived (paid + outstanding - recovery)";
+    }else if(paid!=null&&outst!=null){
+      basisChecked++;
+      if(Math.abs(inc-((paid||0)+(outst||0)-(rec||0)))>Math.max(1,Math.abs(inc)*0.02))basisMismatch++;
+    }
+    const status=String(cols.status?row.get(cols.status)||"":"").trim().toLowerCase();
+    claims.push({
+      claimNo:String(cols.claim_no?row.get(cols.claim_no)||"":"").trim(),
+      date:dt,day:lossrunDayNum(dt),year:dt.y,
+      claimant:String(row.get(cols.claimant)||"").trim(),
+      coverage:String(row.get(cols.coverage)||"").trim(),
+      open:/open|pend/.test(status),
+      carrier:String(cols.carrier?row.get(cols.carrier)||"":"").trim(),
+      netPaid:paid,netOutstanding:outst,recovery:rec,
+      netIncurred:inc,incBasis,
+      area:String(cols.area?row.get(cols.area)||"":"").trim(),
+      desc:String(cols.description?row.get(cols.description)||"":"").trim()
+    });
+  });
+  if(!claims.length){toast("No usable claims found in that file.");return;}
+  const years=claims.map(c=>c.year);
+  const flags=[];
+  if(skipped)flags.push(skipped+" row(s) skipped (no parseable date or amount)");
+  if(basisMismatch)flags.push(basisMismatch+" of "+basisChecked+" claims where Net Incurred does not equal paid + outstanding - recovery: CONFIRM the report's Net Incurred basis (assumed net of recovery)");
+  const openN=claims.filter(c=>c.open).length;
+  if(openN)flags.push(openN+" open claim(s): Net Incurred includes reserves that may still move (development risk)");
+  lossRun={claims,name:name||"loss_run.csv",loaded:new Date().toISOString(),
+    years:{min:Math.min.apply(null,years),max:Math.max.apply(null,years),
+           n:Math.max(Math.max.apply(null,years)-Math.min.apply(null,years)+1,1)},
+    flags};
+  if(typeof persistLossRun==="function")persistLossRun();
+  toast("Loss run loaded: "+claims.length+" claims, "+lossRun.years.min+"-"+lossRun.years.max);
+  render();
+}
+
+/* group claims into events: named catastrophes by storm name, else
+   same-class claims within a 3-day window. Multi-site events are the
+   ground truth the shared-deductible logic is validated against. */
+function lossrunEventKey(c){
+  const m=(c.desc||"").match(/\b(?:hurricane|tropical\s+storm|ts\.?|typhoon)\s+([a-z]+)/i);
+  if(m)return {key:"storm:"+m[1].toLowerCase()+":"+c.year,named:true};
+  return null;
+}
+function groupClaimEvents(claims,sitesArr){
+  const withMap=claims.map(c=>{
+    const cov=coverageClassOf(c.coverage);
+    return {c,cov,site:lossrunSiteMatch(c.claimant,sitesArr||[]),
+            namedEv:lossrunEventKey(c)};
+  });
+  const events={};
+  const clustered=[];
+  withMap.forEach(x=>{
+    if(x.namedEv){(events[x.namedEv.key]||(events[x.namedEv.key]={key:x.namedEv.key,named:true,claims:[]})).claims.push(x);}
+    else clustered.push(x);
+  });
+  clustered.sort((a,b)=>(a.c.day||0)-(b.c.day||0));
+  let cur=null,seq=0;
+  clustered.forEach(x=>{
+    const cls=x.cov?x.cov.cls:"unmapped";
+    if(cur&&cls===cur.cls&&x.c.day!=null&&cur.lastDay!=null&&x.c.day-cur.lastDay<=3){
+      cur.claims.push(x);cur.lastDay=x.c.day;
+    }else{
+      const key="ev:"+cls+":"+(x.c.day!=null?x.c.day:"n"+(seq++));
+      cur={key,named:false,cls,lastDay:x.c.day,claims:[x]};
+      events[key]=cur;
+    }
+  });
+  return Object.keys(events).map(k=>{
+    const e=events[k];
+    const siteIds={};e.claims.forEach(x=>{if(x.site)siteIds[x.site.id]=true;});
+    return {key:e.key,named:!!e.named,
+      nClaims:e.claims.length,
+      nSites:Object.keys(siteIds).length,
+      totalIncurred:e.claims.reduce((a,x)=>a+(x.c.netIncurred||0),0),
+      year:e.claims[0].c.year,
+      claims:e.claims};
+  }).sort((a,b)=>b.totalIncurred-a.totalIncurred);
+}
+
+/* actual retained loss aggregated by site, peril class, year, and event,
+   with unmatched claimants and unmapped coverages flagged (with dollars,
+   so nobody can ignore them) */
+function lossrunAggregates(sitesArr){
+  if(!lossRun)return null;
+  const evs=groupClaimEvents(lossRun.claims,sitesArr);
+  const bySite={},byClass={},byYear={},unmatched={},unmapped={};
+  let matchedIncurred=0,totalIncurred=0,openIncurred=0;
+  evs.forEach(ev=>ev.claims.forEach(x=>{
+    const inc=x.c.netIncurred||0;totalIncurred+=inc;
+    if(x.c.open)openIncurred+=inc;
+    if(!x.site){unmatched[x.c.claimant]=(unmatched[x.c.claimant]||0)+inc;}
+    if(!x.cov){unmapped[x.c.coverage||"(blank)"]=(unmapped[x.c.coverage||"(blank)"]||0)+inc;}
+    if(x.site&&x.cov){
+      matchedIncurred+=inc;
+      const sid=x.site.id;
+      (bySite[sid]||(bySite[sid]={site:x.site.name,total:0,byClass:{}}));
+      bySite[sid].total+=inc;
+      bySite[sid].byClass[x.cov.cls]=(bySite[sid].byClass[x.cov.cls]||0)+inc;
+      byClass[x.cov.cls]=(byClass[x.cov.cls]||0)+inc;
+      byYear[x.c.year]=(byYear[x.c.year]||0)+inc;
+    }
+  }));
+  return {events:evs,bySite,byClass,byYear,
+    unmatched,unmapped,
+    matchedIncurred,totalIncurred,openIncurred,
+    openShare:totalIncurred?openIncurred/totalIncurred:0,
+    years:lossRun.years,flags:lossRun.flags.slice()};
+}
+
+/* ------------------------------------------------------------
+   The calibration itself: modeled frequent layers vs actual claims.
+   Present-day scenario only (claims are history, not a pathway).
+   ------------------------------------------------------------ */
+function lossrunCalibration(sitesArr){
+  const agg=lossrunAggregates(sitesArr);
+  if(!agg)return null;
+  const nYears=agg.years.n;
+  const sc="present";
+  const prop=retainedPropertyCalc(sitesArr,sc);
+  const bi=retainedBICalc(sitesArr,sc);
+  /* split actuals: named-cat events belong to the tail conversation; the
+     body (everything else) is what a short record can actually calibrate */
+  let namedIncurred=0,bodyIncurred=0;
+  const bodyByClass={},bodyClaimYears={};
+  agg.events.forEach(ev=>{
+    if(ev.named){namedIncurred+=ev.totalIncurred;return;}
+    bodyIncurred+=ev.totalIncurred;
+    ev.claims.forEach(x=>{
+      if(x.cov&&x.site){
+        bodyByClass[x.cov.cls]=(bodyByClass[x.cov.cls]||0)+(x.c.netIncurred||0);
+        if(x.cov.kind==="property")bodyClaimYears[x.c.year]=(bodyClaimYears[x.c.year]||0)+1;
+      }
+    });
+  });
+  const perClass=[];
+  ["hurricane","flood","general"].forEach(cls=>{
+    const modeled=prop.classes[cls]?prop.classes[cls].annualRetained:0;
+    const actual=(cls==="hurricane"
+      ?((agg.byClass.hurricane||0))            // named + body wind claims
+      :(bodyByClass[cls]||0))/nYears;
+    const ratio=actual>0?modeled/actual:null;
+    perClass.push({cls,modeledAnnualRetained:modeled,actualAnnualIncurred:actual,
+      ratio,
+      bias:ratio!=null&&(ratio>2||ratio<0.5)
+        ?(ratio>2?"model HIGH vs actuals":"model LOW vs actuals"):null,
+      note:cls==="hurricane"
+        ?"actuals include named storms; a short record understates the modeled tail by construction, so this ratio reads on the deductible-frequency body only"
+        :"body claims only (named catastrophes excluded)"});
+  });
+  const modeledBI=bi.retained;
+  const actualBI=(agg.byClass.bi||0)/nYears;
+  const biRatio=actualBI>0?modeledBI/actualBI:null;
+  /* attritional frequency: modeled deductible hits per year vs actual
+     property claims per year in the body */
+  const actualClaimsPerYear=Object.keys(bodyClaimYears).length
+    ?Object.keys(bodyClaimYears).reduce((a,y)=>a+bodyClaimYears[y],0)/nYears:0;
+  const modeledHits=prop.attritional.frequentHitsPerYear
+    +prop.attritional.hurricaneOccurrencesPerYear;
+  /* shared-deductible reality check: do multi-site actual events exist,
+     and does the model produce multi-site occurrences too */
+  const actualMulti=agg.events.filter(e=>e.nSites>1).length;
+  const disagreements=[];
+  perClass.forEach(p=>{if(p.bias)disagreements.push("retained "+p.cls+" is "
+    +(p.ratio>1?p.ratio.toFixed(1)+"x actual":"1/"+(1/p.ratio).toFixed(1)+" of actual")
+    +" over "+nYears+" year(s) of claims: "+p.bias);});
+  if(biRatio!=null&&(biRatio>2||biRatio<0.5))
+    disagreements.push("retained BI is "+(biRatio>1?biRatio.toFixed(1)+"x":"1/"+(1/biRatio).toFixed(1)+" of")
+      +" actual BI claims: review the damage-to-downtime chain");
+  if(actualClaimsPerYear>0&&(modeledHits>3*actualClaimsPerYear||modeledHits<actualClaimsPerYear/3))
+    disagreements.push("modeled deductible hits ("+modeledHits.toFixed(1)
+      +"/yr) vs actual property claims ("+actualClaimsPerYear.toFixed(1)
+      +"/yr) differ beyond 3x: the attritional layer needs review");
+  return {years:agg.years,nYears,
+    perClass,
+    bi:{modeledAnnualRetained:modeledBI,actualAnnualIncurred:actualBI,ratio:biRatio},
+    attritional:{modeledHitsPerYear:modeledHits,actualClaimsPerYear},
+    multiSite:{actualMultiSiteEvents:actualMulti,
+      modeledBasis:prop.classes.hurricane.basis,
+      note:actualMulti>0
+        ?"the loss run confirms multi-site occurrences: the shared per-occurrence deductible is the correct aggregation"
+        :"no multi-site event in the record yet; the shared-deductible rule still applies by policy terms"},
+    tail:{namedCatIncurred:namedIncurred,
+      note:"the record ("+nYears+" year(s)) calibrates the BODY (attritional + BI) only; the rare-cat tail stays MODELED and labeled - do not scale it to a short record"},
+    development:{openShare:agg.openShare,
+      flagged:agg.openShare>0.1,
+      note:agg.openShare>0?"open claims are "+(agg.openShare*100).toFixed(0)+"% of incurred: figures will develop":"all claims closed"},
+    unmatched:agg.unmatched,unmapped:agg.unmapped,
+    disagreements,
+    materialDisagreement:disagreements.length>0,
+    flags:agg.flags};
+}
+/* ============================================================
    Adaptation intelligence (Phase A)
    Measures are appraised against the FULL climate cost (direct damage +
    business interruption + heat). Each measure declares a mechanism: a
@@ -2919,6 +3879,26 @@ const INFO={
     "<p>A CSV built for the renewal submission: per site, the verified construction and protection attributes underwriters call secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes), plus this model's present-day damage view, so your broker can put a documented alternative view beside the insurer's model.</p>"+
     "<p>Documented attributes are the highest-return lever in renewal pricing: they change the insurer's modeled loss, not just the negotiation. Blank cells are honest blanks; fill them from surveys rather than guesses.</p>"+
     "<p>The modeled columns state their source (CLIMADA grid or interim screening model). Interim figures are for exploration; load a grid before putting these numbers in front of an underwriter.</p>"},
+  tcor:{t:"Total Cost of Risk (TCOR)",b:
+    "<p>What climate risk actually costs per year, all in: <b>retained property loss</b> (the deductibles' side of damage) + <b>retained business interruption</b> (waiting periods, losses beyond the BI limit or indemnity period) + <b>allocated insurance premium</b> + <b>annualized risk-control spend</b> + <b>program admin</b>. Indirect costs (guest rebooking, reputation) ride along as a flagged estimate and are never inside the total.</p>"+
+    "<p>The insurance program transfers most physical damage, so gross damage is an INPUT here, not the headline: it enters the waterfall at the top, the transferred share leaves to the insurer, and what remains (plus BI and premium) is TNL's cost. Every TCOR figure carries its basis; a figure standing on defaults or interim curves says so.</p>",
+    s:"Deductible and BI terms are program parameters (edit at renewal); defaults are documented placeholders, not policy facts."},
+  tcorAgg:{t:"The aggregation rule",b:
+    "<p>Hurricane carries a <b>per-occurrence deductible shared across the campus's sites hit by the same storm</b>: retained loss is computed once per modeled event across those sites (from the results pack's per-event table) and then summed over events. Summing per-site hurricane deductibles would count one occurrence six times at a six-site campus, so it is never done here.</p>"+
+    "<p>Flood and general property deductibles apply per location: those retained losses integrate each site's own loss ladder and sum across sites. Portfolio TCOR is therefore event-level for correlated perils and site-level for the rest - not a column total.</p>"+
+    "<p>Without a results pack event table, hurricane retained falls back to a campus-comonotonic approximation over the loss ladders and is labeled as such.</p>"},
+  attritional:{t:"The attritional frequency layer",b:
+    "<p>Across ~245 sites, small events trip the general-property and flood deductibles often. No single-site view shows that cost: it lives in the frequency band (1-in-10 and more frequent), summed across the whole portfolio. The event math never had a 1-in-10 floor, and the pack's frequent-loss ladders extend to 1-in-2 so this layer is integrated explicitly.</p>"+
+    "<p>The figure shown is the expected annual retained loss from that frequent band plus the expected number of deductible-triggering events per year. The loss run calibrates it: if deductibles actually trigger far more or less often than modeled, the calibration panel says so.</p>"},
+  biRetained:{t:"Retained business interruption",b:
+    "<p>BI is the largest retained exposure: the waiting period (a time deductible) bites on EVERY event, and the rare event that blows through the BI limit or the period of indemnity leaves the excess with TNL. Both pieces are modeled separately: the frequent small piece and the rare large piece.</p>"+
+    "<p>The current chain is the interim one - damage ratio to downtime via the reopen assumption, times daily gross operating profit, with the BI &amp; EE declared value as the ceiling when no explicit limit is on file. The full BI module (archetype- and peril-specific downtime, seasonality weighting, timeshare revenue structure, regional demand shock at undamaged resorts) replaces the transform; the terms math stays.</p>",
+    s:"BI terms (waiting period, limit, indemnity) are program parameters; defaults are flagged on every figure they touch."},
+  lossrun:{t:"Loss-run calibration",b:
+    "<p>The loss run (claims report) is the model's anchor to reality. Claimants map to sites, Coverage Major maps to peril classes, and claims group into events (named storms by name, otherwise same-class claims within three days), so a storm that produced claims at six sites is recognized as ONE occurrence - which also validates the shared-deductible aggregation.</p>"+
+    "<p>Net Incurred (net of recoveries) is the calibration number. Modeled retained loss, deductible-hit frequency, and retained BI are each compared with the actuals per peril class; a ratio outside 0.5x-2x is flagged prominently. If the model disagrees with several years of actuals, the model is wrong and this tool says so.</p>"+
+    "<p><b>Credibility limits:</b> a short record calibrates the BODY (attritional hits, BI) only. Named-catastrophe claims are split out; the rare-cat tail stays modeled and labeled. Open claims carry reserves that can move, so their share is flagged as development risk.</p>",
+    s:"Unmatched claimants and unmapped coverage lines are listed with their dollars, never silently dropped."},
 };
 let _infoPop=null,_infoBtn=null;
 function ensureInfoPop(){
@@ -5039,6 +6019,16 @@ function loadSiteCsv(text){
     const ni2=String(row.get("named_insured")||"").trim();if(ni2)rec.named_insured=ni2.slice(0,80);
     const sid2=String(row.get("site_id")||"").trim();if(sid2)rec.site_id=sid2.slice(0,80);
     const snm2=String(row.get("site_name")||"").trim();if(snm2)rec.site_name=snm2.slice(0,120);
+    /* TCOR fields (schema v3 subset, from the SOV; all optional): the
+       hurricane-deductible-sharing unit, tenure, the BI exposure ceiling,
+       the actual per-site premium, and site risk-control spend. The full
+       SOV importer (Task 8) supersedes hand-keyed columns. */
+    const cc3=String(row.get("campus_code")||"").trim();if(cc3)rec.campus_code=cc3.slice(0,40);
+    const cn3=String(row.get("campus_name")||"").trim();if(cn3)rec.campus_name=cn3.slice(0,120);
+    const ol3=String(row.get("owned_or_leased")||"").trim().toLowerCase();if(ol3==="owned"||ol3==="leased")rec.owned_or_leased=ol3;
+    const be3=toNum(row.get("bi_ee_usd"));if(isFinite(be3)&&be3>=0)rec.bi_ee_usd=be3;
+    const pa3=toNum(row.get("premium_annual_usd"));if(isFinite(pa3)&&pa3>=0)rec.premium_annual_usd=pa3;
+    const ms3=toNum(row.get("mitigation_annual_usd"));if(isFinite(ms3)&&ms3>=0)rec.mitigation_annual_usd=ms3;
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
@@ -5218,8 +6208,16 @@ function routeHazFiles(files){
     setTimeout(()=>{
       const jsons=[],csvs=[];
       list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-      if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
-      else if(csvs.length>1) loadHazardCsvMulti(csvs);
+      /* a loss run announces itself by its claim columns: route it to the
+         calibration loader instead of the hazard-grid parser */
+      const grids=[];
+      csvs.forEach(o=>{
+        const h=(o.text.split(/\r?\n/,1)[0]||"").toLowerCase();
+        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)) loadLossRun(o.text,o.name);
+        else grids.push(o);
+      });
+      if(grids.length===1) loadHazardCsv(grids[0].text,grids[0].name);
+      else if(grids.length>1) loadHazardCsvMulti(grids);
       jsons.forEach(o=>routeHazJson(o.text,o.name));
     },40);
   });
@@ -5227,6 +6225,7 @@ function routeHazFiles(files){
 
 /* ---- persistence (guarded; safe if storage is unavailable or full) ---- */
 const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1", LS_PACK="rtv_respack_v1";
+const LS_LOSSRUN="rtv_lossrun_v1", LS_TCOR="rtv_tcor_v1";
 /* Power BI export contract (Phase C): the column ORDER is frozen. The three
    legacy perils sit mid-row where they always were; later perils append at
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
@@ -5236,6 +6235,8 @@ function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,sce
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
+function persistLossRun(){ try{ localStorage.setItem(LS_LOSSRUN,JSON.stringify(lossRun)); }catch(e){ /* a very large loss run may exceed quota: keeps working in-session */ } }
+function persistTcorProgram(){ try{ localStorage.setItem(LS_TCOR,JSON.stringify(tcorProgram)); }catch(e){} }
 function restore(){
   try{
     const s=JSON.parse(localStorage.getItem(LS_STATE)||"null");
@@ -5264,6 +6265,17 @@ function restore(){
     if(hm&&hm.data)hazardMeta=hm;
     const rpk=JSON.parse(localStorage.getItem(LS_PACK)||"null");
     if(rpk&&rpk.data)resultsPack=rpk;
+    const lr=JSON.parse(localStorage.getItem(LS_LOSSRUN)||"null");
+    if(lr&&Array.isArray(lr.claims)&&lr.claims.length)lossRun=lr;
+    const tp=JSON.parse(localStorage.getItem(LS_TCOR)||"null");
+    if(tp&&typeof tp==="object"){
+      tcorProgram=Object.assign({},tcorProgram,tp);
+      /* nested blocks merge over defaults so a new field ships with its
+         documented default even against an older saved program */
+      ["deductibles","perilClass","bi","premium","indirect"].forEach(k=>{
+        if(tp[k]&&typeof tp[k]==="object")tcorProgram[k]=Object.assign({},tcorProgram[k],tp[k]);
+      });
+    }
   }catch(e){}
 }
 

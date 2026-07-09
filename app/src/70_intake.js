@@ -72,6 +72,16 @@ function loadSiteCsv(text){
     const ni2=String(row.get("named_insured")||"").trim();if(ni2)rec.named_insured=ni2.slice(0,80);
     const sid2=String(row.get("site_id")||"").trim();if(sid2)rec.site_id=sid2.slice(0,80);
     const snm2=String(row.get("site_name")||"").trim();if(snm2)rec.site_name=snm2.slice(0,120);
+    /* TCOR fields (schema v3 subset, from the SOV; all optional): the
+       hurricane-deductible-sharing unit, tenure, the BI exposure ceiling,
+       the actual per-site premium, and site risk-control spend. The full
+       SOV importer (Task 8) supersedes hand-keyed columns. */
+    const cc3=String(row.get("campus_code")||"").trim();if(cc3)rec.campus_code=cc3.slice(0,40);
+    const cn3=String(row.get("campus_name")||"").trim();if(cn3)rec.campus_name=cn3.slice(0,120);
+    const ol3=String(row.get("owned_or_leased")||"").trim().toLowerCase();if(ol3==="owned"||ol3==="leased")rec.owned_or_leased=ol3;
+    const be3=toNum(row.get("bi_ee_usd"));if(isFinite(be3)&&be3>=0)rec.bi_ee_usd=be3;
+    const pa3=toNum(row.get("premium_annual_usd"));if(isFinite(pa3)&&pa3>=0)rec.premium_annual_usd=pa3;
+    const ms3=toNum(row.get("mitigation_annual_usd"));if(isFinite(ms3)&&ms3>=0)rec.mitigation_annual_usd=ms3;
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
@@ -251,8 +261,16 @@ function routeHazFiles(files){
     setTimeout(()=>{
       const jsons=[],csvs=[];
       list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-      if(csvs.length===1) loadHazardCsv(csvs[0].text,csvs[0].name);
-      else if(csvs.length>1) loadHazardCsvMulti(csvs);
+      /* a loss run announces itself by its claim columns: route it to the
+         calibration loader instead of the hazard-grid parser */
+      const grids=[];
+      csvs.forEach(o=>{
+        const h=(o.text.split(/\r?\n/,1)[0]||"").toLowerCase();
+        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)) loadLossRun(o.text,o.name);
+        else grids.push(o);
+      });
+      if(grids.length===1) loadHazardCsv(grids[0].text,grids[0].name);
+      else if(grids.length>1) loadHazardCsvMulti(grids);
       jsons.forEach(o=>routeHazJson(o.text,o.name));
     },40);
   });

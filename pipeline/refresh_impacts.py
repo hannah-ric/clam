@@ -402,6 +402,16 @@ def site_ead(losses, freq):
 
 SITE_RPS = (100, 250)      # per-site return periods surfaced beside the EAD
 
+# TCOR overhaul Task A (pipeline prerequisite): the pack now carries the
+# per-event, per-site loss table for the joint wind+surge catalog (the hard
+# dependency for the shared per-occurrence hurricane deductible) plus
+# per-site frequent-loss ladders down to 1-in-2, so the app's retained-loss
+# and attritional-frequency math consumes event outputs instead of
+# re-deriving hazard science.
+LADDER_RPS = (2, 5, 10, 25, 50, 100, 250, 500)   # 1/RP = annual exceedance
+EVENT_FLOOR_USD = 1000.0   # site-event entries below this are dropped
+                           # (recorded; far below the smallest deductible)
+
 
 def site_rp_losses(losses, freq, rps=SITE_RPS):
     """{rp: per-site loss} at the requested return periods: each site's OWN
@@ -463,6 +473,174 @@ def add_ep(a, b):
     """Comonotonic combination: exceedance losses add at equal return
     periods. An upper bound for independent catalogs; recorded in meta."""
     return {rp: a.get(rp, 0.0) + b.get(rp, 0.0) for rp in RPS}
+
+
+# ---------------------------------------------------------------------------
+# TCOR event outputs (pure; unit-tested in test_impactops.py)
+# ---------------------------------------------------------------------------
+
+def sparse_event_rows(losses, freq, event_names, skey,
+                      floor_usd=EVENT_FLOOR_USD, site_offset=0):
+    """[events x sites] losses -> sparse per-event rows for the pack.
+
+    Each kept event carries a stable id (the catalog's event name when the
+    hazard provides one, else "<source>:<index>"), its annual frequency, and
+    [site_index, loss_usd] pairs for every site at or above the floor. Events
+    with zero frequency or no site above the floor are dropped; the floor is
+    recorded pack-side so the validator can bound what the drop cost."""
+    L = np.asarray(losses, float)
+    f = np.asarray(freq, float)
+    rows = []
+    for i in range(L.shape[0]):
+        if f[i] <= 0:
+            continue
+        j = np.where(L[i] >= floor_usd)[0]
+        if not len(j):
+            continue
+        name = None
+        if event_names is not None and i < len(event_names):
+            name = str(event_names[i]).strip() or None
+        rows.append({"id": name if name else f"{skey}:{i}",
+                     "freq": float(f[i]),
+                     "sites": [[int(site_offset + jj), round(float(L[i, jj]), 2)]
+                               for jj in j]})
+    return rows
+
+
+def build_event_sets(prep, app_key, values, wind_mult, fb_coast,
+                     flood_cap=None, v_half=None,
+                     floor_usd=EVENT_FLOOR_USD, site_offset=0):
+    """Per-event, per-site JOINT wind+surge losses for one scenario.
+
+    The wind sources in the scenario recipe are ALTERNATIVE catalogs blended
+    by weight (exactly blend_results' rule), so each source keeps its own
+    event list and normalized weight: a consumer computes any event-level
+    statistic (per-occurrence retained loss above all) per source and then
+    weight-averages. Events are NEVER merged across sources; wind and surge
+    inside one source share the catalog, so their losses add per event
+    (truly joint), which is what the shared hurricane deductible needs."""
+    recipe = rh.APP_SCENARIOS[app_key]
+    parts = []
+    for w, src in recipe:
+        skey = rh.source_key(src)
+        wnd = prep["wind"].get(skey)
+        if wnd is None:
+            continue
+        wl = wind_losses(wnd["int"], values, wind_mult,
+                         v_half=V_HALF if v_half is None else v_half)
+        sg = prep["surge"].get((skey, app_key))
+        combined = wl
+        if sg is not None:
+            combined = wl + flood_losses(sg["int"], values, fb_coast,
+                                         cap=flood_cap)
+        rows = sparse_event_rows(combined, wnd["freq"], wnd.get("event_name"),
+                                 skey, floor_usd, site_offset)
+        kept = sum(e["freq"] * sum(l for _j, l in e["sites"]) for e in rows)
+        parts.append({"source": skey, "weight": float(w),
+                      "aal_usd": round(float(site_ead(combined,
+                                                      wnd["freq"]).sum()), 2),
+                      "kept_aal_usd": round(float(kept), 2),
+                      "events": rows})
+    if not parts:
+        return None
+    wsum = sum(p["weight"] for p in parts)
+    for p in parts:
+        p["weight"] = round(p["weight"] / wsum, 6)
+    return parts
+
+
+def build_frequent_ladders(prep, app_key, values, wind_mult, fb_coast,
+                           fb_river, flood_cap=None, fb_prain=None,
+                           fire_vuln=None, v_half=None, haz_warm=None):
+    """Per-site loss ladders at LADDER_RPS (down to 1-in-2) per peril.
+
+    The attritional layer lives in events more frequent than 1-in-10, which
+    SITE_RPS never reached; these ladders extend each site's own exceedance
+    into that band so per-location deductible math (general property, flood)
+    can integrate the frequent hits without re-deriving hazard science.
+    Combination rules mirror eval_scenario exactly: wind sources blend by
+    weight, river members average, rain domains add per site (each site
+    belongs to one domain), wildfire is its own arrival process. `tc_joint`
+    is the same-catalog wind+surge sum (the hurricane occurrence basis);
+    `tc` and `cflood` are the components, kept so a consumer that classes
+    surge under the flood deductible instead can do so."""
+    vals = values
+    recipe = rh.APP_SCENARIOS[app_key]
+    zero = lambda: {rp: np.zeros(len(vals)) for rp in LADDER_RPS}
+    out = {}
+
+    w_parts, s_parts, j_parts = [], [], []
+    for w, src in recipe:
+        skey = rh.source_key(src)
+        wnd = prep["wind"].get(skey)
+        if wnd is None:
+            continue
+        wl = wind_losses(wnd["int"], vals, wind_mult,
+                         v_half=V_HALF if v_half is None else v_half)
+        w_parts.append((w, site_rp_losses(wl, wnd["freq"], rps=LADDER_RPS)))
+        sg = prep["surge"].get((skey, app_key))
+        combined = wl
+        if sg is not None:
+            sl = flood_losses(sg["int"], vals, fb_coast, cap=flood_cap)
+            s_parts.append((w, site_rp_losses(sl, wnd["freq"],
+                                              rps=LADDER_RPS)))
+            combined = wl + sl
+        else:
+            s_parts.append((w, zero()))
+        j_parts.append((w, site_rp_losses(combined, wnd["freq"],
+                                          rps=LADDER_RPS)))
+
+    def _blend(parts):
+        if not parts:
+            return None
+        wsum = sum(w for w, _ in parts)
+        acc = zero()
+        for w, r in parts:
+            acc = _rp_add(acc, _rp_scale(r, w / wsum))
+        return acc
+
+    out["tc"] = _blend(w_parts)
+    out["cflood"] = _blend(s_parts)
+    out["tc_joint"] = _blend(j_parts)
+
+    members = prep["rflood"].get(app_key) or []
+    if members:
+        acc = zero()
+        for m in members:
+            rl = flood_losses(m["int"], vals, fb_river, cap=flood_cap)
+            acc = _rp_add(acc, _rp_scale(site_rp_losses(rl, m["freq"],
+                                                        rps=LADDER_RPS),
+                                         1.0 / len(members)))
+        out["rflood"] = acc
+
+    pw = prep.get("prain")
+    if pw is not None:
+        warm = 0.0 if haz_warm is None else haz_warm
+        rain_members = [pw] if isinstance(pw, dict) else pw
+        acc = zero()
+        for pm in rain_members:
+            mm = pm["int"] * (1.0 + rpn.PRAIN_CC_PER_C * warm)
+            depth = np.maximum(mm - PRAIN_DRAIN_MM, 0.0) / 1000.0 \
+                * PRAIN_POND_COEFF
+            fbp = (np.full_like(vals, PRAIN_FB) if fb_prain is None
+                   else fb_prain)
+            pl = flood_losses(depth, vals, fbp, cap=flood_cap)
+            acc = _rp_add(acc, site_rp_losses(pl, pm["freq"],
+                                              rps=LADDER_RPS))
+        out["prain"] = acc
+
+    fw = prep.get("wfire")
+    if fw is not None:
+        warm = 0.0 if haz_warm is None else haz_warm
+        fv = np.ones_like(vals) if fire_vuln is None else np.asarray(fire_vuln)
+        p = np.minimum(np.asarray(fw["bp"], float)
+                       * (1.0 + rw.FIRE_WARMING_UPLIFT * warm), 1.0)
+        frac = np.minimum(np.asarray(fw["cond"], float) * fv, 1.0)
+        lgf = frac * vals
+        out["wfire"] = {rp: np.where(p >= 1.0 / rp, lgf, 0.0)
+                        for rp in LADDER_RPS}
+
+    return {k: v for k, v in out.items() if v is not None} or None
 
 
 def annuity(years, rate):
@@ -1051,8 +1229,14 @@ def build_country_prep(iso3, sites_c, surge_enabled, river_enabled, meta,
         idx, dist = nearest_centroids(lat, lon, haz.centroids.lat,
                                       haz.centroids.lon)
         out["idx"], out["dist"] = idx, dist
+        # event identity for the pack's per-event table (TCOR Task A): the
+        # catalog's own event names when the hazard carries them; absent
+        # (older caches, mocks), sparse_event_rows falls back to source:index
+        enames = getattr(haz, "event_name", None)
         out["wind"] = {"freq": np.asarray(haz.frequency, float),
-                       "int": site_intensity(haz, idx)}
+                       "int": site_intensity(haz, idx),
+                       "event_name": ([str(x) for x in enames]
+                                      if enames is not None else None)}
         if surge_enabled:
             # Surge is REGIONAL: each site's depth comes from a bathtub run
             # over its own coastline's wind cells at that coastline's SLR
@@ -1306,6 +1490,57 @@ def combine_countries(results, site_counts, countries=None, meta=None):
     return out
 
 
+def combine_event_sets(per_country_sets):
+    """[(iso3, {app_key: [source parts]})] -> {app_key: [tagged parts]}.
+
+    Country catalogs are independent and their sites disjoint, so each
+    country's source parts keep their own per-country-normalized weights and
+    gain a country tag: a consumer computes any event statistic per part,
+    weight-averages within a country, and SUMS across countries (equivalent:
+    sum weight x statistic over all parts). One physical storm crossing a
+    country boundary appears as separate per-country events; that limit is
+    recorded in meta, and campuses never span countries."""
+    out = {}
+    for iso3, ev in per_country_sets:
+        for app_key, parts in (ev or {}).items():
+            for p in parts:
+                q = dict(p)
+                q["country"] = iso3
+                out.setdefault(app_key, []).append(q)
+    return out
+
+
+def combine_ladders(per_country_ladders, site_counts):
+    """[(iso3, {app_key: {peril: {rp: arr}}})] + per-country site counts ->
+    {app_key: {peril: [[loss per LADDER_RPS] per site]}} in pack site order,
+    zero-filling countries that lack a peril or scenario so rows stay
+    aligned with per_site (the same padding rule combine_countries uses)."""
+    keys, perils = [], {}
+    for _iso3, ld in per_country_ladders:
+        for k, by_peril in (ld or {}).items():
+            if k not in keys:
+                keys.append(k)
+            for p in by_peril:
+                perils.setdefault(k, [])
+                if p not in perils[k]:
+                    perils[k].append(p)
+    out = {}
+    for k in keys:
+        out[k] = {}
+        for p in perils[k]:
+            rows = []
+            for (_iso3, ld), n in zip(per_country_ladders, site_counts):
+                lad = (ld or {}).get(k, {}).get(p)
+                if lad is None:
+                    rows.extend([[0.0] * len(LADDER_RPS)] * n)
+                else:
+                    for j in range(n):
+                        rows.append([round(float(lad[rp][j]), 2)
+                                     for rp in LADDER_RPS])
+            out[k][p] = rows
+    return out
+
+
 def _norm_insured(x):
     """Display name for a site's named-insured group; missing -> Unspecified,
     mirroring the app's insuredOf so pack and browser roll up the same way."""
@@ -1330,7 +1565,9 @@ def named_insured_rollup(acute_ead, named_insured):
 
 def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
                sites_file, site_named_insured=None, site_ids=None,
-               site_coverage=None, site_flood_basis=None):
+               site_coverage=None, site_flood_basis=None,
+               event_sets=None, ladders=None,
+               event_floor_usd=EVENT_FLOOR_USD):
     n = len(site_names)
     site_named_insured = (list(site_named_insured)
                           if site_named_insured is not None else [None] * n)
@@ -1376,7 +1613,7 @@ def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
             },
             "per_site": per_site,
         }
-    return {
+    pack = {
         "pack_version": 1,
         "kind": "results_pack",
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -1390,6 +1627,31 @@ def build_pack(scen_results, site_names, site_values, adaptation, uncertainty,
         "adaptation": adaptation,
         "uncertainty": uncertainty,
     }
+    # TCOR Task A: event-level outputs. Additive sections; pack_version
+    # stays 1 so older app builds keep loading the pack unchanged.
+    if event_sets:
+        pack["event_sets"] = {
+            "floor_usd": event_floor_usd,
+            "basis": "joint wind+surge losses per event (shared catalog per "
+                     "source, truly joint); sources are ALTERNATIVE catalogs "
+                     "blended by weight, never merged; site indices refer to "
+                     "per_site order; the per-occurrence shared hurricane "
+                     "deductible must be computed on these events, never on "
+                     "per-site sums",
+            "scenarios": event_sets,
+        }
+    if ladders:
+        pack["frequent_losses"] = {
+            "ladder_rps": list(LADDER_RPS),
+            "basis": "per-site loss at each return period (step exceedance "
+                     "over the site's own events, the site_rp convention), "
+                     "extended into the 1-in-2..1-in-10 attritional band; "
+                     "tc_joint is same-catalog wind+surge, tc and cflood are "
+                     "its components; per-location deductible math "
+                     "integrates these ladders",
+            "scenarios": ladders,
+        }
+    return pack
 
 
 def pack_meta(pack, args, meta):
@@ -1431,6 +1693,21 @@ def pack_meta(pack, args, meta):
         "ead_basis": "full event-frequency range: the event math never had a "
                      "1-in-10 floor, and the app's interim integral now "
                      "extends below 1-in-10 to match",
+        "event_sets": {
+            "present": "event_sets" in pack,
+            "floor_usd": pack.get("event_sets", {}).get("floor_usd"),
+            "ids": "catalog event_name when the hazard carries one, else "
+                   "source:index",
+            "sources": "alternative catalogs blended by weight; events are "
+                       "never merged across sources",
+            "cross_country": "catalogs are per country; one storm crossing a "
+                             "border appears as separate events (shared-"
+                             "deductible sharing never spans countries)"},
+        "frequent_losses": {
+            "present": "frequent_losses" in pack,
+            "ladder_rps": list(LADDER_RPS),
+            "basis": "site_rp step-exceedance convention extended into the "
+                     "1-in-2..1-in-10 attritional band"},
         "layers": [{"scenario": k,
                     "sites": len(v["per_site"]),
                     "direct_aal_usd": v["portfolio"]["direct_aal_usd"]}
@@ -1514,6 +1791,15 @@ def main(argv=None) -> int:
     ap.add_argument("--backtest", default=None, metavar="CSV",
                     help="observed-loss CSV (name, observed_annual_loss_usd): "
                          "fits v_half and records it in the pack, not applied")
+    ap.add_argument("--no-events", action="store_true",
+                    help="skip the per-event joint loss table and the "
+                         "frequent-loss ladders (TCOR consumers then degrade "
+                         "to labeled approximations)")
+    ap.add_argument("--event-floor", type=float, default=EVENT_FLOOR_USD,
+                    metavar="USD",
+                    help="drop site-event loss entries below this from the "
+                         "event table (default %(default)s; recorded in the "
+                         "pack and bounded by the validator)")
     args = ap.parse_args(argv)
 
     backtest = None
@@ -1622,7 +1908,28 @@ def main(argv=None) -> int:
             prep, sites_c, values, wm, fb_coast, fb_river, fcap,
             {k: v for k, v in scen.items() if k in base_keys},
             fb_prain=fbp, fire_vuln=fvuln, v_half=vh)
+        # TCOR Task A: the per-event, per-site joint wind+surge table (the
+        # shared hurricane deductible's hard dependency) and the per-site
+        # frequent-loss ladders (the attritional layer's 1-in-2..1-in-10
+        # band). Site indices are GLOBAL pack indices via the offset.
+        ev_sets, ladders = {}, {}
+        if not args.no_events:
+            offset = len(order)
+            for app_key in scen:
+                es = build_event_sets(prep, app_key, values, wm, fb_coast,
+                                      flood_cap=fcap, v_half=vh,
+                                      floor_usd=args.event_floor,
+                                      site_offset=offset)
+                if es:
+                    ev_sets[app_key] = es
+                ld = build_frequent_ladders(
+                    prep, app_key, values, wm, fb_coast, fb_river,
+                    flood_cap=fcap, fb_prain=fbp, fire_vuln=fvuln, v_half=vh,
+                    haz_warm=rw.WARMING.get(app_key, 0.0))
+                if ld:
+                    ladders[app_key] = ld
         per_country.append({"scen": scen, "adaptation": adaptation,
+                            "event_sets": ev_sets, "ladders": ladders,
                             "catalog": cat_section,
                             "cat_projects": cat_projects, "cat_sc": cat_sc,
                             "sites_df": sites_c,
@@ -1662,6 +1969,17 @@ def main(argv=None) -> int:
         "note": "at-structure sites carry ground_elev_m + cell_ground_elev_m "
                 "(survey or enrich_sites.py); cell-average sites are flagged "
                 "modeled-coarse on the app's trust surface"}
+    event_sets = combine_event_sets([(c["iso3"], c["event_sets"])
+                                     for c in per_country])
+    ladders = combine_ladders([(c["iso3"], c["ladders"])
+                               for c in per_country],
+                              [len(c["names"]) for c in per_country])
+    if event_sets:
+        n_entries = sum(len(e["sites"]) for parts in event_sets.values()
+                        for p in parts for e in p["events"])
+        LOG.info("Event sets: %d scenario(s), %d site-event entries "
+                 "(floor %.0f USD)", len(event_sets), n_entries,
+                 args.event_floor)
     pack = build_pack(combined, order,
                       np.concatenate([c["values"] for c in per_country]),
                       lead["adaptation"], lead["uncertainty"], args.sites,
@@ -1669,7 +1987,9 @@ def main(argv=None) -> int:
                                           for ni in c["named_insured"]],
                       site_ids=[sid for c in per_country
                                 for sid in c["site_id"]],
-                      site_coverage=coverage, site_flood_basis=flood_basis)
+                      site_coverage=coverage, site_flood_basis=flood_basis,
+                      event_sets=event_sets or None, ladders=ladders or None,
+                      event_floor_usd=args.event_floor)
     if lead.get("catalog"):
         pack["measures_catalog"] = lead["catalog"]
     plan = build_capital_plan_v2(lead.get("cat_projects") or [],
