@@ -59,6 +59,11 @@ function render(){
   renderHazProv();
   renderResultsPack();
   renderExecHome();
+  /* v3 surfaces: the command view (Surface 1) and, when open, the
+     site view (Surface 2) repaint with every state change so the ONE
+     scenario control drives headline, list, map, and waterfall alike */
+  if(typeof renderCommand==="function")renderCommand();
+  if(typeof renderSiteView==="function"&&typeof _svId!=="undefined"&&_svId!=null)renderSiteView();
   ensurePanelDefaults();
   applyPanelPrefs();
   renderPortfolioLabel();

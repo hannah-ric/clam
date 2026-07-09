@@ -520,6 +520,162 @@
     .exectile .l{white-space:normal}
   }
 
+  /* ============================================================
+     v3 command surface (front-end overhaul).
+     Tokens first: the five TCOR component colours (validated
+     categorical set: lightness band, chroma floor, CVD adjacent
+     delta-E >= 12, 3:1 contrast on each mode's surface), one
+     sequential teal ramp for TCOR intensity, and one diverging
+     teal/ember pair for modeled-vs-actual and expected-vs-bad-year.
+     These are DATA encodings: identical in both themes' roles, with
+     per-mode steps validated against each surface. Components never
+     ride on colour alone; every swatch carries its label.
+     ============================================================ */
+  :root{
+    --c-prop:#0E7A9B;  /* retained property  */
+    --c-bi:#C2561B;    /* retained BI        */
+    --c-prem:#7048C6;  /* premium            */
+    --c-freq:#1E8E5A;  /* frequency layer    */
+    --c-admin:#B84A82; /* admin + risk control */
+    --seq-1:#BFE0E9; --seq-2:#8FC6D6; --seq-3:#5FA9BF; --seq-4:#3A8CA6;
+    --seq-5:#20718B; --seq-6:#105A72; --seq-7:#093F52;
+    --div-lo:#20718B; --div-mid:#EFEDE4; --div-hi:#C2561B;
+    --fs-display:clamp(34px,4.2vw,46px);
+  }
+  html[data-theme="dark"]{
+    --c-prop:#2E97BA; --c-bi:#D96F33; --c-prem:#937AD9; --c-freq:#2EA374; --c-admin:#CF6D97;
+    --seq-1:#0E4A5E; --seq-2:#166176; --seq-3:#26798F; --seq-4:#3E93A9;
+    --seq-5:#5FADC2; --seq-6:#8AC7D8; --seq-7:#B8DFE9;
+    --div-lo:#5FADC2; --div-mid:#2C3841; --div-hi:#D96F33;
+  }
+  /* mode gating: the command surface is the default; the classic
+     workspace (viewbar, tabs, main, Leaflet map) lives behind Advanced.
+     Pure display: both surfaces read the same engine. */
+  body:not(.advmode) .advanced-only{display:none!important}
+  body.advmode #cmdView{display:none!important}
+  body:not(.advmode){height:100vh;overflow:hidden}
+  #cmdView{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg)}
+
+  /* headline band */
+  .cmd-band{display:flex;gap:26px;align-items:stretch;flex-wrap:wrap;
+    padding:16px 22px 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+  .cmd-kicker{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .cmd-hero{font-family:var(--font-display);font-size:var(--fs-display);font-weight:560;
+    color:var(--heading);line-height:1.02;margin:2px 0 1px;white-space:nowrap}
+  .cmd-hero .unit{font-size:.45em;color:var(--ink-2);font-weight:500}
+  .cmd-sub{font-size:12.5px;color:var(--ink-2)}
+  .cmd-headline{min-width:min(360px,92vw)}
+  .cmd-col{display:flex;flex-direction:column;justify-content:flex-start;gap:6px;min-width:0}
+  .cmd-col .col-l{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  /* the compact stacked component bar: 2px surface gaps, no strokes */
+  .compbar{display:flex;gap:2px;height:16px;border-radius:8px;overflow:hidden;min-width:280px}
+  .compbar>div{min-width:2px;transition:flex-grow .5s ease}
+  .complegend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;font-size:11.5px;color:var(--ink-2)}
+  .complegend .ci{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;background:none;border:0;padding:0;font:inherit;color:var(--ink-2);cursor:pointer}
+  .complegend .ci:hover{color:var(--ink);text-decoration:underline}
+  .complegend i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+  .complegend .cv{font-family:var(--font-mono);color:var(--ink)}
+  /* expected vs bad year tiles */
+  .cmd-eb{display:flex;gap:18px;align-items:stretch}
+  .cmd-eb .eb{min-width:118px}
+  .cmd-eb .eb .l{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .cmd-eb .eb .v{font-family:var(--font-display);font-size:24px;font-weight:560;color:var(--heading);line-height:1.05}
+  .cmd-eb .eb .f{font-size:11px;color:var(--ink-2);margin-top:2px;max-width:190px}
+  .cmd-eb .eb.bad .v{color:var(--div-hi)}
+  .confbar{height:7px;border-radius:4px;background:var(--line-2);overflow:hidden;margin-top:5px;min-width:120px}
+  .confbar>i{display:block;height:100%;background:var(--seq-5);border-radius:4px;transition:width .5s ease}
+  /* controls column */
+  .cmd-controls{margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end;justify-content:flex-start}
+  .segbtns{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+  .segbtns button{border:0;background:transparent;color:var(--ink-2);padding:6px 12px;font:inherit;font-size:12.5px;white-space:nowrap;border-right:1px solid var(--line-2)}
+  .segbtns button:last-child{border-right:0}
+  .segbtns button:hover{background:var(--surface-2);color:var(--ink)}
+  .segbtns button[aria-pressed="true"]{background:var(--primary);color:var(--on-primary);font-weight:600}
+  .segbtns button:disabled{opacity:.4;cursor:not-allowed}
+  .seg-l{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:6px}
+  .cmd-ctlrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+
+  /* body: map + ranked decision list */
+  .cmd-body{flex:1;min-height:0;display:flex;gap:0}
+  .cmd-map{flex:1.35;min-width:0;position:relative;background:var(--surface-2)}
+  #cmdMap{position:absolute;inset:0}
+  .cmd-map .mapnote{position:absolute;left:12px;bottom:10px;z-index:5;font-size:11px;color:var(--muted);
+    background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid var(--line);border-radius:7px;padding:4px 9px;max-width:min(420px,70%)}
+  .cmd-maplegend{position:absolute;right:12px;bottom:10px;z-index:5;font-size:11px;color:var(--ink-2);
+    background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:8px;padding:7px 10px;line-height:1.5}
+  .cmd-maplegend .lh{font-weight:600;color:var(--heading);font-size:11px;margin-bottom:3px}
+  .cmd-list{flex:1;min-width:min(560px,48vw);max-width:720px;border-left:1px solid var(--line);
+    background:var(--surface);display:flex;flex-direction:column;min-height:0}
+  .cmd-list .list-head{display:flex;align-items:baseline;gap:10px;padding:12px 16px 8px;flex-wrap:wrap}
+  .cmd-list .list-head h2{font-family:var(--font-display);font-size:var(--fs-h3);font-weight:560;color:var(--heading);margin:0}
+  .cmd-list .list-head .hint{margin:0}
+  .cmd-list .list-scroll{overflow-y:auto;flex:1;min-height:0;padding:0 8px 12px}
+  table.cmdtbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.cmdtbl th{text-align:left;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);
+    padding:5px 8px;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;user-select:none;
+    position:sticky;top:0;background:var(--surface);z-index:2;white-space:nowrap}
+  table.cmdtbl th.num,table.cmdtbl td.num{text-align:right}
+  table.cmdtbl td{padding:7px 8px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+  table.cmdtbl tr.rowclick:hover td{background:var(--sel)}
+  table.cmdtbl tr.sel td{background:var(--sel)}
+  .tcorbar{display:inline-block;height:5px;border-radius:3px;background:var(--seq-5);vertical-align:middle}
+  .compchip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-2);white-space:nowrap}
+  .compchip i{width:9px;height:9px;border-radius:2.5px;display:inline-block;flex:none}
+  .drivechip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-2);white-space:nowrap}
+  .confmark{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;
+    border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+  .confmark.est{border-style:dashed;color:var(--warn-ink);border-color:var(--warn-line);background:var(--warn-bg)}
+  .cmd-empty{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
+
+  /* derivation popover (hover/click on any figure or segment) */
+  .derive{position:absolute;z-index:1800;width:min(340px,92vw);background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:12px 14px;
+    font-size:12px;line-height:1.5;display:none;pointer-events:none}
+  .derive.open{display:block}
+  .derive h5{font-family:var(--font-display);font-weight:560;color:var(--heading);margin:0 0 4px;font-size:13px}
+  .derive .kv{font-size:11.5px}
+  .derive .basis{color:var(--muted);font-size:10.5px;border-top:1px solid var(--line-2);margin-top:7px;padding-top:5px}
+
+  /* ---- site view (surface 2): a full overlay above the command view ---- */
+  #siteView{position:fixed;inset:0;z-index:1400;background:var(--bg);overflow-y:auto;display:none}
+  #siteView.open{display:block;animation:fade .18s ease}
+  .sv-wrap{max-width:1180px;margin:0 auto;padding:18px 22px 40px}
+  .sv-top{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+  .sv-back{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;
+    font:inherit;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+  .sv-back:hover{border-color:var(--focus);color:var(--heading)}
+  .sv-name{font-family:var(--font-display);font-size:26px;font-weight:560;color:var(--heading);line-height:1.1}
+  .sv-meta{font-size:12px;color:var(--ink-2);margin-top:2px}
+  .sv-tcor{margin-left:auto;text-align:right}
+  .sv-tcor .v{font-family:var(--font-display);font-size:32px;font-weight:560;color:var(--heading);line-height:1}
+  .sv-tcor .l{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .sv-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:940px){.sv-grid{grid-template-columns:1fr}}
+  /* the TCOR waterfall: animated column bridge from gross to TCOR */
+  .wf{position:relative;height:300px;margin:8px 0 2px}
+  .wf .wf-grid{position:absolute;left:0;right:0;border-top:1px solid var(--line-2);font-size:9.5px;color:var(--muted)}
+  .wf .wf-grid span{position:absolute;right:calc(100% - 46px);top:-7px;font-family:var(--font-mono);text-align:right;width:44px;padding-right:6px}
+  .wf .wf-col{position:absolute;bottom:24px;top:6px}
+  .wf .wf-seg{position:absolute;left:8%;right:8%;border-radius:4px 4px 0 0;cursor:pointer;
+    transition:top .7s cubic-bezier(.25,.8,.3,1),height .7s cubic-bezier(.25,.8,.3,1),opacity .5s}
+  .wf .wf-seg.down{border-radius:0 0 4px 4px}
+  @media(prefers-reduced-motion:reduce){.wf .wf-seg{transition:none}.compbar>div{transition:none}.confbar>i{transition:none}}
+  .wf .wf-lab{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--ink-2);line-height:1.15}
+  .wf .wf-val{position:absolute;left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:9.5px;color:var(--ink);
+    transition:top .7s cubic-bezier(.25,.8,.3,1)}
+  .wf .wf-conn{position:absolute;border-top:1px solid var(--line);transition:top .7s cubic-bezier(.25,.8,.3,1)}
+  .sv-note{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .estflag{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:600;
+    background:var(--warn-bg);color:var(--warn-ink);border:1px dashed var(--warn-line);white-space:nowrap}
+  @media(max-width:980px){
+    .cmd-body{flex-direction:column;overflow-y:auto}
+    body:not(.advmode){height:auto;overflow:auto}
+    .cmd-map{min-height:300px;flex:none;height:42vh}
+    .cmd-list{max-width:none;min-width:0;border-left:0;border-top:1px solid var(--line)}
+    .cmd-controls{margin-left:0;align-items:flex-start}
+  }
+
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
@@ -597,10 +753,8 @@
         <div class="dm-hint">Display choices never change a computed figure or an export.</div>
       </div>
     </div>
-    <div class="modeswitch" role="group" aria-label="Choose how much detail the app shows">
-      <button type="button" id="modeExec" aria-pressed="true" title="The one-minute view: map, headline cost, and ranked priorities">Executive</button>
-      <button type="button" id="modeAnalyst" aria-pressed="false" title="The full workspace: every tab, model control, and specialist panel">Analyst</button>
-    </div>
+    <button type="button" class="btn ghost" id="advancedBtn" aria-pressed="false"
+      title="The full analytical workspace: per-peril scorecards, sensitivity, backtest, loss-exceedance detail, assumptions, calibration diagnostics, and data import">Advanced</button>
     <div class="exportwrap">
       <button class="btn solid" id="exportMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export &amp; brief &#9662;</button>
       <div class="exportmenu" id="exportMenu" role="menu" aria-label="Exports and briefings">
@@ -613,26 +767,48 @@
   </div>
 </header>
 
-<div id="mapwrap">
-  <div id="map"></div>
-  <!-- Executive home overlays: floating panels over the full-bleed map.
-       Painted by renderExecHome(); visible only under body.execmode. -->
-  <section class="execui" id="execPanel" role="region" aria-label="Portfolio priorities at a glance"></section>
-  <div class="execui" id="execLayerbar" role="group" aria-label="What the map markers are coloured by"></div>
-  <div class="execui" id="execTimebar" role="group" aria-label="Climate timeline"></div>
-  <div class="execui" id="execEmpty" style="display:none">
+<!-- ============================================================
+     SURFACE 1: the portfolio command view (the default screen).
+     One screen, no tabs: portfolio TCOR and its five components,
+     expected vs bad year, confidence, the climate map, and the
+     ranked decision list, under ONE scenario/horizon control and a
+     renewal/capital framing toggle. Painted by renderCommand().
+     ============================================================ -->
+<section id="cmdView" aria-label="Portfolio command view">
+  <div class="cmd-band" id="cmdBand"></div>
+  <div class="cmd-body" id="cmdBody">
+    <div class="cmd-map" id="cmdMapPanel">
+      <div id="cmdMap" role="img" aria-label="Portfolio climate map"></div>
+      <div class="cmd-maplegend" id="cmdMapLegend"></div>
+      <div class="mapnote" id="cmdMapNote"></div>
+    </div>
+    <aside class="cmd-list" id="cmdListPanel" aria-label="Ranked decision list">
+      <div class="list-head" id="cmdListHead"></div>
+      <div class="list-scroll" id="cmdListScroll"></div>
+    </aside>
+  </div>
+  <div class="cmd-empty" id="cmdEmpty" style="display:none">
     <div class="execempty-card">
       <h3>Start with a portfolio</h3>
       <p>Use <b>Portfolio</b> in the top bar to load the sample or upload your own site list. You can also search a place above to add a site one at a time.</p>
       <div class="row">
-        <button class="lightbtn primary" id="execSampleBtn">Load sample portfolio</button>
-        <button class="lightbtn" id="execAnalystBtn">Open analyst workspace</button>
+        <button class="lightbtn primary" id="cmdSampleBtn">Load sample portfolio</button>
+        <button class="lightbtn" id="cmdAdvancedBtn">Open the advanced workspace</button>
       </div>
     </div>
   </div>
+</section>
+
+<!-- SURFACE 2: the site view (from a row or a map site), painted by
+     renderSiteView(): TCOR-organized, with the animated gross-to-TCOR
+     waterfall, component detail, drivers, calibration, opportunities. -->
+<div id="siteView" role="region" aria-label="Site view"></div>
+
+<div id="mapwrap" class="advanced-only">
+  <div id="map"></div>
 </div>
 
-<div class="viewbar analyst-only" role="group" aria-label="View controls">
+<div class="viewbar analyst-only advanced-only" role="group" aria-label="View controls">
   <div class="seg"><label class="mini-l" for="hazSel">Peril</label>
     <select class="scen" id="hazSel" title="Which hazard drives the map colour and the peril detail views" aria-label="Hazard">
       <option value="tc">Tropical cyclone</option>
@@ -673,7 +849,7 @@
   <button type="button" class="info" data-info="controls" aria-label="What the peril, pathway and horizon controls do" aria-expanded="false">i</button>
 </div>
 
-<nav class="tabs" role="tablist">
+<nav class="tabs advanced-only" role="tablist">
   <button role="tab" aria-selected="true" data-tab="summary">Summary</button>
   <button role="tab" aria-selected="false" data-tab="overview">By peril</button>
   <button role="tab" aria-selected="false" data-tab="sites">Sites</button>
@@ -682,7 +858,7 @@
   <button role="tab" aria-selected="false" data-tab="method">Method &amp; data</button>
 </nav>
 
-<main id="main" tabindex="-1">
+<main id="main" class="advanced-only" tabindex="-1">
   <!-- SUMMARY -->
   <section class="tabpane active" id="tab-summary" role="tabpanel" aria-label="Summary">
     <div id="sumEmpty" class="panel" style="text-align:center;padding:40px">
@@ -1167,9 +1343,9 @@
   </section>
 </main>
 
-<div class="foot-legal">
+<div class="foot-legal advanced-only">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v2.4.0</span>, assembled from source. Executive home, scenario timeline, score tracing, board brief, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.0.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall) over the classic workspace in Advanced: scenario timeline, score tracing, board brief, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>

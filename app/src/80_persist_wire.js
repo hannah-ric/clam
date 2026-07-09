@@ -363,7 +363,9 @@ function wire(){
   const fe=document.getElementById("focusEdit");
   if(fe)fe.onclick=()=>{const s=sites.find(x=>x.id===_scorecardId);if(s){closeScorecard();openForm("edit",s);}};
   document.getElementById("focusBg").addEventListener("click",e=>{if(e.target.id==="focusBg")closeScorecard();});
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeAdd();closeScorecard();closeOnboard(true);closeExportMenu();closeDisplayMenu();closePortfolioMenu();
+    if(typeof closeSiteView==="function")closeSiteView();
+    ["cmdExportMenu","svExportMenu"].forEach(id=>{const m=document.getElementById(id);if(m&&m.classList)m.classList.remove("open");});}});
   // keep Tab inside whichever modal is open (simple focus trap)
   document.addEventListener("keydown",e=>{
     if(e.key!=="Tab")return;
@@ -389,26 +391,29 @@ function wire(){
     pMenu.querySelectorAll("[data-set-detail]").forEach(b=>b.onclick=()=>{ui.simpleView=(b.dataset.setDetail==="essentials");persist();applySimpleView();syncDisplayMenu();});
   }
   const pMethod=document.getElementById("portfolioMethodBtn");
-  if(pMethod)pMethod.onclick=()=>{setExecMode(false);switchTab("method");};
+  if(pMethod)pMethod.onclick=()=>{setAdvancedMode(true);switchTab("method");};
   const pTmpl=document.getElementById("portfolioTmplBtn");
   if(pTmpl)pTmpl.onclick=downloadTemplate;
   const pGuide=document.getElementById("portfolioGuideBtn");
   if(pGuide)pGuide.onclick=()=>{closePortfolioMenu();openOnboard();};
   try{ if(window.matchMedia)window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if((ui.theme||"auto")==="auto")applyTheme();}); }catch(e){}
-  document.getElementById("modeExec").onclick=()=>setExecMode(true);
-  document.getElementById("modeAnalyst").onclick=()=>setExecMode(false);
-  document.getElementById("execSampleBtn").onclick=loadSample;
-  document.getElementById("execAnalystBtn").onclick=()=>setExecMode(false);
+  const advBtn=document.getElementById("advancedBtn");
+  if(advBtn)advBtn.onclick=()=>setAdvancedMode(!(ui&&ui.advanced));
+  const cmdSample=document.getElementById("cmdSampleBtn");
+  if(cmdSample)cmdSample.onclick=loadSample;
+  const cmdAdv=document.getElementById("cmdAdvancedBtn");
+  if(cmdAdv)cmdAdv.onclick=()=>setAdvancedMode(true);
   const emBtn=document.getElementById("exportMenuBtn"),emBox=document.getElementById("exportMenu");
   emBtn.onclick=e=>{e.stopPropagation();closeDisplayMenu();closePortfolioMenu();const open=!emBox.classList.contains("open");
     emBox.classList.toggle("open",open);emBtn.setAttribute("aria-expanded",open?"true":"false");};
-  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();closePortfolioMenu();}});
+  document.addEventListener("click",e=>{if(!e.target.closest(".exportwrap")){closeExportMenu();closeDisplayMenu();closePortfolioMenu();
+    ["cmdExportMenu","svExportMenu"].forEach(id=>{const m=document.getElementById(id);if(m&&m.classList)m.classList.remove("open");});}});
   emBox.querySelectorAll(".mi").forEach(b=>b.addEventListener("click",closeExportMenu));
   document.getElementById("menuBrokerBtn").onclick=exportBrokerPack;
   document.getElementById("menuActionBtn").onclick=exportActionList;
-  applyExecMode();
+  applyAdvancedMode();
   // first-run orientation
-  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);setExecMode(false);switchTab("method");};
+  document.getElementById("obGlossary").onclick=()=>{closeOnboard(true);setAdvancedMode(true);switchTab("method");};
   document.getElementById("onboardModal").addEventListener("click",e=>{if(e.target.id==="onboardModal")closeOnboard(true);});
   // adaptation controls (measure sliders are wired dynamically in renderAdaptation)
   document.getElementById("growth").value=adapt.growth;
