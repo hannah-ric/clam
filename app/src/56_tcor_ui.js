@@ -402,7 +402,17 @@ function renderCommand(){
   });
 
   renderCmdList(c,lens);
-  renderCmdMap(c);
+  /* Surface 3: the WebGL climate map owns the panel when MapLibre and
+     WebGL are available; otherwise the SVG plot stands in (and the map
+     chrome hides), so the command view never shows a blank void. */
+  if(typeof climateMapUpdate==="function"&&climateMapUpdate(c)){
+    /* WebGL path active */
+  }else{
+    ["cmdMapCtl","cmdMapScrubBar","cmdMapAttrib"].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.style.display="none";});
+    const note=document.getElementById("cmdMapNote");if(note)note.style.display="";
+    renderCmdMap(c);
+  }
 }
 
 /* ---- the ranked decision list ---- */
@@ -472,7 +482,7 @@ function renderCmdList(c,lens){
 /* ---- the command map (interim SVG plot).
    This panel is the placeholder for Surface 3: the genuine WebGL
    geospatial map (MapLibre, offline basemap, real hazard surfaces)
-   replaces it in the next build step. Until then: an honest
+   replaces it wherever WebGL is available. This fallback: an honest
    projection of the portfolio, sites sized by TCOR and coloured by
    dominant component, so the command view is already decision-ready. */
 function renderCmdMap(c){
@@ -520,7 +530,7 @@ function renderCmdMap(c){
     lg.innerHTML='<div class="lh">Sites · area = TCOR · colour = dominant part</div>'+
       TCOR_COMPONENTS.filter(cc=>present[cc.key]).map(cc=>'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;white-space:nowrap"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+cc.color+'"></i>'+esc(cc.label)+'</span>').join("");
   }
-  if(note)note.textContent="Interim plot: sites sized by TCOR, coloured by dominant component. The WebGL climate map with real hazard surfaces and pathway animation replaces this panel in the next build step.";
+  if(note)note.textContent="Fallback plot (WebGL unavailable on this machine): sites sized by TCOR, coloured by dominant component. The full climate map needs WebGL; every figure and export works without it.";
 }
 
 /* ============================================================
@@ -747,6 +757,7 @@ function renderSiteView(){
         ' · '+esc(scenLabelPlain(scenario))+'</div></div>'+
       '<div class="sv-tcor"><div class="l">TCOR'+(r.estimate?' · estimate':'')+'</div><div class="v">'+fmt$(r.total)+'<span style="font-size:15px;color:var(--ink-2)">/yr</span></div>'+
       '<div style="margin-top:6px;display:flex;gap:8px;justify-content:flex-end">'+
+        '<button type="button" class="lightbtn" id="svMapBtn" title="Focus this site on the climate map with its dominant peril layer">View on map</button>'+
         '<div class="exportwrap"><button type="button" class="lightbtn" id="svExportBtn" aria-haspopup="true" aria-expanded="false">Export site &#9662;</button>'+
         '<div class="exportmenu" id="svExportMenu" role="menu" style="right:0;top:38px">'+
         '<button class="mi" role="menuitem" id="svExpCsv"><b>TCOR breakdown (CSV)</b><small>Waterfall, components, drivers, opportunities, provenance</small></button>'+
@@ -786,7 +797,7 @@ function renderSiteView(){
       ["Admin & risk control (site share)",fmt$(r.comp.admin)+"/yr"]],
       c.tp.attritional.note) +
     '<div class="panel" style="margin-bottom:0"><h3>Climate drivers</h3>'+
-      '<div class="hint">Modeled gross expected annual damage by peril at this site; the map shows these as hazard surfaces when this site is focused (next build step).</div>'+
+      '<div class="hint">Modeled gross expected annual damage by peril at this site; View on map focuses this site with its dominant peril drawn as a hazard surface.</div>'+
       drivers.map(d=>'<div style="display:flex;align-items:center;gap:8px;margin:5px 0">'+
         '<span style="width:118px;font-size:11.5px;color:var(--ink-2);flex:none">'+esc(d.label)+'</span>'+
         '<span style="flex:1;height:10px;border-radius:4px;background:var(--line-2);overflow:hidden"><i style="display:block;height:100%;width:'+(d.ead/dmax*100).toFixed(1)+'%;background:'+d.color+'"></i></span>'+
@@ -829,6 +840,17 @@ function renderSiteView(){
 
   const back=document.getElementById("svBack");
   if(back)back.onclick=()=>{closeSiteView();renderCommand();};
+  const mb=document.getElementById("svMapBtn");
+  if(mb)mb.onclick=()=>{
+    /* focus the map on this site with its dominant peril's hazard layer,
+       so the drivers listed here are visible as a surface */
+    closeSiteView();
+    if(typeof cmdMapState!=="undefined"&&typeof MAP_PERIL_BY!=="undefined"&&MAP_PERIL_BY[r.driver]){
+      cmdMapState.peril=r.driver;_clHaz=null;
+    }
+    renderCommand();
+    if(typeof climateMapFocus==="function")climateMapFocus(r.id);
+  };
   const xb=document.getElementById("svExportBtn"),xm=document.getElementById("svExportMenu");
   if(xb&&xm){
     xb.onclick=e=>{e.stopPropagation();const open=!xm.classList.contains("open");
@@ -977,6 +999,7 @@ function applyAdvancedMode(){
     if(b&&b.setAttribute){b.setAttribute("aria-pressed",(ui&&ui.advanced)?"true":"false");
       b.textContent=(ui&&ui.advanced)?"← Command view":"Advanced";}
     if(ui&&ui.advanced&&typeof map!=="undefined"&&map&&mapOk)setTimeout(()=>{try{map.invalidateSize();}catch(e){}},80);
+    if(!(ui&&ui.advanced)&&typeof climateMapResize==="function")setTimeout(climateMapResize,80);
   }catch(e){}
 }
 function setAdvancedMode(on){

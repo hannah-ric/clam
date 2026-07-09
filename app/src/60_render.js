@@ -42,22 +42,32 @@ function render(){
   document.getElementById("overviewBody").style.display=hasData?"block":"none";
   document.getElementById("sumEmpty").style.display=hasData?"none":"block";
   document.getElementById("summaryBody").style.display=hasData?"block":"none";
-  const scored=scoreHazard(sites,activeHazard,scenario);
-  drawMarkers(scored);
-  if(hasData){ renderOverview(scored); }
-  renderDecision();
-  renderSummary();
-  renderRiskMatrix();
-  renderQuadrant();
-  renderTolerance();
-  renderScrub();
-  renderSites();
-  renderAdaptation();
-  renderScenarios();
-  renderFinance();
-  renderBacktest();
-  renderHazProv();
-  renderResultsPack();
+  /* v3: the classic workspace repaints only while it is on screen
+     (Advanced mode); entering Advanced triggers a full render, so its
+     panels are always current when seen. In command mode this skip is
+     what keeps scenario scrubbing and pathway playback fluid: nothing
+     here changes a computed figure, only when the hidden DOM repaints.
+     ui.advanced is undefined under the node test harness, whose suites
+     call these renderers directly, so the harness path is unchanged. */
+  const advActive=!(typeof ui!=="undefined"&&ui&&ui.advanced===false);
+  if(advActive){
+    const scored=scoreHazard(sites,activeHazard,scenario);
+    drawMarkers(scored);
+    if(hasData){ renderOverview(scored); }
+    renderDecision();
+    renderSummary();
+    renderRiskMatrix();
+    renderQuadrant();
+    renderTolerance();
+    renderScrub();
+    renderSites();
+    renderAdaptation();
+    renderScenarios();
+    renderFinance();
+    renderBacktest();
+    renderHazProv();
+    renderResultsPack();
+  }
   renderExecHome();
   /* v3 surfaces: the command view (Surface 1) and, when open, the
      site view (Surface 2) repaint with every state change so the ONE

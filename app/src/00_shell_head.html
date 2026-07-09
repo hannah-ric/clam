@@ -628,6 +628,48 @@
   .confmark.est{border-style:dashed;color:var(--warn-ink);border-color:var(--warn-line);background:var(--warn-bg)}
   .cmd-empty{flex:1;display:flex;align-items:center;justify-content:center;padding:20px}
 
+  /* ---- Surface 3: the WebGL climate map's own chrome ---- */
+  .mapctl{position:absolute;z-index:6;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+  #cmdMapCtl{top:10px;left:12px;max-width:min(420px,74%)}
+  .mapchips{display:flex;gap:4px;flex-wrap:wrap;align-items:center;background:color-mix(in srgb,var(--surface) 88%,transparent);
+    border:1px solid var(--line);border-radius:999px;padding:4px 6px}
+  .mapchips .lbl{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:0 4px}
+  .mapchip{border:0;border-radius:999px;padding:4px 10px;font:inherit;font-size:11.5px;color:var(--ink-2);background:transparent;white-space:nowrap;cursor:pointer}
+  .mapchip:hover{background:var(--surface-2);color:var(--ink)}
+  .mapchip[aria-pressed="true"]{background:var(--primary);color:var(--on-primary);font-weight:600}
+  .mapchip:disabled{opacity:.4;cursor:not-allowed}
+  .mapchips input[type=range]{width:84px;margin:0 4px}
+  .mapchips select{border:0;background:transparent;color:var(--ink);font:inherit;font-size:11.5px;max-width:220px}
+  #cmdMapScrubBar{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:12px;
+    background:color-mix(in srgb,var(--surface) 92%,transparent);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:9px 14px 7px;width:min(640px,calc(100% - 200px));min-width:320px}
+  .scrub-row{display:flex;align-items:center;gap:10px}
+  .scrub-row input[type=range]{flex:1;margin:0}
+  .scrub-play{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:30px;height:30px;
+    font-size:12px;color:var(--heading);flex:none;line-height:1}
+  .scrub-play:hover{background:var(--surface-2)}
+  .scrub-year{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--heading);width:44px;text-align:center;flex:none}
+  .scrub-state{font-size:10.5px;white-space:nowrap;flex:none;padding:2px 8px;border-radius:999px;font-weight:600}
+  .scrub-state.modeled{background:var(--ok-bg);color:var(--ok-ink);border:1px solid var(--ok-line)}
+  .scrub-state.interp{background:var(--warn-bg);color:var(--warn-ink);border:1px dashed var(--warn-line)}
+  .scrub-ticks{position:relative;height:14px;margin:1px 40px 0 84px}
+  .scrub-ticks .tk{position:absolute;transform:translateX(-50%);font-size:9px;color:var(--muted);text-align:center;line-height:1.1}
+  .scrub-ticks .tk i{display:block;width:5px;height:5px;border-radius:50%;background:var(--seq-5);margin:0 auto 1px}
+  .scrub-pw{display:flex;gap:2px;flex:none}
+  .scrub-pw .mapchip{padding:3px 8px;font-size:10.5px}
+  .map-attrib{position:absolute;z-index:5;left:8px;bottom:8px;font-size:9.5px;color:var(--muted);
+    background:color-mix(in srgb,var(--surface) 70%,transparent);border-radius:6px;padding:1px 6px}
+  .lgd-ramp{display:block;height:8px;border-radius:4px;margin:3px 0 2px;min-width:130px}
+  .lgd-minmax{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;color:var(--muted)}
+  .lgd-basis{font-size:10px;color:var(--muted);margin-top:4px;max-width:210px;line-height:1.35}
+  .lgd-basis.est{color:var(--warn-ink)}
+  #cmdMapLegend{max-width:236px}
+  .evt-card{font-size:10.5px;color:var(--ink-2);border-top:1px solid var(--line-2);margin-top:5px;padding-top:4px;max-width:220px;line-height:1.4}
+  @media(max-width:980px){
+    #cmdMapScrubBar{width:calc(100% - 24px);min-width:0}
+    #cmdMapCtl{max-width:calc(100% - 24px)}
+  }
+
   /* derivation popover (hover/click on any figure or segment) */
   .derive{position:absolute;z-index:1800;width:min(340px,92vw);background:var(--surface);color:var(--ink);
     border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:12px 14px;
@@ -778,8 +820,11 @@
   <div class="cmd-band" id="cmdBand"></div>
   <div class="cmd-body" id="cmdBody">
     <div class="cmd-map" id="cmdMapPanel">
-      <div id="cmdMap" role="img" aria-label="Portfolio climate map"></div>
+      <div id="cmdMap" role="application" aria-label="Portfolio climate map"></div>
+      <div class="mapctl" id="cmdMapCtl"></div>
+      <div id="cmdMapScrubBar" role="group" aria-label="Climate pathway timeline" style="display:none"></div>
       <div class="cmd-maplegend" id="cmdMapLegend"></div>
+      <div class="map-attrib" id="cmdMapAttrib" style="display:none">Basemap: Natural Earth (public domain) · MapLibre GL</div>
       <div class="mapnote" id="cmdMapNote"></div>
     </div>
     <aside class="cmd-list" id="cmdListPanel" aria-label="Ranked decision list">
