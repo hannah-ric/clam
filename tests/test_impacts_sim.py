@@ -47,6 +47,11 @@ class FakeWind:
         base = np.array([62.0, 58.0, 55.0, 40.0, 30.0]) * UPLIFT[skey]
         self.intensity = BASE_EVENT[:, None] * base[None, :]
         self.frequency = np.full(N_EVENTS, 1.0 / N_EVENTS * 2.0)
+        # the present catalog carries event names (the real Data API path);
+        # future sources leave them off so the source:index fallback is
+        # exercised end to end too
+        if skey == "present":
+            self.event_name = [f"SIM{i:03d}" for i in range(N_EVENTS)]
 
 
 class FakeSurge:
@@ -221,6 +226,52 @@ def run():
         "a site outside every hazard's coverage carries zero (and is flagged)"
     print("ok  per-site 1-in-100 / 1-in-250 losses in the pack, monotone")
 
+    # 1e. TCOR Task A: per-event, per-site joint losses with event ids (the
+    # shared hurricane deductible's hard dependency) and frequent ladders
+    ev = pack["event_sets"]
+    assert set(ev["scenarios"]) == set(rh.APP_SCENARIOS), \
+        "every served scenario carries its joint event table"
+    parts = ev["scenarios"]["present"]
+    assert len(parts) == 1 and parts[0]["source"] == "present"
+    assert parts[0]["country"] == "USA" and parts[0]["weight"] == 1.0
+    evs = parts[0]["events"]
+    assert evs and all(e["id"].startswith("SIM") for e in evs), \
+        "present catalog events carry the catalog's own names"
+    assert any(e["id"].startswith("rcp85_2040:") for p2 in
+               ev["scenarios"]["ssp585_2050"] for e in p2["events"]), \
+        "sources without names fall back to source:index ids"
+    # event-level reconciliation: sum freq x loss over the kept table equals
+    # the recorded kept AAL, which is within floor-tolerance of tc + cflood
+    kept = sum(e["freq"] * sum(l for _j, l in e["sites"]) for e in evs)
+    assert abs(kept - parts[0]["kept_aal_usd"]) < 1.0
+    bp_now = pack["scenarios"]["present"]["portfolio"]["by_peril_aal_usd"]
+    joint = bp_now["tc"] + bp_now["cflood"]
+    assert abs(parts[0]["aal_usd"] - joint) / joint < 0.02
+    assert kept >= joint * 0.90
+    # multi-site events: one storm touching several sites appears as ONE
+    # event with several site entries (what the shared deductible needs)
+    assert any(len(e["sites"]) >= 2 for e in evs)
+    # Kona Shore (index 3) is outside wind coverage: no event may touch it
+    assert all(j != 3 for e in evs for j, _l in e["sites"])
+
+    lad = pack["frequent_losses"]
+    assert lad["ladder_rps"] == list(ri.LADDER_RPS)
+    ladp = lad["scenarios"]["present"]
+    assert set(ladp) >= {"tc", "cflood", "tc_joint", "rflood", "prain",
+                         "wfire"}
+    for p2, rows in ladp.items():
+        assert len(rows) == 4, (p2, len(rows))
+        for row in rows:
+            assert len(row) == len(ri.LADDER_RPS)
+            assert all(row[i] <= row[i + 1] + 0.01
+                       for i in range(len(row) - 1)), (p2, row)
+    assert all(x == 0 for x in ladp["tc_joint"][3]), \
+        "the uncovered Hawaii site reads zero on the ladder (and is flagged)"
+    assert ladp["tc_joint"][0][0] > 0, \
+        "the frequent 1-in-2 band is populated for the exposed coastal site"
+    print("ok  event sets: ids, joint reconciliation, multi-site events, "
+          "ladders down to 1-in-2")
+
     # 2. failed wind source degrades gracefully and is recorded
     assert any(s.get("source") == "rcp26_2060" for s in meta["skipped"])
     aal126 = pack["scenarios"]["ssp126_2050"]["portfolio"]["direct_aal_usd"]
@@ -386,8 +437,28 @@ def run():
                          "sim_results_pack.json", "sim_pack_ghostmeta.json"],
                         capture_output=True, text=True)
     assert r4.returncode == 1 and "meta claims scenarios absent" in r4.stdout
+
+    # corrupted event table: duplicate event ids within one source must fail
+    # (the shared-deductible math would double-count an occurrence)
+    bad4 = json.loads(Path("sim_results_pack.json").read_text())
+    ev4 = bad4["event_sets"]["scenarios"]["present"][0]["events"]
+    ev4[1]["id"] = ev4[0]["id"]
+    Path("sim_pack_dupevent.json").write_text(json.dumps(bad4))
+    r5 = subprocess.run([sys.executable, "validate_pack.py",
+                         "sim_pack_dupevent.json"],
+                        capture_output=True, text=True)
+    assert r5.returncode == 1 and "duplicate event ids" in r5.stdout
+
+    # a ladder that decreases with rarity must fail
+    bad5 = json.loads(Path("sim_results_pack.json").read_text())
+    bad5["frequent_losses"]["scenarios"]["present"]["tc_joint"][0][-1] = 0.5
+    Path("sim_pack_badladder.json").write_text(json.dumps(bad5))
+    r6 = subprocess.run([sys.executable, "validate_pack.py",
+                         "sim_pack_badladder.json"],
+                        capture_output=True, text=True)
+    assert r6.returncode == 1 and "decreases with rarity" in r6.stdout
     print("ok  validator: accepts the good pack, rejects present-only, "
-          "non-monotone EP, and ghost meta")
+          "non-monotone EP, ghost meta, duplicate event ids, bad ladder")
 
     print("\nALL IMPACTS SIMULATION TESTS PASSED")
 
