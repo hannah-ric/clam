@@ -642,6 +642,8 @@
   table.cmdtbl td{padding:7px 8px;border-bottom:1px solid var(--line-2);vertical-align:middle}
   table.cmdtbl tr.rowclick:hover td{background:var(--sel)}
   table.cmdtbl tr.sel td{background:var(--sel)}
+  table.cmdtbl tr.map-hover td{outline:1px solid var(--focus);outline-offset:-1px}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   .tcorbar{display:inline-block;height:5px;border-radius:3px;background:var(--seq-5);vertical-align:middle}
   .compchip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-2);white-space:nowrap}
   .compchip i{width:9px;height:9px;border-radius:2.5px;display:inline-block;flex:none}
@@ -837,6 +839,7 @@
       <div class="cmd-maplegend" id="cmdMapLegend"></div>
       <div class="map-attrib" id="cmdMapAttrib" style="display:none">Basemap: Natural Earth (public domain) · MapLibre GL</div>
       <div class="mapnote" id="cmdMapNote"></div>
+      <div id="cmdMapLive" class="sr-only" aria-live="polite"></div>
     </div>
     <aside class="cmd-list" id="cmdListPanel" aria-label="Ranked decision list">
       <div class="list-head" id="cmdListHead"></div>
@@ -1315,8 +1318,8 @@
         <h3><span class="stepnum">1</span>Sites data<span class="starthere" id="siteStartHere" style="display:none">Start here</span></h3>
         <div class="hint">Load or replace the portfolio; every tab fills in immediately.</div>
         <div id="siteDrop" class="drop">
-          <div class="big">Drop your site CSV here</div>
-          <small>Required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name.</small>
+          <div class="big">Drop your site CSV or SOV here</div>
+          <small>Site CSV required: name, latitude, longitude, asset_value_usd. Optional: brand, country, annual_revenue_usd, construction (frame/masonry/engineered), year_built, defended, named_insured, site_id (groups named-insured records into one site), site_name, timeshare_share (0..1). A broker Statement of Values (CSV export) is recognized by its columns and enriches the loaded portfolio: campus codes, TIV, BI &amp; EE, tenure, per-site premium supersede hand-keyed values, with unmatched rows reported.</small>
         </div>
         <input type="file" id="siteFile" accept=".csv" hidden>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
@@ -1417,7 +1420,7 @@
 
 <div class="foot-legal advanced-only">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative fictions for exploration only. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.0.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall), WebGL climate map (MapLibre GL, offline Natural Earth basemap, per-peril hazard surfaces, event footprints, accumulation, pathway timeline with modeled-vs-interpolated labeling), TCOR board one-pager, over the classic workspace in Advanced: scenario timeline, score tracing, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Zero network calls. Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.2.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall), BI module (Hazus/REDi damage-to-downtime, regional seasonality x landfall climatology, vacation-ownership continuing revenue, joint property + BI bad-year simulation, flagged regional demand shock), TCOR-aware payoff engine (certain retained saving vs negotiated premium ask, BCR with and without the credit), premium module (technical vs actual, rate per $100 TIV, implied market load, renewal ask), SOV importer (broker Statement of Values enriches or bootstraps the portfolio, per-field provenance), WebGL climate map (MapLibre GL, offline Natural Earth basemap, per-peril hazard surfaces, event footprints, accumulation, pathway timeline with modeled-vs-interpolated labeling), TCOR board one-pager, over the classic workspace in Advanced: scenario timeline, score tracing, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Zero network calls. Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>
@@ -1570,15 +1573,15 @@
    AR6 central estimate). Regenerate with:
        python pipeline/assumptions.py --write-app
    ============================================================ */
-const ASSUMPTIONS_VERSION="1";
+const ASSUMPTIONS_VERSION="3";
 // degC above the 1995-2014 baseline; AR6 WG1 Table 4.1 central +
 // explicit conservative delta (see the registry for per-entry detail)
-const WARMING={"present":0.0,"ssp126_2030":0.6,"ssp245_2030":0.7,"ssp585_2030":0.8,"ssp126_2050":1.0,"ssp245_2050":1.4,"ssp585_2050":2.0,"ssp126_2080":1.3,"ssp245_2080":2.3,"ssp585_2080":3.6};
+const WARMING={"present":0.0,"ssp126_2030":0.6,"ssp245_2030":0.7,"ssp585_2030":0.8,"ssp126_2050":1.0,"ssp245_2050":1.3,"ssp585_2050":1.7,"ssp126_2080":1.0,"ssp245_2080":2.1,"ssp585_2080":4.0};
 // m above the 1995-2014 baseline, REGIONAL: AR6 Table 9.9 GMSL
 // central + explicit delta, x NOAA 2022 regional factor. First
 // matching box wins; outside every box the global-mean table
 // (identical to the legacy single table) applies.
-const SLR_REGIONS={"gulf":{"present":0.0,"ssp126_2030":0.12,"ssp245_2030":0.14,"ssp585_2030":0.15,"ssp126_2050":0.26,"ssp245_2050":0.3,"ssp585_2050":0.36,"ssp126_2080":0.46,"ssp245_2080":0.59,"ssp585_2080":0.84},"florida_atlantic":{"present":0.0,"ssp126_2030":0.1,"ssp245_2030":0.11,"ssp585_2030":0.13,"ssp126_2050":0.22,"ssp245_2050":0.25,"ssp585_2050":0.31,"ssp126_2080":0.39,"ssp245_2080":0.51,"ssp585_2080":0.71},"caribbean":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.1,"ssp585_2030":0.12,"ssp126_2050":0.2,"ssp245_2050":0.23,"ssp585_2050":0.28,"ssp126_2080":0.36,"ssp245_2080":0.46,"ssp585_2080":0.65},"hawaii":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.1,"ssp585_2030":0.11,"ssp126_2050":0.19,"ssp245_2050":0.22,"ssp585_2050":0.27,"ssp126_2080":0.34,"ssp245_2080":0.44,"ssp585_2080":0.62},"global_mean":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.1,"ssp585_2030":0.11,"ssp126_2050":0.19,"ssp245_2050":0.22,"ssp585_2050":0.27,"ssp126_2080":0.34,"ssp245_2080":0.44,"ssp585_2080":0.62}};
+const SLR_REGIONS={"gulf":{"present":0.0,"ssp126_2030":0.12,"ssp245_2030":0.12,"ssp585_2030":0.14,"ssp126_2050":0.3,"ssp245_2050":0.31,"ssp585_2050":0.35,"ssp126_2080":0.49,"ssp245_2080":0.58,"ssp585_2080":0.74},"florida_atlantic":{"present":0.0,"ssp126_2030":0.1,"ssp245_2030":0.1,"ssp585_2030":0.11,"ssp126_2050":0.25,"ssp245_2050":0.26,"ssp585_2050":0.3,"ssp126_2080":0.41,"ssp245_2080":0.49,"ssp585_2080":0.63},"caribbean":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.09,"ssp585_2030":0.11,"ssp126_2050":0.23,"ssp245_2050":0.24,"ssp585_2050":0.27,"ssp126_2080":0.38,"ssp245_2080":0.45,"ssp585_2080":0.58},"hawaii":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.09,"ssp585_2030":0.1,"ssp126_2050":0.22,"ssp245_2050":0.23,"ssp585_2050":0.26,"ssp126_2080":0.36,"ssp245_2080":0.43,"ssp585_2080":0.55},"global_mean":{"present":0.0,"ssp126_2030":0.09,"ssp245_2030":0.09,"ssp585_2030":0.1,"ssp126_2050":0.22,"ssp245_2050":0.23,"ssp585_2050":0.26,"ssp126_2080":0.36,"ssp245_2080":0.43,"ssp585_2080":0.55}};
 const SLR=SLR_REGIONS.global_mean;
 const SLR_REGION_BOXES=[["gulf",24.0,31.5,-100.5,-82.0],["florida_atlantic",24.0,37.5,-82.0,-74.0],["hawaii",18.0,23.0,-161.0,-154.0],["caribbean",17.0,19.5,-68.0,-64.0]];
 // appraisal convention, unified with the results pack (3% real, 25y)
@@ -1594,6 +1597,27 @@ const TC_UPLIFT_PER_C=0.02;     // interim TC field intensity uplift per deg C
 // site (capped; LABELED interim); a grid carrying flame-length-
 // conditioned ratios in v25 supersedes it per site
 const FIRE_COND_INTERIM=0.35;
+// TC-rainfall ponding transform (v3 recalibrated; screening floor)
+const PRAIN_DRAIN_MM=75.0;
+const PRAIN_POND_COEFF=0.55;
+const PRAIN_FB=0.15;
+// BI module (Task 3): monthly share of Atlantic TC activity
+// (NOAA NHC climatology; sums to 1), regional monthly revenue
+// weights (mean 1 per region, same boxes as SLR), the HAZUS/REDi
+// damage-to-downtime nodes with the impeding-factor floor, the
+// continuing share of vacation-ownership revenue, and the
+// post-Maria/Irma regional demand-shock parameterization (see
+// the registry for the per-entry citations).
+const BI_TC_MONTH_W=[0.0,0.0,0.0,0.0,0.0,0.04,0.05,0.3,0.42,0.16,0.03,0.0];
+const BI_SEASON_SHAPES={"gulf":[1.15,1.3,1.35,1.15,1.0,0.95,1.0,0.8,0.6,0.75,0.9,1.05],"florida_atlantic":[1.25,1.45,1.5,1.2,0.9,0.85,0.9,0.7,0.5,0.65,0.85,1.25],"caribbean":[1.4,1.55,1.55,1.25,0.85,0.7,0.85,0.7,0.55,0.6,0.85,1.15],"hawaii":[1.1,1.05,1.0,0.95,0.9,1.1,1.2,1.15,0.8,0.8,0.9,1.05],"global_mean":[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]};
+const BI_DOWNTIME_NODES=[[0.0,0.0],[0.02,0.03],[0.1,0.09],[0.4,0.75],[1.0,1.0]];
+const BI_IMPEDING_DAYS=120;const BI_IMPEDING_THRESH=0.1;
+const BI_TIMESHARE_CONTINUING=0.65;
+const BI_DEMAND_SHOCK={"cap":0.6,"gain":1.2,"months":8,"min_severity":0.02};
+// premium module (Task 4) / payoff engine: share of the technical
+// premium saving assumed negotiable at renewal (documented range
+// 0..1; the without-credit BCR is always shown beside it)
+const PREMIUM_CREDIT_REALIZATION=0.5;
 
 /* ============================================================
    RtV risk engine (validated; mirrors CLIMADA emanuel_usa)
@@ -1662,14 +1686,26 @@ function reliefVec(vec,relief){
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
+/* Interim wind anchors: [lat, lon, v100_ms, log_slope]. Screening-grade
+   1-in-100 wind (m/s) and log-RP slope for IDW fill-in until a CLIMADA grid
+   loads. Provenance: regional climatology consistent with NOAA HURDAT /
+   IBTrACS basin intensity and inland decay (Holland-type), rounded to
+   screening precision; NOT a CAT-model output. Coastal Gulf/Florida and
+   Caribbean anchors sit in the Cat-3/4 1-in-100 band (~55-65 m/s); Mid-
+   Atlantic and Northeast step down; Hawaii is EP-basin; inland CONUS and
+   West Coast are residual tropical / remnant intensity. LABELED interim
+   on every trust surface; superseded cell-by-cell wherever a grid reaches. */
 const ANCHORS=[
-  [25.8,-80.2,62,7.5],[24.5,-81.8,64,7.7],[30.0,-90.1,58,7.2],[29.3,-94.8,56,7.0],
-  [18.4,-66.1,62,7.6],[18.3,-64.9,62,7.6],[27.0,-82.6,60,7.4],[26.1,-80.1,61,7.5],
-  [32.8,-79.9,52,6.9],[33.7,-78.9,50,6.8],[35.2,-75.5,54,7.0],[34.2,-77.9,51,6.8],[30.3,-81.4,48,6.7],
-  [36.8,-76.0,44,6.4],[40.7,-74.0,40,6.0],[41.7,-70.3,42,6.2],
-  [21.3,-157.8,42,5.8],[19.7,-155.1,46,6.1],[22.1,-159.4,44,6.0],
-  [28.5,-81.4,41,6.0],[29.4,-98.5,30,5.2],[33.7,-84.4,26,4.8],[30.3,-97.7,27,5.0],
-  [33.8,-116.5,15,3.6],[36.2,-115.1,14,3.4],[39.7,-105.0,12,3.2],[34.0,-118.2,14,3.4],[37.8,-122.4,13,3.3],
+  /* South Florida / Keys */ [25.8,-80.2,62,7.5],[24.5,-81.8,64,7.7],[26.1,-80.1,61,7.5],
+  /* Gulf Coast */           [30.0,-90.1,58,7.2],[29.3,-94.8,56,7.0],[27.0,-82.6,60,7.4],
+  /* Caribbean */            [18.4,-66.1,62,7.6],[18.3,-64.9,62,7.6],
+  /* SE Atlantic */          [32.8,-79.9,52,6.9],[33.7,-78.9,50,6.8],[35.2,-75.5,54,7.0],
+                             [34.2,-77.9,51,6.8],[30.3,-81.4,48,6.7],
+  /* Mid-Atlantic / NE */    [36.8,-76.0,44,6.4],[40.7,-74.0,40,6.0],[41.7,-70.3,42,6.2],
+  /* Hawaii */               [21.3,-157.8,42,5.8],[19.7,-155.1,46,6.1],[22.1,-159.4,44,6.0],
+  /* Inland Florida / TX */  [28.5,-81.4,41,6.0],[29.4,-98.5,30,5.2],[30.3,-97.7,27,5.0],
+  /* Inland SE / Rockies */  [33.7,-84.4,26,4.8],[39.7,-105.0,12,3.2],
+  /* West Coast / SW */      [33.8,-116.5,15,3.6],[36.2,-115.1,14,3.4],[34.0,-118.2,14,3.4],[37.8,-122.4,13,3.3],
 ];
 const IDW_SCALE=380;
 function interimVector(lat,lon,scenario){
@@ -1945,8 +1981,8 @@ function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate",
    (an older grid, or no CFL raster supplied) the capped INTERIM ratio
    FIRE_COND_INTERIM applies and is LABELED interim on the trust surface. */
 const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual point-burn %, by WUI class
-/* FIRE_WARMING_UPLIFT and FIRE_COND_INTERIM live in 05_assumptions.js */
-const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
+/* FIRE_WARMING_UPLIFT, FIRE_COND_INTERIM, and the PRAIN_* ponding constants
+   live in 05_assumptions.js (generated from pipeline/assumptions.py). */
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;
   if(g){const r=g(site.latitude,site.longitude,sc);
@@ -1970,6 +2006,74 @@ function fireVulnMult(site){
 function prainToDepth(vec){
   const o={};RPS.forEach(rp=>o[rp]=Math.max(0,((vec&&vec[rp])||0)-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF);
   return o;
+}
+
+/* ============================================================
+   Map hazard fields (Surface 3)
+   Shared by the MapLibre climate map and the Node test harness.
+   Grid-backed layers draw the loaded cells (never resampled).
+   Interim layers evaluate screening models on a mesh; wildfire and
+   TC rainfall have no interim spatial field by design.
+   ============================================================ */
+const MAP_PERILS=[
+  {key:"tc",    label:"Wind",       unit:"m/s · 1-in-100 wind speed",
+   interim:(la,lo,sc)=>interimVector(la,lo,sc).vec[100]},
+  {key:"cflood",label:"Surge",      unit:"m · 1-in-100 flood depth",
+   interim:(la,lo,sc)=>coastalFloodVector(la,lo,sc)[100]},
+  {key:"rflood",label:"River flood",unit:"m · 1-in-100 flood depth",
+   interim:(la,lo,sc)=>riverineFloodVector(la,lo,sc)[100]},
+  {key:"heat",  label:"Heat",       unit:"days over 32°C per year",
+   interim:(la,lo,sc)=>heatIndicators(la,lo,sc).daysOver32},
+  {key:"wfire", label:"Wildfire",   unit:"% annual burn probability",
+   interim:null,offReason:"wildfire has no interim spatial field (burn probability is point data); load a wfire grid"},
+  {key:"prain", label:"Rain",       unit:"mm · 1-in-100 event rainfall",
+   interim:null,offReason:"TC rainfall has no interim model by design; load a prain grid"},
+];
+const MAP_PERIL_BY={};MAP_PERILS.forEach(p=>MAP_PERIL_BY[p.key]=p);
+/* Interim mesh step (degrees). 0.5 is denser than the prior 0.7 so the
+   screening surface reads as a continuous field without inventing
+   sub-grid precision the interim models do not have. */
+const MAP_INTERIM_STEP=0.5;
+function hazardField(hz,sc,opts){
+  opts=opts||{};
+  const P=MAP_PERIL_BY[hz];
+  if(!P)return {none:true,reason:"unknown peril"};
+  if(gridByHazard[hz]&&hazardGrid&&hazardGrid.rows){
+    let rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario===sc);
+    let partialFrom=null;
+    if(!rows.length&&sc!=="present"){
+      rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario==="present");
+      partialFrom="present";
+    }
+    if(rows.length){
+      const feats=rows.map(r=>({lon:r.lon,lat:r.lat,
+        v:Math.max(hz==="heat"?(+r.v10||0):(hz==="wfire"?(+r.v10||0):(+r.v100||0)),0)}));
+      return {features:feats,basis:"grid",cells:rows.length,partialFrom};
+    }
+  }
+  if(!P.interim)return {none:true,reason:P.offReason||"no data"};
+  const b=opts.bbox||[-180,5,-50,55];
+  const step=opts.step||MAP_INTERIM_STEP,feats=[];
+  for(let la=b[1]+step/2;la<b[3];la+=step)
+    for(let lo=b[0]+step/2;lo<b[2];lo+=step){
+      const v=Math.max(P.interim(la,lo,sc)||0,0);
+      if(v>0)feats.push({lon:+lo.toFixed(2),lat:+la.toFixed(2),v});
+    }
+  return {features:feats,basis:"interim",cells:feats.length,partialFrom:null};
+}
+function fieldDomain(fields){
+  const vals=[];
+  (fields||[]).forEach(f=>{if(f&&!f.none)f.features.forEach(x=>vals.push(x.v));});
+  if(!vals.length)return [0,1];
+  vals.sort((a,b)=>a-b);
+  const q=p=>vals[Math.min(vals.length-1,Math.floor(p*vals.length))];
+  let hi=q(0.995);if(!(hi>0))hi=1;
+  return [0,hi];
+}
+function fieldFC(field){
+  return {type:"FeatureCollection",features:(field.features||[]).map(f=>({
+    type:"Feature",geometry:{type:"Point",coordinates:[f.lon,f.lat]},
+    properties:{v:f.v}}))};
 }
 
 /* Vulnerability attributes (Phase B): optional per-site construction,
@@ -2058,9 +2162,15 @@ function siteTrust(site,hz,sc){
         const rel=siteRelief(site);
         t.coarse=rel==null;
         t.note=rel==null
-          ?"modeled-coarse: cell-average depth; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
+          ?"modeled-coarse: cell wet-mean depth (dry centroids excluded); add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
           :"depth at the structure (site sits "+(rel>=0?rel.toFixed(1)+" m above":Math.abs(rel).toFixed(1)+" m below")+" the cell's land ground)";
       }
+      /* TC rainfall: grid-backed but the ponding transform is a screening
+         floor (v3 recalibrated); never present a near-zero as a finding. */
+      if(hz==="prain")
+        t.note="screening ponding transform (drain "+PRAIN_DRAIN_MM+" mm, pond "
+          +PRAIN_POND_COEFF+", freeboard "+PRAIN_FB+" m); understates site-specific "
+          +"pluvial until a drainage study replaces the constants";
       return t;
     }
     const fb=trustFallback(site,hz);
@@ -2501,7 +2611,9 @@ let tcorProgram={
   perilClass:{tc:"hurricane",cflood:"hurricane",rflood:"flood",prain:"flood",wfire:"general"},
   aggregateCapUsd:null,          // optional annual aggregate retention cap
   bi:{waitingDays:3,limitUsd:null,indemnityDays:365,provenance:"default"},
-  premium:{programAnnualUsd:null,loadFactor:null},
+  /* creditRealization: fraction of the technical premium saving assumed
+     negotiable at renewal (null = the registry default); range 0..1 */
+  premium:{programAnnualUsd:null,loadFactor:null,creditRealization:null},
   adminAnnualUsd:0,              // program/broker admin, allocated by TIV
   mitigationAnnualUsd:0,         // portfolio risk-control spend, by TIV
   indirect:{rebookShare:0.15},   // flagged-estimate factor on gross BI
@@ -2789,7 +2901,32 @@ function retainedPropertyCalc(sitesArr,sc){
    table (one alternative catalog drawn per year by weight, then a
    Poisson draw per event); per-location perils decompose each site
    ladder into frequency bands with midpoint losses. Deterministic seed.
+
+   Task 3 extension: every drawn occurrence also draws an ARRIVAL MONTH
+   from its peril's climatology and retains that occurrence's BI through
+   the full seasonal terms chain (waiting per event, indemnity, limit),
+   so the bad year is the joint property + BI year, not property with
+   BI riding at expected level. The aggregate cap stays a property-
+   program cap: it never truncates BI.
    ------------------------------------------------------------ */
+/* cumulative month tables for the simulation's arrival-month draws */
+function biCumOf(timing){
+  const c=[];let a=0;
+  for(let m=0;m<12;m++){a+=timing[m];c.push(a);}
+  c[11]=1;return c;
+}
+function biDrawMonth(cum,rnd){
+  const u=rnd();
+  for(let m=0;m<12;m++)if(u<=cum[m])return m;
+  return 11;
+}
+/* the 12 monthly retained-BI values for one event loss at one site,
+   precomputed once so the year loop is a table lookup */
+function biMonthlyRetained(lossUsd,terms,econ){
+  const out=new Array(12);
+  for(let m=0;m<12;m++)out[m]=biEventSplit(lossUsd,terms,econ,m).retained;
+  return out;
+}
 function tcorRng(seed){let a=seed>>>0;return function(){
   a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);
   t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
@@ -2820,10 +2957,14 @@ function simulateRetainedYears(sitesArr,sc,opts){
   const pk=resultsPack&&resultsPack.data;
   const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
   const rnd=tcorRng(seed);
+  const econOf={},termsOf={};
+  sitesArr.forEach(s=>{econOf[s.id]=biEconOf(s);termsOf[s.id]=biTermsOf(s);});
+  const tcCum=biCumOf(BI_TC_MONTH_W),flatCum=biCumOf(BI_TIMING_FLAT);
   /* pre-resolve hurricane events to campus groups, grouped by country:
      each country's catalog is independent (its sites are disjoint), so
      every simulated year draws ONE alternative source per country by
-     weight and then Poisson-draws that source's events */
+     weight and then Poisson-draws that source's events. Each event also
+     carries its per-site monthly retained-BI table (Task 3). */
   let huCountries=null;
   if(evScen&&join&&join.matched>0){
     const byCountry={};
@@ -2831,29 +2972,37 @@ function simulateRetainedYears(sitesArr,sc,opts){
       const key=part.country||"?";
       (byCountry[key]||(byCountry[key]=[])).push({weight:+part.weight||0,
         events:(part.events||[]).map(e=>{
-          const groups={};
+          const groups={};const biRows=[];
           (e.sites||[]).forEach(pair=>{
             const s=join.map[pair[0]];if(!s)return;
             const g=ded.hurricane.basis==="per-occurrence-program"?"~program":campusKeyOf(s);
-            groups[g]=(groups[g]||0)+(+pair[1]||0);
+            const loss=+pair[1]||0;
+            groups[g]=(groups[g]||0)+loss;
+            if(loss>0)biRows.push(biMonthlyRetained(loss,termsOf[s.id],econOf[s.id]));
           });
-          return {freq:+e.freq||0,groups};
+          return {freq:+e.freq||0,groups,biRows};
         }).filter(e=>e.freq>0)});
     });
     huCountries=Object.keys(byCountry).map(k=>byCountry[k]);
   }
+  /* per-location bands carry their own monthly retained BI and the
+     arrival-month table of their peril, so one draw drives both sides */
   const siteBands=[];
   sitesArr.forEach(s=>{
     ["flood","general"].forEach(cls=>{
       TCOR_CLASS_PERILS[cls].forEach(hz=>{
         const lad=siteLadderFor(s,hz,sc,join);
+        const cum=(BI_PERIL_TIMING[hz]||BI_TIMING_FLAT)===BI_TC_MONTH_W?tcCum:flatCum;
         ladderBands(lad.rps,lad.losses).forEach(b=>
-          siteBands.push({rate:b.rate,loss:b.loss,ded:ded[cls].amountUsd}));
+          siteBands.push({rate:b.rate,loss:b.loss,ded:ded[cls].amountUsd,
+            biMonthly:biMonthlyRetained(b.loss,termsOf[s.id],econOf[s.id]),cum}));
       });
     });
   });
-  /* degraded hurricane in the simulation: campus-comonotonic bands */
-  let huBands=null;
+  /* degraded hurricane in the simulation: campus-comonotonic bands for
+     property; per-site tc_joint bands for BI (labeled approximation:
+     without an event table the two sides draw independently) */
+  let huBands=null,huBiBands=null;
   if(!huCountries){
     const groups={};
     sitesArr.forEach(s=>{
@@ -2868,10 +3017,17 @@ function simulateRetainedYears(sitesArr,sc,opts){
       ladderBands(rps,campusLoss).forEach(b=>
         huBands.push({rate:b.rate,loss:b.loss,ded:ded.hurricane.amountUsd}));
     }
+    huBiBands=[];
+    sitesArr.forEach(s=>{
+      const lad=siteLadderFor(s,"tc_joint",sc,join);
+      ladderBands(lad.rps,lad.losses).forEach(b=>
+        huBiBands.push({rate:b.rate,
+          biMonthly:biMonthlyRetained(b.loss,termsOf[s.id],econOf[s.id])}));
+    });
   }
-  const totals=new Array(years),hits=new Array(years);
+  const totals=new Array(years),hits=new Array(years),biTotals=new Array(years);
   for(let y=0;y<years;y++){
-    let ret=0,nHits=0;
+    let ret=0,nHits=0,biRet=0;
     if(huCountries){
       huCountries.forEach(srcs=>{
         /* draw one alternative catalog by weight, then its events */
@@ -2883,6 +3039,9 @@ function simulateRetainedYears(sitesArr,sc,opts){
             for(const g in e.groups){
               ret+=Math.min(e.groups[g],ded.hurricane.amountUsd);nHits++;
             }
+            /* one arrival month per occurrence drives every hit site's BI */
+            const m=biDrawMonth(tcCum,rnd);
+            for(const row of e.biRows)biRet+=row[m];
           }
         });
       });
@@ -2891,34 +3050,57 @@ function simulateRetainedYears(sitesArr,sc,opts){
         const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
         for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
       });
+      huBiBands.forEach(b=>{
+        const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
+        for(let k=0;k<n;k++)biRet+=b.biMonthly[biDrawMonth(tcCum,rnd)];
+      });
     }
     siteBands.forEach(b=>{
       const n=b.rate<0.05?(rnd()<b.rate?1:0):poissonDraw(b.rate,rnd);
-      for(let k=0;k<n;k++){ret+=Math.min(b.loss,b.ded);nHits++;}
+      for(let k=0;k<n;k++){
+        ret+=Math.min(b.loss,b.ded);nHits++;
+        biRet+=b.biMonthly[biDrawMonth(b.cum,rnd)];
+      }
     });
     totals[y]=cap!=null?Math.min(ret,cap):ret;
     hits[y]=nHits;
+    biTotals[y]=biRet;
   }
-  const sorted=totals.slice().sort((a,b)=>a-b);
-  const q=p=>sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];
+  const qOf=arr=>{
+    const sorted=arr.slice().sort((a,b)=>a-b);
+    const q=p=>sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))];
+    return {mean:arr.reduce((a,x)=>a+x,0)/arr.length,
+            median:q(0.5),p90:q(0.9),p99:q(0.99)};
+  };
+  const prop=qOf(totals),bi=qOf(biTotals);
+  const combined=qOf(totals.map((x,i)=>x+biTotals[i]));
   return {years,seed,capUsd:cap,
-    mean:totals.reduce((a,x)=>a+x,0)/years,
-    median:q(0.5),p90:q(0.9),p99:q(0.99),
+    mean:prop.mean,median:prop.median,p90:prop.p90,p99:prop.p99,
+    bi,combined,
     meanHits:hits.reduce((a,x)=>a+x,0)/years,
     basis:(huCountries?"event table":"ladder bands (labeled approximation)")
-      +(cap!=null?", annual aggregate cap applied per simulated year":"")};
+      +(cap!=null?", annual aggregate cap applied per simulated year (property program only)":"")
+      +"; BI retained per occurrence with a seasonal arrival-month draw (Task 3)"};
 }
 
 /* ------------------------------------------------------------
-   Retained business interruption, INTERIM chain (labeled; the full
-   Task 3 module - archetype downtime, seasonality, timeshare revenue,
-   regional demand shock - replaces the transform, not the terms math).
-   Per event: damage ratio -> downtime days (the app's linear reopen
-   model) -> gross BI -> retained = waiting period (always) + downtime
-   beyond the indemnity period + insurable BI beyond the limit. The
-   frequent small piece (waiting) and the rare large piece (overage) are
-   kept separate; the BI & EE declared value caps insurable BI when no
-   explicit limit is set.
+   Retained business interruption: the BI module (overhaul Task 3).
+   The interim linear transform is retired. Chain per event:
+   damage ratio -> downtime days (the Hazus RES4 piecewise nodes on
+   the operator's reopen anchor, with the REDi impeding-factor floor
+   once damage is structural) -> a seasonal calendar walk over the
+   downtime window (regional monthly revenue weights, the event's
+   arrival month drawn from the peril's climatology: hurricanes land
+   in the September trough but long downtime eats the winter peak) ->
+   gross BI on the LOSSABLE share of daily GOP (the vacation-ownership
+   fee stream keeps flowing through a closure) -> the unchanged policy
+   terms split: waiting period retained on every event, downtime
+   beyond the indemnity period, insurable BI beyond the limit. All
+   constants live in the sourced assumptions registry.
+   The regional demand shock (undamaged sites in a hit region lose
+   transient demand; NO physical-damage trigger, so standard BI never
+   pays it) is computed on the event table and rides as a FLAGGED
+   indirect line, never inside retained BI or the TCOR total.
    ------------------------------------------------------------ */
 function biTermsOf(s){
   const t=tcorProgram.bi;
@@ -2930,29 +3112,100 @@ function biTermsOf(s){
       :((+s.bi_ee_usd>0)?"BI & EE declared value":"none on file (overage reads zero, labeled)"),
     provenance:t.provenance};
 }
-function biSplitForLoss(lossUsd,s,terms,econ){
-  const dmg=econ.value>0?Math.min(lossUsd/econ.value,1):0;
-  const down=dmg*econ.maxDownDays;
-  const gross=econ.daily*down;
-  const waiting=econ.daily*Math.min(down,terms.waitingDays);
-  const beyondIndem=econ.daily*Math.max(down-terms.indemnityDays,0);
+const BI_MONTH_DAYS=30.44;
+const BI_TIMING_FLAT=[1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12];
+/* event-arrival climatology per peril: TC-driven perils land on the
+   hurricane calendar; the rest carry no asserted timing */
+const BI_PERIL_TIMING={tc_joint:BI_TC_MONTH_W,prain:BI_TC_MONTH_W,
+                       rflood:BI_TIMING_FLAT,wfire:BI_TIMING_FLAT};
+function biSeasonShapeOf(s){
+  return BI_SEASON_SHAPES[slrRegionOf(+s.latitude,+s.longitude)]||BI_SEASON_SHAPES.global_mean;
+}
+/* revenue-weighted equivalent days of a downtime window starting at the
+   beginning of month m0 (0-11): the seasonal calendar walk */
+function biSeasonDays(shape,m0,days){
+  let left=days,m=m0,acc=0;
+  while(left>0){
+    const take=Math.min(left,BI_MONTH_DAYS);
+    acc+=shape[m%12]*take;left-=take;
+    if(++m-m0>600)break;
+  }
+  return acc;
+}
+/* damage ratio -> downtime days: piecewise Hazus RES4 nodes as fractions
+   of the operator's reopen anchor, then the REDi impeding floor once
+   damage is structural (external processes the operator cannot
+   compress: inspection, financing, contractor mobilization, permits) */
+function biDowntimeDays(dmg,maxDownDays){
+  if(!(dmg>0)||!(maxDownDays>0))return 0;
+  const N=BI_DOWNTIME_NODES;
+  let f=1;
+  if(dmg<1){
+    for(let i=1;i<N.length;i++){
+      if(dmg<=N[i][0]){
+        f=N[i-1][1]+(N[i][1]-N[i-1][1])*(dmg-N[i-1][0])/(N[i][0]-N[i-1][0]);
+        break;
+      }
+    }
+  }
+  let d=f*maxDownDays;
+  if(dmg>=BI_IMPEDING_THRESH)d=Math.max(d,BI_IMPEDING_DAYS);
+  return d;
+}
+/* per-site BI economics: seasonal shape, the lossable share of daily
+   GOP after the vacation-ownership continuing stream, the reopen anchor */
+function biEconOf(s){
+  const a=assumeFor(s);
+  const gop=siteRevenue(s)*a.gopMargin;
+  const tshare=Math.min(Math.max(+s.timeshare_share||0,0),1);
+  const continueShare=tshare*BI_TIMESHARE_CONTINUING;
+  return {value:+s.asset_value_usd||0,gop,daily:gop/365,
+    dailyLossable:(gop/365)*(1-continueShare),
+    continueShare,tshare,
+    maxDownDays:a.reopenMonths/12*365,
+    shape:biSeasonShapeOf(s)};
+}
+/* the terms split for ONE event loss arriving at month m0. The waiting
+   period is the window's first days, the indemnity period its first
+   terms.indemnityDays: both priced at the season they actually fall in. */
+function biEventSplit(lossUsd,terms,econ,m0){
+  const dmg=econ.value>0?Math.min(Math.max(lossUsd,0)/econ.value,1):0;
+  const down=biDowntimeDays(dmg,econ.maxDownDays);
+  if(!(down>0))return {gross:0,waiting:0,overage:0,retained:0,downDays:0};
+  const k=econ.dailyLossable;
+  const segAll=biSeasonDays(econ.shape,m0,down);
+  const segWait=biSeasonDays(econ.shape,m0,Math.min(down,terms.waitingDays));
+  const segIndem=biSeasonDays(econ.shape,m0,Math.min(down,terms.indemnityDays));
+  const gross=k*segAll,waiting=k*segWait,beyondIndem=k*(segAll-segIndem);
   const insurable=Math.max(gross-waiting-beyondIndem,0);
   const overLimit=terms.limitUsd!=null?Math.max(insurable-terms.limitUsd,0):0;
   return {gross,waiting,overage:beyondIndem+overLimit,
           retained:waiting+beyondIndem+overLimit,downDays:down};
+}
+/* expectation over the peril's event-arrival climatology */
+function biEventSplitTimed(lossUsd,terms,econ,timing){
+  const out={gross:0,waiting:0,overage:0,retained:0,downDays:0};
+  for(let m=0;m<12;m++){
+    const w=timing[m];if(!(w>0))continue;
+    const b=biEventSplit(lossUsd,terms,econ,m);
+    out.gross+=w*b.gross;out.waiting+=w*b.waiting;
+    out.overage+=w*b.overage;out.retained+=w*b.retained;
+    out.downDays+=w*b.downDays;
+  }
+  return out;
 }
 function retainedBICalc(sitesArr,sc){
   const join=packJoin(sitesArr,sc);
   const pk=resultsPack&&resultsPack.data;
   const evScen=pk&&pk.event_sets&&pk.event_sets.scenarios&&pk.event_sets.scenarios[sc];
   const perSite={};let waiting=0,overage=0,gross=0;
-  const econOf={};
+  const econOf={},termsOf={};
   sitesArr.forEach(s=>{
-    const a=assumeFor(s);
-    const gop=siteRevenue(s)*a.gopMargin;
-    econOf[s.id]={value:+s.asset_value_usd||0,daily:gop/365,
-                  maxDownDays:a.reopenMonths/12*365};
-    perSite[s.id]={gross:0,waiting:0,overage:0,retained:0,basis:"interim BI chain (Task 3 pending)"};
+    econOf[s.id]=biEconOf(s);termsOf[s.id]=biTermsOf(s);
+    perSite[s.id]={gross:0,waiting:0,overage:0,retained:0,
+      basis:"BI module: Hazus/REDi downtime, seasonal calendar walk"
+        +(econOf[s.id].tshare>0?", vacation-ownership continuing share "
+          +Math.round(econOf[s.id].continueShare*100)+"%":"")};
   });
   /* hurricane: per event when the table is joined (the waiting period
      applies per occurrence, which per-year averages cannot represent) */
@@ -2965,7 +3218,7 @@ function retainedBICalc(sitesArr,sc){
         const f=+e.freq||0;if(f<=0)return;
         (e.sites||[]).forEach(pair=>{
           const s=join.map[pair[0]];if(!s)return;
-          const b=biSplitForLoss(+pair[1]||0,s,biTermsOf(s),econOf[s.id]);
+          const b=biEventSplitTimed(+pair[1]||0,termsOf[s.id],econOf[s.id],BI_TC_MONTH_W);
           const ps=perSite[s.id];
           ps.gross+=w*f*b.gross;ps.waiting+=w*f*b.waiting;
           ps.overage+=w*f*b.overage;ps.retained+=w*f*b.retained;
@@ -2974,35 +3227,105 @@ function retainedBICalc(sitesArr,sc){
     });
   }
   sitesArr.forEach(s=>{
-    const terms=biTermsOf(s),econ=econOf[s.id];
+    const terms=termsOf[s.id],econ=econOf[s.id];
     const perils=huEventBased?["rflood","prain","wfire"]
                              :["tc_joint","rflood","prain","wfire"];
     perils.forEach(hz=>{
       const lad=siteLadderFor(s,hz,sc,join);
+      const timing=BI_PERIL_TIMING[hz]||BI_TIMING_FLAT;
+      /* the per-rung terms split once, then the same trapezoid integral
+         per field (every field is non-decreasing in the rung loss) */
+      const F={gross:[],waiting:[],overage:[],retained:[]};
+      lad.losses.forEach(L=>{
+        const b=biEventSplitTimed(Math.max(+L||0,0),terms,econ,timing);
+        F.gross.push(b.gross);F.waiting.push(b.waiting);
+        F.overage.push(b.overage);F.retained.push(b.retained);
+      });
       const ps=perSite[s.id];
-      ps.gross+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).gross);
-      ps.waiting+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).waiting);
-      ps.overage+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).overage);
-      ps.retained+=ladderIntegral(lad.rps,lad.losses,L=>biSplitForLoss(L,s,terms,econ).retained);
+      ps.gross+=ladderIntegral(lad.rps,F.gross);
+      ps.waiting+=ladderIntegral(lad.rps,F.waiting);
+      ps.overage+=ladderIntegral(lad.rps,F.overage);
+      ps.retained+=ladderIntegral(lad.rps,F.retained);
     });
     gross+=perSite[s.id].gross;waiting+=perSite[s.id].waiting;
     overage+=perSite[s.id].overage;
   });
+  /* regional demand shock: event table only (it needs event structure to
+     hang on), portfolio TIV as the destination proxy, flagged always */
+  const demandPerSite={};sitesArr.forEach(s=>demandPerSite[s.id]=0);
+  let demandTotal=0;
+  if(huEventBased){
+    const regionOf={},regTiv={};
+    sitesArr.forEach(s=>{
+      const r=slrRegionOf(+s.latitude,+s.longitude);
+      regionOf[s.id]=r;regTiv[r]=(regTiv[r]||0)+(+s.asset_value_usd||0);
+    });
+    const W=BI_DEMAND_SHOCK.months*BI_MONTH_DAYS;
+    evScen.forEach(part=>{
+      const w=+part.weight||0;
+      (part.events||[]).forEach(e=>{
+        const f=+e.freq||0;if(f<=0)return;
+        const dmgTiv={},downOf={};
+        (e.sites||[]).forEach(pair=>{
+          const s=join.map[pair[0]];if(!s)return;
+          const econ=econOf[s.id];
+          const dmg=econ.value>0?Math.min((+pair[1]||0)/econ.value,1):0;
+          downOf[s.id]=biDowntimeDays(dmg,econ.maxDownDays);
+          if(dmg>=BI_IMPEDING_THRESH){
+            const r=regionOf[s.id];
+            dmgTiv[r]=(dmgTiv[r]||0)+econ.value;
+          }
+        });
+        for(const reg in dmgTiv){
+          const R=regTiv[reg]>0?dmgTiv[reg]/regTiv[reg]:0;
+          if(R<BI_DEMAND_SHOCK.min_severity)continue;
+          const shock0=Math.min(BI_DEMAND_SHOCK.cap,BI_DEMAND_SHOCK.gain*R);
+          sitesArr.forEach(s=>{
+            if(regionOf[s.id]!==reg)return;
+            const econ=econOf[s.id];
+            /* the shock decays linearly over the window and bites only
+               while the site is OPEN: closed forward-looking exposure
+               integrates to shock0 x (W - ownDown)^2 / 2W */
+            const open=Math.max(W-(downOf[s.id]||0),0);
+            const g=econ.dailyLossable*shock0*open*open/(2*W);
+            demandPerSite[s.id]+=w*f*g;demandTotal+=w*f*g;
+          });
+        }
+      });
+    });
+  }
   return {perSite,gross,waiting,overage,retained:waiting+overage,
     transferred:gross-waiting-overage,
-    basis:"interim BI chain: linear damage-to-downtime, revenue-proxy GOP, "
-      +(huEventBased?"hurricane terms applied per event":"no event table: hurricane terms applied on ladders")
-      +"; seasonality, timeshare revenue split, and regional demand shock arrive with the BI module (Task 3)",
+    demandShock:{total:demandTotal,perSite:demandPerSite,flagged:true,
+      excludedFromTotal:true,
+      basis:huEventBased
+        ?"regional demand shock on the event table: sites in a hit region lose transient demand while open (no physical-damage trigger, so standard BI never pays it); severity-banded to the 2017-2019 record, flagged, never in the TCOR total"
+        :"not computed: the demand shock needs the results pack's event table"},
+    basis:"BI module (Task 3): Hazus RES4 damage-to-downtime with the REDi "
+      +BI_IMPEDING_DAYS+"-day impeding floor, regional seasonality x hurricane "
+      +"landfall climatology, vacation-ownership continuing share; "
+      +(huEventBased?"hurricane terms applied per event":"no event table: hurricane terms applied on ladders (labeled)"),
     termsProvenance:tcorProgram.bi.provenance};
 }
 
 /* ------------------------------------------------------------
-   Premium (interim allocation; the full Task 4 module adds the
-   technical-vs-actual gap surface). Actual per-site premium wins when
-   the profile carries it (SOV AIG columns via schema v3); else the
+   Premium module (Task 4): allocation + the technical-vs-actual gap
+   surface. Actual per-site premium wins when the profile carries it
+   (SOV columns via schema v3 / the Task 8 importer); else the
    technical benchmark: transferred expected loss (property + insurable
    BI) times the program loading factor. A known program total rescales
    the technical allocation, labeled.
+
+   The gap surface (additive; nothing above changes): per-site rate per
+   $100 TIV on both bases, the signed actual-vs-technical gap, and the
+   portfolio position: the IMPLIED market load (actual premium over
+   modeled transferred expected loss, computed only on the sites whose
+   premium is on file) beside the assumed load, plus the over/under
+   split. The implied load is the renewal conversation's anchor: it is
+   what the market is actually charging per dollar of modeled transfer,
+   so a repriced technical benchmark and the payoff engine's negotiated
+   savings can stand on the market's own number instead of an
+   assumption whenever the SOV carries premiums.
    ------------------------------------------------------------ */
 function premiumCalc(sitesArr,sc,prop,bi){
   const load=tcorProgram.premium.loadFactor!=null?tcorProgram.premium.loadFactor
@@ -3013,11 +3336,12 @@ function premiumCalc(sitesArr,sc,prop,bi){
     const transProp=TCOR_CLASSES.reduce((a,c)=>a+Math.max(p[c].gross-p[c].retained,0),0);
     const b=bi.perSite[s.id];
     const transBi=Math.max((b.gross||0)-(b.retained||0),0);
-    const technical=(transProp+transBi)*load;
+    const transferredEl=transProp+transBi;
+    const technical=transferredEl*load;
     technicalTotal+=technical;
     const actual=+s.premium_annual_usd>0?+s.premium_annual_usd:null;
     if(actual!=null){actualTotal+=actual;nActual++;}
-    perSite[s.id]={technical,actual,
+    perSite[s.id]={technical,actual,transferredEl,
       allocated:actual!=null?actual:technical,
       basis:actual!=null?"actual (per-site premium on file)"
         :"technical benchmark (modeled transferred loss x "+load+" load)"};
@@ -3036,9 +3360,39 @@ function premiumCalc(sitesArr,sc,prop,bi){
     });
     allocBasis="program annual premium allocated by modeled transferred expected loss";
   }
+  /* the gap surface: rates, signed gaps, implied market load */
+  let tiv=0,tivActual=0,actTransEl=0,overTech=0,underTech=0;
+  sitesArr.forEach(s=>{
+    const v=+s.asset_value_usd||0;tiv+=v;
+    const ps=perSite[s.id];
+    ps.ratePer100=v>0?ps.allocated/v*100:null;
+    ps.technicalRatePer100=v>0?ps.technical/v*100:null;
+    if(ps.actual!=null){
+      tivActual+=v;actTransEl+=ps.transferredEl;
+      ps.gapUsd=ps.actual-ps.technical;
+      ps.gapPct=ps.technical>0?(ps.actual/ps.technical-1)*100:null;
+      if(ps.gapUsd>0)overTech+=ps.gapUsd;else underTech-=ps.gapUsd;
+    }else{ps.gapUsd=null;ps.gapPct=null;}
+  });
+  const impliedLoad=(nActual>0&&actTransEl>0)?actualTotal/actTransEl:null;
   return {perSite,technicalTotal,actualTotal,nActual,load,
     allocatedTotal:sitesArr.reduce((a,s)=>a+perSite[s.id].allocated,0),
-    allocBasis};
+    allocBasis,
+    position:{impliedLoad,assumedLoad:load,
+      loadBasis:impliedLoad!=null
+        ?"implied by the "+nActual+" premium"+(nActual>1?"s":"")+" on file (actual premium / modeled transferred expected loss)"
+        :"assumed (no per-site premiums on file)",
+      tivShareWithActual:tiv>0?tivActual/tiv:0,
+      overTechnicalUsd:overTech,underTechnicalUsd:underTech,
+      gapTotalUsd:overTech-underTech,
+      note:"gaps read on sites with an actual premium only; a positive gap "
+        +"means paying above the modeled technical benchmark"}};
+}
+/* the loading factor negotiated savings should stand on: the market's own
+   implied load when premiums are on file, else the assumed program load */
+function premiumLoadEff(prem){
+  return (prem&&prem.position&&prem.position.impliedLoad!=null)
+    ?prem.position.impliedLoad:(prem?prem.load:1.5);
 }
 
 /* ------------------------------------------------------------
@@ -3080,10 +3434,13 @@ function tcorSite(s,sc,ctx){
       mitigation:{value:mitigation,basis:+s.mitigation_annual_usd>0?"site risk-control spend on file":"program allocation by TIV"},
       admin:{value:admin,basis:"program admin allocated by TIV"}
     },
-    indirect:{value:b.gross*tcorProgram.indirect.rebookShare,flagged:true,
-      excludedFromTotal:true,
-      basis:"flagged estimate ("+Math.round(tcorProgram.indirect.rebookShare*100)
-        +"% of gross BI): guest rebooking and reputation; never added to the TCOR total"},
+    indirect:{value:b.gross*tcorProgram.indirect.rebookShare
+        +((ctx.bi.demandShock&&ctx.bi.demandShock.perSite[s.id])||0),
+      rebooking:b.gross*tcorProgram.indirect.rebookShare,
+      demandShock:(ctx.bi.demandShock&&ctx.bi.demandShock.perSite[s.id])||0,
+      flagged:true,excludedFromTotal:true,
+      basis:"flagged estimate: guest rebooking ("+Math.round(tcorProgram.indirect.rebookShare*100)
+        +"% of gross BI) plus the regional demand shock at open sites; never added to the TCOR total"},
     quality:{estimate:missing.length>0||ctx.prop.classes.hurricane.basis!=="event",
       missing,
       propertyBasis:ctx.prop.classes.hurricane.basis,
@@ -3419,6 +3776,202 @@ function lossrunCalibration(sitesArr){
     flags:agg.flags};
 }
 /* ============================================================
+   TCOR-aware adaptation payoff engine (v3 overhaul).
+   A measure's annual payoff is NOT one number: part of it the owner
+   keeps with certainty (reduced retained losses: below-deductible
+   damage, waiting-period and over-limit BI, uninsured heat cost), and
+   part of it only becomes cash if the insurer reprices at renewal
+   (reduced TRANSFERRED expected loss, priced at the program load and
+   haircut by a credit-realization factor, because market recognition
+   of mitigation is bounded and discretionary). This engine computes
+   both halves per (site, measure) through the SAME ladder-and-terms
+   math the TCOR engine stands on, and reports the benefit-cost ratio
+   twice: certain-only, and with the negotiated premium credit. The
+   two are never blended silently.
+
+   Accounting discipline (NIST SP 1197's rule: count premium savings
+   OR avoided payouts, never both): certain savings are reductions in
+   the owner's own retained losses; the negotiated half prices ONLY
+   the transferred slice. No dollar appears on both sides.
+
+   READ-ONLY over the hazard, adaptation, TCOR, and premium engines:
+   the measure's per-return-period effect comes from adaptedFinSite's
+   own curves, the retained/transferred split from the TCOR ladders
+   and deductibles (campus-shared for hurricane), the load from the
+   premium module (market-implied when premiums are on file).
+   ============================================================ */
+
+function payoffCreditRealization(){
+  const v=tcorProgram.premium.creditRealization;
+  return (v!=null&&isFinite(+v))?Math.min(Math.max(+v,0),1):PREMIUM_CREDIT_REALIZATION;
+}
+
+/* per-return-period loss-reduction factors a measure causes, per peril,
+   read off the adaptation engine's own curves (base vs modified) */
+function payoffFactors(s,sc,mods){
+  const base=adaptedFinSite(s,sc,{}),mod=adaptedFinSite(s,sc,mods);
+  const fac={};
+  ["tc","cflood","rflood","prain"].forEach(hz=>{
+    const o={};
+    RPS.forEach((rp,i)=>{
+      const b=base.curves[hz][i]?base.curves[hz][i].loss:0;
+      o[rp]=b>0?(mod.curves[hz][i]?mod.curves[hz][i].loss:0)/b:1;
+    });
+    fac[hz]=o;
+  });
+  /* tc_joint (the hurricane occurrence basis): loss-weighted blend of
+     the wind and surge factors at each return period */
+  const oj={};
+  RPS.forEach((rp,i)=>{
+    const bw=base.curves.tc[i]?base.curves.tc[i].loss:0;
+    const bc=base.curves.cflood[i]?base.curves.cflood[i].loss:0;
+    const mw=mod.curves.tc[i]?mod.curves.tc[i].loss:0;
+    const mc=mod.curves.cflood[i]?mod.curves.cflood[i].loss:0;
+    oj[rp]=(bw+bc)>0?(mw+mc)/(bw+bc):1;
+  });
+  fac.tc_joint=oj;
+  fac.wfire=base.curves.wfireFrac>0?mod.curves.wfireFrac/base.curves.wfireFrac:1;
+  return {base,mod,fac};
+}
+/* scale a TCOR ladder rung by rung; the sub-1-in-10 rungs (2, 5) ride
+   the 1-in-10 factor (they are extrapolated from it in the first place) */
+function payoffScaleLadder(lad,facByRp){
+  return {rps:lad.rps.slice(),basis:lad.basis,
+    losses:lad.losses.map((L,i)=>{
+      const rp=lad.rps[i];
+      const k=facByRp[rp]!=null?facByRp[rp]:facByRp[10];
+      return (+L||0)*(k==null?1:k);
+    })};
+}
+
+/* hurricane: the campus (or program) shares ONE occurrence deductible,
+   so a single site's hardening changes the CAMPUS retained ladder;
+   both sides are computed on the shared ladder, never per site alone */
+function payoffHurricane(s,sitesArr,sc,join,facJoint){
+  const ded=tcorProgram.deductibles.hurricane;
+  const members=(ded.basis==="per-occurrence-program")?sitesArr
+    :sitesArr.filter(x=>campusKeyOf(x)===campusKeyOf(s));
+  const lads=members.map(x=>({x,lad:siteLadderFor(x,"tc_joint",sc,join)}));
+  const myBase=(lads.find(z=>z.x.id===s.id)||{lad:siteLadderFor(s,"tc_joint",sc,join)}).lad;
+  const rps=myBase.rps;
+  const baseLosses=rps.map((_,i)=>lads.reduce((a,z)=>a+(+z.lad.losses[i]||0),0));
+  const myMod=payoffScaleLadder(myBase,facJoint);
+  const modLosses=rps.map((_,i)=>baseLosses[i]-(+myBase.losses[i]||0)+(+myMod.losses[i]||0));
+  const rb=ladderRetained(rps,baseLosses,ded.amountUsd);
+  const rm=ladderRetained(rps,modLosses,ded.amountUsd);
+  return {dGross:Math.max(ladderIntegral(rps,myBase.losses)-ladderIntegral(rps,myMod.losses),0),
+          dRetained:Math.max(rb.retained-rm.retained,0),
+          modLadder:myMod};
+}
+/* flood and general: per-location ladders, one deductible per site */
+function payoffPerLocation(s,sc,join,fac){
+  const out={dGross:0,dRetained:0,mod:{}};
+  ["flood","general"].forEach(cls=>{
+    const dd=tcorProgram.deductibles[cls].amountUsd;
+    TCOR_CLASS_PERILS[cls].forEach(hz=>{
+      const lad=siteLadderFor(s,hz,sc,join);
+      const mlad=hz==="wfire"
+        ?{rps:lad.rps.slice(),basis:lad.basis,
+          losses:lad.losses.map(L=>(+L||0)*fac.wfire)}
+        :payoffScaleLadder(lad,fac[hz]);
+      const rb=ladderRetained(lad.rps,lad.losses,dd);
+      const rm=ladderRetained(mlad.rps,mlad.losses,dd);
+      out.dGross+=Math.max(rb.gross-rm.gross,0);
+      out.dRetained+=Math.max(rb.retained-rm.retained,0);
+      out.mod[hz]=mlad;
+    });
+  });
+  return out;
+}
+/* BI delta through the Task 3 chain on base vs modified ladders; a
+   reopen-time measure additionally shortens the downtime anchor */
+function payoffBI(s,sc,join,modLads,reopenMult){
+  const terms=biTermsOf(s);
+  const econB=biEconOf(s);
+  const econM=(reopenMult==null||reopenMult===1)?econB
+    :Object.assign({},econB,{maxDownDays:econB.maxDownDays*reopenMult});
+  const perils=["tc_joint","rflood","prain","wfire"];
+  let bGross=0,bRet=0,mGross=0,mRet=0;
+  perils.forEach(hz=>{
+    const timing=BI_PERIL_TIMING[hz]||BI_TIMING_FLAT;
+    const ladB=siteLadderFor(s,hz,sc,join);
+    const ladM=modLads[hz]||ladB;
+    const FB={gross:[],retained:[]},FM={gross:[],retained:[]};
+    ladB.losses.forEach(L=>{
+      const b=biEventSplitTimed(Math.max(+L||0,0),terms,econB,timing);
+      FB.gross.push(b.gross);FB.retained.push(b.retained);
+    });
+    ladM.losses.forEach(L=>{
+      const b=biEventSplitTimed(Math.max(+L||0,0),terms,econM,timing);
+      FM.gross.push(b.gross);FM.retained.push(b.retained);
+    });
+    bGross+=ladderIntegral(ladB.rps,FB.gross);bRet+=ladderIntegral(ladB.rps,FB.retained);
+    mGross+=ladderIntegral(ladM.rps,FM.gross);mRet+=ladderIntegral(ladM.rps,FM.retained);
+  });
+  return {dGross:Math.max(bGross-mGross,0),dRetained:Math.max(bRet-mRet,0)};
+}
+
+/* the payoff of one measure at one site, split and priced */
+function tcorPayoffFor(s,m,st,sc,ctx){
+  ctx=ctx||{};
+  const sitesArr=ctx.sites||(typeof sites!=="undefined"?sites:[s]);
+  const join=(ctx.join!==undefined)?ctx.join:packJoin(sitesArr,sc);
+  const mods=m.mods(st);
+  const pf=payoffFactors(s,sc,mods);
+  const hu=payoffHurricane(s,sitesArr,sc,join,pf.fac.tc_joint);
+  const pl=payoffPerLocation(s,sc,join,pf.fac);
+  const modLads=Object.assign({tc_joint:hu.modLadder},pl.mod);
+  const bi=payoffBI(s,sc,join,modLads,mods.reopenMult);
+  const heat=Math.max(pf.base.heatCost-pf.mod.heatCost,0);
+  const dRetainedProp=hu.dRetained+pl.dRetained;
+  const dGrossProp=hu.dGross+pl.dGross;
+  const certain=dRetainedProp+bi.dRetained+heat;
+  const dTransferred=Math.max(dGrossProp-dRetainedProp,0)
+    +Math.max(bi.dGross-bi.dRetained,0);
+  const loadEff=ctx.prem?premiumLoadEff(ctx.prem)
+    :(tcorProgram.premium.loadFactor!=null?tcorProgram.premium.loadFactor
+      :(typeof adapt!=="undefined"&&adapt&&adapt.load?adapt.load:1.5));
+  const cr=payoffCreditRealization();
+  const premiumSaving=dTransferred*loadEff*cr;
+  const cost=m.siteCost(s,st);
+  const af=ctx.af!=null?ctx.af
+    :annuity(APPRAISAL_DEFAULTS.horizonYears,APPRAISAL_DEFAULTS.discountPct/100);
+  return {measure:m.name,key:m.key,target:m.target,cost,af,
+    certain:{property:dRetainedProp,bi:bi.dRetained,heat,total:certain},
+    negotiated:{transferredEl:dTransferred,loadEff,creditRealization:cr,premiumSaving},
+    grossAverted:dGrossProp+bi.dGross+heat,
+    bcrCertain:cost>0?certain*af/cost:0,
+    bcrWithCredit:cost>0?(certain+premiumSaving)*af/cost:0,
+    basis:"TCOR ladder basis"
+      +(join?" (pack ladders where loaded)":" (interim ladders)")
+      +": certain = retained property + retained BI + uninsured heat; "
+      +"negotiated = transferred-loss reduction x "+loadEff.toFixed(2)
+      +" load x "+Math.round(cr*100)+"% credit realization, cash only if the insurer reprices"};
+}
+/* every in-scope measure at one site, appraised and split */
+function sitePayoffs(s,sc,ctx){
+  return MEASURES.filter(m=>m.inScope(s,sc))
+    .map(m=>tcorPayoffFor(s,m,adapt.m[m.key],sc,ctx))
+    .sort((a,b)=>b.bcrCertain-a.bcrCertain);
+}
+/* the renewal ask: the funded action queue's negotiated premium savings,
+   the number the broker submission carries into the renewal meeting */
+function renewalAskFor(sitesArr,sc,af,budget,ctx){
+  const q=actionQueue(sitesArr,sc,af,budget||0);
+  let ask=0,certain=0,n=0;
+  q.items.forEach(it=>{
+    if(!it.funded)return;
+    const s=sitesArr.find(x=>x.id===it.id);if(!s)return;
+    const m=MEASURES.find(x=>x.key===it.key);if(!m)return;
+    const p=tcorPayoffFor(s,m,adapt.m[m.key],sc,
+      Object.assign({sites:sitesArr,af},ctx||{}));
+    ask+=p.negotiated.premiumSaving;certain+=p.certain.total;n++;
+  });
+  return {n,premiumAskUsd:ask,certainUsd:certain,
+    note:"summed per funded measure; overlapping measures at one site are "
+      +"not jointly recomputed here, so read it as the upper end of the ask"};
+}
+/* ============================================================
    Adaptation intelligence (Phase A)
    Measures are appraised against the FULL climate cost (direct damage +
    business interruption + heat). Each measure declares a mechanism: a
@@ -3515,7 +4068,11 @@ function adaptedFinSite(s,sc,mods){
   const ind=heatIndicators(s.latitude,s.longitude,sc);
   const excess=Math.max(0,ind.daysOver35-HEAT_COMFORT_DAYS);
   const heatCost=(gop/365)*excess*a.heatDrop*(mods.heatMult==null?1:mods.heatMult);
-  return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost};
+  /* curves ride along (additive) so the TCOR payoff engine can read the
+     per-return-period loss reduction a measure causes; no figure above
+     changes (parity-pinned) */
+  return {directEad,biEad,heatCost,totalAal:directEad+biEad+heatCost,
+    curves:{tc:w.curve,cflood:cf.curve,rflood:rf.curve,prain:pv.curve,wfireFrac:fFrac}};
 }
 function adaptedTotal(sitesArr,sc,mods){
   let d=0,b=0,h=0;
@@ -3999,7 +4556,8 @@ const INFO={
     "<p><b>Honest limit:</b> at realistic point probabilities (roughly 0 to 2%/yr even in high-risk WUI) wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app. The results pack carries the fire tail as a per-site occurrence exceedance.</p>"},
   prain:{t:"TC rainfall",b:
     "<p>Event rainfall (mm at each return period, from a prain grid) becomes ponding depth through documented drainage constants: depth = max(0, rain - "+PRAIN_DRAIN_MM+" mm) x "+PRAIN_POND_COEFF+", then the flood damage curve with a "+PRAIN_FB+" m freeboard.</p>"+
-    "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"},
+    "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"+
+    "<p><b>Honest limit (v3):</b> the ponding transform is a screening floor, recalibrated so a Harvey-class event can register loss. It still understates site-specific pluvial until a drainage study replaces the constants; the trust chip labels it screening, never a green finding of negligible rain risk.</p>"},
   tc:{t:"Tropical-cyclone wind",b:
     "<p>Wind speeds by return period feed the <b>Emanuel (2011)</b> damage curve, the same one CLIMADA uses (<code>emanuel_usa</code>).</p>"+
     "<p>Damage begins around <code>25.7 m/s</code> and rises steeply toward <code>74.7 m/s</code>.</p>"},
@@ -4468,13 +5026,13 @@ function quadrantSvg(pts){
    leaving retained property, plus retained BI, plus allocated premium,
    arriving at TCOR. Every segment is hoverable to its derivation.
 
-   READ-ONLY over the TCOR engine (22_tcor.js): every figure comes
-   from tcorPortfolio / tcorSite / simulateRetainedYears /
-   lossrunCalibration / the adaptation appraisal, or is plain
+   READ-ONLY over the TCOR engine (22_tcor.js), the BI module, the
+   premium module, and the payoff engine (26_payoff.js): every figure
+   comes from tcorPortfolio / tcorSite / simulateRetainedYears /
+   lossrunCalibration / sitePayoffs / renewalAskFor, or is plain
    arithmetic on their outputs. Nothing here re-derives or alters the
-   financial science; where a needed output does not exist yet (the
-   full BI bad-year module, the TCOR-aware premium credit), the
-   surface says so instead of inventing it.
+   financial science; where an output stands on a fallback, the
+   surface says so instead of hiding it.
    ============================================================ */
 
 /* The five TCOR components: one fixed palette, one fixed order, used
@@ -4552,13 +5110,15 @@ function calibrationStateOf(calib,cls){
 let _cmd={key:null};
 function cmdStateKey(){
   let v=0;
-  sites.forEach(s=>{v+=(+s.asset_value_usd||0)+(+s.premium_annual_usd||0)+(+s.annual_revenue_usd||0);});
+  sites.forEach(s=>{v+=(+s.asset_value_usd||0)+(+s.premium_annual_usd||0)+(+s.annual_revenue_usd||0)
+    +(+s.timeshare_share||0)*7919+(+s.bi_ee_usd||0);});
   return [scenario,sites.length,typeof nextId==="undefined"?0:nextId,v.toFixed(0),
     hazardGrid?hazardGrid.meta.loaded:"-",
     resultsPack?resultsPack.loaded:"-",
     lossRun?lossRun.loaded:"-",
     JSON.stringify(tcorProgram.deductibles),
     tcorProgram.bi.limitUsd||"",tcorProgram.premium.programAnnualUsd||"",
+    tcorProgram.premium.loadFactor||"",tcorProgram.premium.creditRealization||"",
     tcorProgram.adminAnnualUsd,tcorProgram.mitigationAnnualUsd,
     finAssume.revRatio,finAssume.gopMargin,finAssume.reopenMonths,
     typeof adapt!=="undefined"?JSON.stringify(adapt.m):""].join("|");
@@ -4595,7 +5155,11 @@ function cmdCtx(){
   }).sort((a,b)=>b.total-a.total);
   const completeTcor=rows.reduce((a,r)=>a+(r.estimate?0:r.total),0);
   const sim=simulateRetainedYears(sites,scenario);
-  const fixed=tp.components.retainedBI+tp.components.premium
+  /* bad-year TCOR (Task 3): retained property AND retained BI at the
+     99th percentile of the SAME simulated year (the joint draw: one
+     storm drives both sides); premium, risk control, and admin ride at
+     expected level, which is what they are: costs, not losses. */
+  const fixedNonLoss=tp.components.premium
     +tp.components.mitigation+tp.components.admin;
   _cmd={key,tp,rows,join,af,calib,sim,
     portComp:{
@@ -4605,11 +5169,8 @@ function cmdCtx(){
       admin:tp.components.mitigation+tp.components.admin},
     confidence:tp.total>0?completeTcor/tp.total:0,
     nComplete:rows.filter(r=>!r.estimate).length,
-    /* bad-year TCOR: retained property at the 99th percentile of the
-       engine's seeded year simulation; BI, premium, and fixed costs at
-       expected level (the BI bad-year module is pending, and the
-       surface says so). */
-    badYear:sim.p99+fixed,
+    badYear:sim.combined.p99+fixedNonLoss,
+    badYearFixed:fixedNonLoss,
     expectedYear:tp.total};
   return _cmd;
 }
@@ -4693,17 +5254,20 @@ function portDeriveHtml(key,c){
       ["Waiting-period share",fmt$(bi.waiting)+"/yr"],
       ["Beyond limit / indemnity",fmt$(bi.overage)+"/yr"],
       ["Gross BI (before terms)",fmt$(bi.gross)+"/yr"],
-      ["Transferred to insurer",fmt$(bi.transferred)+"/yr"]],
+      ["Transferred to insurer",fmt$(bi.transferred)+"/yr"],
+      ["Regional demand shock (flagged, excluded)",fmt$(bi.demandShock?bi.demandShock.total:0)+"/yr"]],
       bi.basis);
   }
   if(key==="prem"){
-    const pr=tp.ctx.prem;
+    const pr=tp.ctx.prem,pos=pr.position||{};
     return deriveHtml("Allocated premium",[
       ["Allocated total",fmt$(pr.allocatedTotal)+"/yr"],
       ["Technical benchmark",fmt$(pr.technicalTotal)+"/yr"],
       ["Actual on file",pr.nActual+" site"+(pr.nActual===1?"":"s")+" · "+fmt$(pr.actualTotal)+"/yr"],
-      ["Loading factor",pr.load+"x"]],
-      pr.allocBasis);
+      ["Assumed load",pr.load+"x"],
+      ["Implied market load",pos.impliedLoad!=null?pos.impliedLoad.toFixed(2)+"x ("+Math.round((pos.tivShareWithActual||0)*100)+"% of TIV has premiums on file)":"n/a (no premiums on file)"],
+      ["Above / below technical",fmt$(pos.overTechnicalUsd||0)+" / "+fmt$(pos.underTechnicalUsd||0)]],
+      pr.allocBasis+(pos.impliedLoad!=null?" The implied load is actual premium over modeled transferred expected loss on the sites whose premium is on file: the market's own price per dollar of transfer.":""));
   }
   if(key==="freq"){
     const at=tp.attritional;
@@ -4780,7 +5344,7 @@ function renderCommand(){
     '<div class="eb"><div class="l">Expected year</div><div class="v">'+fmt$(c.expectedYear)+'</div>'+
       '<div class="f">mean annual TCOR</div></div>'+
     '<div class="eb bad" data-derive="badyear" tabindex="0"><div class="l">Bad year (1-in-100)</div><div class="v">'+fmt$(c.badYear)+'</div>'+
-      '<div class="f">retained property at the 99th percentile simulated year; BI and premium at expected level</div></div>'+
+      '<div class="f">retained property + BI at the 99th percentile simulated year; premium and fixed costs at expected level</div></div>'+
     '</div>'+
     '<div class="col-l" style="margin-top:8px">Confidence'+infoBtn("cmdConfidence")+'</div>'+
     '<div data-derive="confidence" tabindex="0"><div class="confbar"><i style="width:'+conf+'%"></i></div>'+
@@ -4842,11 +5406,12 @@ function renderCommand(){
       ["Indirect (flagged, excluded)",fmt$(tp.indirect.value)+"/yr"]],
       "Event-level for hurricane (shared per-occurrence deductible per campus), per-location ladders for flood and general. "+(tp.basisFlags[0]||""));
     if(key==="badyear")return deriveHtml("Bad year (1-in-100)",[
-      ["Retained property, p99 year",fmt$(c.sim.p99)],
-      ["Median year",fmt$(c.sim.median)],
-      ["p90 year",fmt$(c.sim.p90)],
-      ["BI + premium + fixed",fmt$(c.badYear-c.sim.p99)+" (expected level)"]],
-      c.sim.years+"-year seeded simulation, "+c.sim.basis+". The BI bad-year module is pending; until it lands, BI rides at expected level and this figure is labeled an estimate.");
+      ["Property + BI, p99 year",fmt$(c.sim.combined.p99)],
+      ["...retained property alone, p99",fmt$(c.sim.p99)],
+      ["...retained BI alone, p99",fmt$(c.sim.bi.p99)],
+      ["Median / p90 year (property + BI)",fmt$(c.sim.combined.median)+" / "+fmt$(c.sim.combined.p90)],
+      ["Premium + risk control + admin",fmt$(c.badYearFixed)+" (expected level)"]],
+      c.sim.years+"-year seeded simulation, "+c.sim.basis+". One drawn storm drives both sides of the same year, so the combined p99 is a joint figure, not a sum of separate tails.");
     if(key==="confidence"||key==="quality"){
       const miss={};c.rows.forEach(r=>r.missing.forEach(m=>miss[m]=(miss[m]||0)+1));
       const top=Object.keys(miss).sort((a,b)=>miss[b]-miss[a]).slice(0,4);
@@ -4932,6 +5497,16 @@ function renderCmdList(c,lens){
     const open=()=>{selectedId=+tr.dataset.sv;openSiteView(+tr.dataset.sv);};
     tr.onclick=open;
     tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}});
+    tr.addEventListener("mouseenter",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=+tr.dataset.sv;_clMap.setFilter("clam-hover",["==",["get","id"],_clHoverId]);
+      }
+    }catch(e){}});
+    tr.addEventListener("mouseleave",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=null;_clMap.setFilter("clam-hover",["==",["get","id"],-1]);
+      }
+    }catch(e){}});
   });
 }
 
@@ -5184,16 +5759,9 @@ function renderSiteView(){
   const actual=agg&&agg.bySite[s.id]?agg.bySite[s.id]:null;
   const nYears=agg?agg.years.n:0;
 
-  /* opportunities: the adaptation engine's own appraisal */
-  const sBase=adaptedFinSite(s,scenario,{}).totalAal;
-  const opps=MEASURES.filter(m=>m.inScope(s,scenario)).map(m=>{
-    const st=adapt.m[m.key];
-    const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
-    const cost=m.siteCost(s,st);
-    return {name:m.name,target:m.target,averted,cost,
-      bcr:cost>0?averted*c.af/cost:0,
-      payback:(averted>0&&cost>0)?cost/averted:null};
-  }).sort((a,b)=>b.bcr-a.bcr);
+  /* opportunities: the TCOR-aware payoff engine's appraisal, split into
+     the certain retained saving and the negotiated premium saving */
+  const opps=sitePayoffs(s,scenario,{sites,join:c.join,af:c.af,prem:c.tp.ctx.prem});
 
   const comps=r.row.components;
   const bt=biTermsOf(s);
@@ -5237,9 +5805,11 @@ function renderSiteView(){
       ["Waiting period ("+bt.waitingDays+" days, every event)",fmt$(comps.retainedBI.waiting)+"/yr"],
       ["Beyond limit / indemnity",fmt$(comps.retainedBI.overage)+"/yr"],
       ["BI limit",bt.limitUsd!=null?fmt$(bt.limitUsd)+" ("+bt.limitBasis+")":bt.limitBasis],
-      ["Indemnity period",bt.indemnityDays+" days"]],
-      comps.retainedBI.basis+" Downtime days and seasonality weighting arrive with the full BI module; until then the linear damage-to-downtime chain stands, labeled.",
-      "estimated") +
+      ["Indemnity period",bt.indemnityDays+" days"],
+      ["Continuing revenue in closure",(+s.timeshare_share>0)?Math.round(biEconOf(s).continueShare*100)+"% (vacation-ownership fees keep flowing)":"none on file (pure hotel: all revenue stops)"],
+      ["Regional demand shock (flagged)",fmt$(r.row.indirect.demandShock||0)+"/yr, uninsured, outside TCOR"]],
+      comps.retainedBI.basis+". "+c.tp.ctx.bi.basis+(bt.provenance==="default"?" BI policy terms are defaults, not policy facts: confirm at renewal.":""),
+      bt.provenance==="default"?"estimated":(String(c.tp.ctx.bi.basis).indexOf("per event")>=0?"modeled":"estimated")) +
     compCard("Premium: technical vs actual","var(--c-prem)",[
       ["Allocated",fmt$(r.premAllocated)+"/yr"],
       ["Technical benchmark",fmt$(r.premTechnical)+"/yr"],
@@ -5269,9 +5839,10 @@ function renderSiteView(){
       '<div class="kv" style="margin-top:6px">'+
       '<span class="k">Expected year (this site)</span><span class="v mono">'+fmt$(r.total)+' TCOR</span>'+
       '<span class="k">Site loss at 1-in-100</span><span class="v mono">'+fmt$((function(){const lad=siteLadderFor(s,"tc_joint",scenario,c.join);const i=lad.rps.indexOf(100);return i>=0?lad.losses[i]:0;})())+' gross (wind + surge)</span>'+
-      '<span class="k">Portfolio bad year (p99)</span><span class="v mono">'+fmt$(c.sim.p99)+' retained property</span>'+
+      '<span class="k">Portfolio bad year (p99)</span><span class="v mono">'+fmt$(c.sim.combined.p99)+' retained property + BI</span>'+
+      '<span class="k">...of which retained BI</span><span class="v mono">'+fmt$(c.sim.bi.p99)+' at the BI-side p99</span>'+
       '</div>'+
-      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, and downtime beyond the indemnity period stays retained. The seeded year simulation carries the retained-property side; the BI bad-year module is pending and this narrative says so.</div></div>'+
+      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, downtime beyond the indemnity period stays retained, and a September landfall with a long rebuild eats the winter high season. The seeded year simulation now carries BOTH sides jointly: each drawn storm gets an arrival month from the landfall climatology and its BI runs through the full seasonal terms chain.</div></div>'+
     '<div class="panel" style="margin-bottom:0"><h3>Calibration vs actual losses</h3>'+
       (lossRun?(
         '<div class="kv" style="margin-top:6px">'+
@@ -5284,13 +5855,15 @@ function renderSiteView(){
       ):'<div class="sv-note" style="margin-top:6px">No loss run loaded. Drop the claims report on Advanced &#8594; Method &amp; data to anchor these figures to actual losses; disagreement is shown honestly when it exists.</div>')+
     '</div>'+
     '<div class="panel" style="margin-bottom:0"><h3>Opportunities'+infoBtn("svOpp")+'</h3>'+
-      (opps.length?('<table class="tbl" style="margin-top:4px"><thead><tr><th>Measure</th><th class="num">Averted / yr</th><th class="num">Cost</th><th class="num">Payback</th><th class="num">Benefit-cost</th></tr></thead><tbody>'+
-        opps.map(o=>'<tr><td>'+esc(o.name)+'<div style="font-size:10.5px;color:var(--muted)">'+esc(o.target)+'</div></td>'+
-          '<td class="num mono">'+fmt$(o.averted)+'</td><td class="num mono">'+fmt$(o.cost)+'</td>'+
-          '<td class="num mono">'+(o.payback!=null?(o.payback<1?"<1 yr":o.payback.toFixed(1)+" yr"):"\u2014")+'</td>'+
-          '<td class="num mono" style="color:'+(o.bcr>=1?"var(--good)":"var(--bad)")+'">'+o.bcr.toFixed(2)+'x</td></tr>').join("")+
+      (opps.length?('<table class="tbl" style="margin-top:4px"><thead><tr><th>Measure</th><th class="num">Certain saving / yr</th><th class="num">Premium ask / yr</th><th class="num">Cost</th><th class="num">BCR certain</th><th class="num">BCR w/ credit</th></tr></thead><tbody>'+
+        opps.map(o=>'<tr><td>'+esc(o.measure)+'<div style="font-size:10.5px;color:var(--muted)">'+esc(o.target)+'</div></td>'+
+          '<td class="num mono" title="'+esc("property "+fmt$(o.certain.property)+" + BI "+fmt$(o.certain.bi)+" + heat "+fmt$(o.certain.heat))+'">'+fmt$(o.certain.total)+'</td>'+
+          '<td class="num mono" title="'+esc("transferred-loss reduction "+fmt$(o.negotiated.transferredEl)+" x "+o.negotiated.loadEff.toFixed(2)+" load x "+Math.round(o.negotiated.creditRealization*100)+"% realization")+'">'+fmt$(o.negotiated.premiumSaving)+'</td>'+
+          '<td class="num mono">'+fmt$(o.cost)+'</td>'+
+          '<td class="num mono" style="color:'+(o.bcrCertain>=1?"var(--good)":"var(--bad)")+'">'+o.bcrCertain.toFixed(2)+'x</td>'+
+          '<td class="num mono" style="color:'+(o.bcrWithCredit>=1?"var(--good)":"var(--bad)")+'">'+o.bcrWithCredit.toFixed(2)+'x</td></tr>').join("")+
         '</tbody></table>'):'<div class="sv-note" style="margin-top:6px">No in-scope measures for this site at current settings.</div>')+
-      '<div class="sv-note" style="margin-top:8px">Appraised on averted expected annual climate cost (the adaptation engine’s own figures; planning-grade costs). The split of certain retained saving vs negotiated premium saving, and the TCOR benefit-cost ratio with and without the premium credit, arrive with the TCOR-aware payoff module; until then this table states the engine’s appraisal and nothing more.</div></div>'+
+      '<div class="sv-note" style="margin-top:8px">'+esc(opps.length?opps[0].basis+". ":"")+'The certain column accrues the moment the work is done: it is the reduction in losses YOU retain (below deductibles, BI waiting periods and overages, uninsured heat). The premium ask is cash only if the insurer reprices at renewal, so a measure that clears breakeven on the certain column alone needs nobody\u2019s permission to pay off. Planning-grade costs; replace with engineering estimates before committing capital.</div></div>'+
     '</div></div>';
   host.innerHTML=h;
 
@@ -5394,7 +5967,10 @@ function exportComponentBreakdownCsv(){
   TCOR_COMPONENTS.forEach(cc=>add("tcor_component",cc.key,c.portComp[cc.key],cc.label));
   add("tcor_total","total",c.tp.total,"five components above");
   add("expected_year","total",c.expectedYear,"mean annual TCOR");
-  add("bad_year_p99","total",c.badYear,"retained property at p99 simulated year; BI and fixed at expected level");
+  add("bad_year_p99","total",c.badYear,"retained property + BI at the p99 simulated year (joint); premium and fixed at expected level");
+  add("bad_year_property_p99","prop",c.sim.p99,"retained property alone at its p99 simulated year");
+  add("bad_year_bi_p99","bi",c.sim.bi.p99,"retained BI alone at its p99 simulated year");
+  add("indirect_demand_shock","indirect",c.tp.ctx.bi.demandShock?c.tp.ctx.bi.demandShock.total:0,"regional demand shock: flagged estimate, uninsured, excluded from TCOR");
   add("gross_modeled_loss","gross",c.tp.waterfall.gross,"property + BI before insurance");
   add("transferred","transfer",c.tp.waterfall.transferredProperty+c.tp.waterfall.transferredBI,"to the insurer");
   add("indirect_flagged","indirect",c.tp.indirect.value,"flagged estimate, excluded from TCOR");
@@ -5487,23 +6063,33 @@ function tcorBriefHtml(){
     ' <small style="color:#777">'+esc(HAZARD_LABEL[r.driver]||r.driver)+(r.estimate?' · est':'')+'</small></td>'+
     '<td class="num mono">'+fmt$(r.total)+'/yr</td></tr>').join("");
 
-  /* top opportunities: the action queue's own ranking (funded first) */
+  /* top opportunities: the action queue's ranking, each split by the
+     TCOR payoff engine into certain saving and negotiated premium ask */
   const q=actionQueue(sites,scenario,c.af,(typeof adapt!=="undefined"&&adapt&&adapt.budget)?+adapt.budget:0);
-  const opps=q.items.slice(0,6).map(it=>
-    '<tr><td>'+esc(it.site)+' · '+esc(it.measure.split("(")[0].trim())+
+  const pctx={sites,join:c.join,af:c.af,prem:tp.ctx.prem};
+  const opps=q.items.slice(0,6).map(it=>{
+    const s2=sites.find(x=>x.id===it.id),m2=MEASURES.find(x=>x.key===it.key);
+    const p=(s2&&m2)?tcorPayoffFor(s2,m2,adapt.m[it.key],scenario,pctx):null;
+    return '<tr><td>'+esc(it.site)+' · '+esc(it.measure.split("(")[0].trim())+
     ' <small style="color:#777">'+(it.funded?"funded":"unfunded")+'</small></td>'+
-    '<td class="num mono">'+fmt$(it.averted)+'/yr for '+fmt$(it.cost)+' · '+it.bcr.toFixed(1)+'x</td></tr>').join("");
+    '<td class="num mono">'+(p
+      ?(fmt$(p.certain.total)+'/yr certain + '+fmt$(p.negotiated.premiumSaving)+'/yr ask · '+p.bcrCertain.toFixed(1)+'x / '+p.bcrWithCredit.toFixed(1)+'x')
+      :(fmt$(it.averted)+'/yr for '+fmt$(it.cost)+' · '+it.bcr.toFixed(1)+'x'))+'</td></tr>';
+  }).join("");
 
   /* the premium position (leads under the renewal framing) */
-  const prem=tp.ctx.prem;
+  const prem=tp.ctx.prem,pos=prem.position||{};
+  const ask=renewalAskFor(sites,scenario,c.af,(typeof adapt!=="undefined"&&adapt&&adapt.budget)?+adapt.budget:0,pctx);
   const premRows=
     tr2("Allocated premium",fmt$(prem.allocatedTotal)+"/yr")+
     tr2("Technical benchmark",fmt$(prem.technicalTotal)+"/yr at "+prem.load+"x load")+
+    tr2("Implied market load",pos.impliedLoad!=null?pos.impliedLoad.toFixed(2)+"x (premiums on file / modeled transfer)":"n/a: no premiums on file")+
     tr2("Actual premiums on file",prem.nActual+" of "+sites.length+" sites · "+fmt$(prem.actualTotal)+"/yr")+
-    tr2("Retained (property + BI + frequency)",fmt$(tp.components.retainedProperty+tp.components.retainedBI)+"/yr");
+    tr2("Retained (property + BI + frequency)",fmt$(tp.components.retainedProperty+tp.components.retainedBI)+"/yr")+
+    tr2("Renewal ask (funded measures)",fmt$(ask.premiumAskUsd)+"/yr negotiated saving to table");
   const oppSec='<h2>Top opportunities (adaptation)</h2><table>'+
     (opps||'<tr><td colspan="2">No in-scope measures at current settings.</td></tr>')+'</table>'+
-    '<div style="font-size:10px;color:#555;margin-top:2px">Planning-grade costs; the TCOR-aware premium-credit split is pending the payoff module and is not shown rather than guessed.</div>';
+    '<div style="font-size:10px;color:#555;margin-top:2px">Certain savings (retained losses the measure removes) accrue regardless of the insurer; the ask is negotiated premium saving at '+Math.round(payoffCreditRealization()*100)+'% credit realization, shown as BCR certain / BCR with credit. Planning-grade costs.</div>';
   const premSec='<h2>Premium & retention position</h2><table>'+premRows+'</table>';
 
   /* honest data-basis footer */
@@ -5520,7 +6106,7 @@ function tcorBriefHtml(){
       (tp.estimate?' · <span class="bflag">estimate: see data basis</span>':'')+'</div>'+
     '<div class="bkpis">'+
       kpi("Total cost of risk",fmt$(tp.total)+"/yr",(tiv?(tp.total/tiv*100).toFixed(2):"0")+"% of "+fmt$(tiv)+" insured value")+
-      kpi("Expected vs bad year",fmt$(c.expectedYear)+" / "+fmt$(c.badYear),"bad year: p99 retained property; BI and premium at expected level")+
+      kpi("Expected vs bad year",fmt$(c.expectedYear)+" / "+fmt$(c.badYear),"bad year: retained property + BI at the p99 simulated year (joint); premium and fixed at expected level")+
       kpi("Gross modeled loss",fmt$(tp.waterfall.gross)+"/yr",xferPct+"% transferred to the insurer: what stays is BI + premium + retained slivers")+
       kpi("Confidence",conf+"%","of TCOR backed by complete data · "+c.nComplete+" of "+sites.length+" sites complete")+
     '</div>'+
@@ -5574,8 +6160,8 @@ Object.assign(INFO,{
     "<p>The stacked bar splits the total into those five parts, in the same colours everywhere they appear. Hover any part for its derivation. Indirect costs (rebooking, reputation) are a flagged estimate and are never inside the total.</p>",
     s:"Engine: event-level retained math for hurricane, per-location ladders for the rest; every figure carries its basis."},
   cmdBadYear:{t:"Expected year vs bad year",b:
-    "<p><b>Expected year</b> is the mean annual TCOR: the long-run average bill. <b>Bad year</b> is what a roughly 1-in-100 year looks like: retained property at the 99th percentile of the engine's seeded 1000-year simulation (which replays the modeled hurricane event table with the shared deductible), with BI, premium, and fixed costs at expected level.</p>"+
-    "<p>The BI side of a bad year (a season that blows through the BI limit) arrives with the full BI module; until then this figure is a labeled partial view, honest rather than precise.</p>"},
+    "<p><b>Expected year</b> is the mean annual TCOR: the long-run average bill. <b>Bad year</b> is what a roughly 1-in-100 year looks like: retained property <b>and retained BI together</b> at the 99th percentile of the engine's seeded 1000-year simulation, with premium and fixed costs at expected level.</p>"+
+    "<p>The simulation replays the modeled hurricane event table with the shared campus deductible; every drawn storm also draws an <b>arrival month</b> from the landfall climatology, and its BI runs through the seasonal terms chain (waiting period, indemnity period, BI limit, the vacation-ownership revenue that keeps flowing). A September landfall whose rebuild eats the winter high season is exactly the year this figure now prices. Without an event table the two sides draw from labeled ladder bands and the basis says so.</p>"},
   cmdConfidence:{t:"Portfolio confidence",b:
     "<p>The share of the TCOR total that stands on <b>complete data</b>: sites where no component needed a default or interim fallback (campus code present, revenue on file, BI limit known, actual premium on file, policy terms confirmed).</p>"+
     "<p>Everything else is still shown, but marked <b>est</b> in the list and on its site view, with the exact missing fields named. Estimates are never silently rendered as precise.</p>"},
@@ -5586,8 +6172,8 @@ Object.assign(INFO,{
     "<p>Start at the <b>gross modeled property loss</b>: what the climate event sets say the buildings lose per year before any insurance. Subtract the <b>transferred</b> portion the insurance program pays. What remains is <b>retained property</b> (with the frequent attritional band shown in green). Add <b>retained BI</b>, the <b>allocated premium</b>, and <b>admin</b>, and you arrive at <b>TCOR</b>: what the portfolio actually retains.</p>"+
     "<p>This one figure is the thesis of the tool: most of the gross number is transferred; the cost that stays is BI plus premium plus a sliver of retained damage. Hover any bar for its exact derivation and basis.</p>"},
   svOpp:{t:"Opportunities",b:
-    "<p>The site's in-scope adaptation measures, appraised by the engine: annual loss averted, one-time cost, simple payback, and the benefit-cost ratio at the current appraisal settings (Advanced &#8594; Adaptation).</p>"+
-    "<p>Costs are planning-grade defaults from published mitigation studies: firm enough to rank, to be replaced with engineering estimates before committing capital. The TCOR-aware split (certain retained saving vs negotiated premium saving, with and without the premium credit) arrives with the payoff module and is flagged until then.</p>"},
+    "<p>The site's in-scope adaptation measures through the TCOR lens. Each payoff is split in two. <b>Certain saving</b> is the reduction in losses you retain either way: below-deductible damage, BI waiting periods and over-limit downtime, uninsured heat cost. It accrues the moment the work is done. <b>Premium ask</b> is the reduction in transferred expected loss priced at the program load and haircut by a credit-realization factor (default from the sourced registry; market recognition of mitigation is bounded and discretionary, so the ask is a negotiation target, not a promise).</p>"+
+    "<p><b>BCR certain</b> counts only the certain column; <b>BCR with credit</b> adds the ask. The dual framing follows published practice: owner-perspective analyses count premium savings, societal ones exclude them as transfers, and no dollar appears in both columns. Costs are planning-grade defaults: firm enough to rank, to be replaced with engineering estimates before committing capital.</p>"},
 });
 /* v2.4.0 display options: which Summary panels show. A pure visibility lens
    over panels the renderers still fully paint; ui.panels[key]===false hides,
@@ -6796,7 +7382,11 @@ function metaSourceLine(s){
   if(s.script)bits.push(esc(String(s.script).split(" ")[0]));
   if(s.generated_utc)bits.push("run "+esc(String(s.generated_utc).slice(0,10)));
   if(s.climada_version)bits.push("climada "+esc(s.climada_version)+(s.climada_petals_version?" + petals "+esc(s.climada_petals_version):""));
-  if(s.nb_synth_tracks)bits.push(esc(s.nb_synth_tracks)+" synth tracks");
+  if(s.nb_synth_tracks){
+    const n=+s.nb_synth_tracks;
+    bits.push(esc(s.nb_synth_tracks)+" synth tracks"
+      +(isFinite(n)&&n<50?" (tail under-resolved; authoritative runs use 50)":""));
+  }
   if(s.surge&&s.surge.dem_path)bits.push("DEM "+esc(String(s.surge.dem_path).split(/[\/\\]/).pop()));
   if(s.method)bits.push(esc(s.method));
   if(s.years&&s.years.length)bits.push("climatology "+esc(s.years[0])+"-"+esc(s.years[s.years.length-1]));
@@ -6854,6 +7444,13 @@ function renderHazProv(){
     if(md){
       metaSources(md).forEach((s,i)=>{const line=metaSourceLine(s);
         if(line)kv+='<span class="k">'+(i===0?"Pipeline":"")+'</span><span class="v">'+line+'</span>';});
+      /* Tail convention + track count: the two facts a coverage decision
+         needs next to any 250/500-year figure (RISK_MATH_REVIEW 3.1). */
+      const tracks=metaSources(md).map(s=>+s.nb_synth_tracks).filter(n=>isFinite(n)&&n>0);
+      const trackN=tracks.length?Math.max.apply(null,tracks):null;
+      kv+='<span class="k">High-RP tail</span><span class="v">grid path <b>extrapolates</b> beyond the largest simulated return period'
+        +(trackN!=null?'; · '+trackN+' synth tracks'+(trackN<50?' <small style="color:var(--warn-ink)">(under-resolved; authoritative runs use 50)</small>':''):'')
+        +'. The results pack clamps the tail <b>flat</b> instead. Figures on this tab use the grid convention unless a pack is loaded.</span>';
       const skipped=(md.skipped||[]).length;
       if(skipped)kv+='<span class="k">Skipped</span><span class="v">'+skipped+' layer'+(skipped>1?"s":"")+' in the last run fell back to interim (details in the meta file)</span>';
       kv+='<span class="k">Meta file</span><span class="v mono">'+esc(hazardMeta.name)+' \u00b7 '+hazardMeta.loaded+'</span>';
@@ -7533,6 +8130,10 @@ function loadSiteCsv(text){
     const be3=toNum(row.get("bi_ee_usd"));if(isFinite(be3)&&be3>=0)rec.bi_ee_usd=be3;
     const pa3=toNum(row.get("premium_annual_usd"));if(isFinite(pa3)&&pa3>=0)rec.premium_annual_usd=pa3;
     const ms3=toNum(row.get("mitigation_annual_usd"));if(isFinite(ms3)&&ms3>=0)rec.mitigation_annual_usd=ms3;
+    /* Task 3 (BI module): share of the site's revenue from vacation-ownership
+       operations (0..1); the maintenance-fee part of it keeps flowing during
+       a closure, shrinking insurable BI. Absent = 0 (pure hotel). */
+    const ts3=toNum(row.get("timeshare_share"));if(isFinite(ts3)&&ts3>=0&&ts3<=1)rec.timeshare_share=ts3;
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
@@ -7712,13 +8313,16 @@ function routeHazFiles(files){
     setTimeout(()=>{
       const jsons=[],csvs=[];
       list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-      /* a loss run announces itself by its claim columns: route it to the
-         calibration loader instead of the hazard-grid parser */
+      /* a loss run announces itself by its claim columns, an SOV by its
+         TIV/campus columns (Task 8): route both to their loaders instead
+         of the hazard-grid parser */
       const grids=[];
       csvs.forEach(o=>{
         const h=(o.text.split(/\r?\n/,1)[0]||"").toLowerCase();
-        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)) loadLossRun(o.text,o.name);
-        else grids.push(o);
+        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)){ loadLossRun(o.text,o.name); return; }
+        const head=splitCsvLine(h).map(x=>x.trim());
+        if(sovLooksLike(head)){ loadSovCsv(o.text,o.name); return; }
+        grids.push(o);
       });
       if(grids.length===1) loadHazardCsv(grids[0].text,grids[0].name);
       else if(grids.length>1) loadHazardCsvMulti(grids);
@@ -7728,6 +8332,212 @@ function routeHazFiles(files){
 }
 
 /* ---- persistence (guarded; safe if storage is unavailable or full) ---- */
+/* ============================================================
+   SOV importer (overhaul Task 8)
+   The broker's Statement of Values is the on-file source of record for
+   campus codes, TIV, BI & EE declared values, tenure, occupancy, and
+   per-site premium: exactly the fields that move the TCOR confidence
+   bar from estimate toward complete. This module ingests the SOV
+   workbook's CSV export under header aliases (broker column names
+   drift, like the loss run's), matches rows to the loaded portfolio
+   (site_id first, exact normalized name second, containment third:
+   the loss-run matcher's discipline), and applies the SOV's facts,
+   SUPERSEDING hand-keyed values for the schema-v3 TCOR fields the SOV
+   carries: the SOV is the fact on file. Vulnerability profile fields
+   (construction, year built) are filled only where ABSENT: an
+   operator-verified profile is never overwritten by a broker schedule.
+   Every applied field is recorded on the site (sov_fields) so the
+   provenance vocabulary can read "sov"; unmatched rows are reported
+   WITH their TIV so no exposure silently vanishes. With no portfolio
+   loaded, an SOV that carries coordinates BOOTSTRAPS the portfolio.
+   ============================================================ */
+let sovLog=null;   // session import report: {name,loaded,matched,unmatched,...}
+
+const SOV_ALIASES={
+  site_id:["site id","location id","loc id","location number","location no","loc #","location #","site #","site no","bldg id","location code"],
+  name:["location name","property name","site name","insured location","location description","property","location"],
+  named_insured:["named insured","insured","insured name","entity"],
+  campus_code:["campus code","campus id","campus #","campus no"],
+  campus_name:["campus name","campus"],
+  owned_or_leased:["owned/leased","owned or leased","tenure","ownership","own/lease","owned leased"],
+  latitude:["latitude","lat"],
+  longitude:["longitude","lon","lng","long"],
+  tiv:["total insured value","tiv","total tiv","total values","total value","total insured values"],
+  building:["building value","building","real property","building limit","building values"],
+  contents:["contents","contents value","personal property","bpp","content value"],
+  bi_ee:["bi/ee","bi & ee","bi and ee","bi ee","business interruption","business income","bi value","time element","bi/ee value","bi & ee value"],
+  premium:["annual premium","premium","allocated premium","premium allocation","total premium","property premium"],
+  occupancy:["occupancy","occupancy type","use","property type","occupancy description"],
+  year_built:["year built","yr built","year of construction","construction year"],
+  construction:["construction","construction type","construction class","iso construction"]
+};
+function sovHeaderMap(head){
+  const m={};
+  for(const key in SOV_ALIASES){
+    for(const alias of SOV_ALIASES[key]){
+      const i=head.indexOf(alias);
+      if(i>=0){m[key]=alias;break;}
+    }
+  }
+  return m;
+}
+/* does a parsed CSV header look like an SOV rather than CLAM's own site
+   schema or a hazard grid? CLAM's schema (asset_value_usd) always wins. */
+function sovLooksLike(head){
+  if(head.indexOf("asset_value_usd")>=0)return false;
+  if(["lat","lon","scenario"].every(k=>head.indexOf(k)>=0))return false;  // hazard grid
+  const has=k=>SOV_ALIASES[k].some(a=>head.indexOf(a)>=0);
+  const n=["tiv","building","campus_code","campus_name","named_insured","premium","bi_ee","owned_or_leased"]
+    .filter(has).length;
+  return has("tiv")||n>=2;
+}
+/* SOV construction strings -> the app's three vulnerability classes.
+   Only used to FILL an absent profile field, never to overwrite one. */
+function sovConstructionClass(v){
+  const c=String(v==null?"":v).toLowerCase();
+  if(!c.trim())return null;
+  if(/fire\s*resist|reinforced|concrete|steel|superior|modified\s*fr/.test(c))return "engineered";
+  if(/masonry|joisted|jm\b|cb\b|block|brick|non.?combustible/.test(c))return "masonry";
+  if(/frame|wood|timber/.test(c))return "frame";
+  return null;
+}
+function sovMoney(v){
+  if(v==null)return null;
+  const n=parseFloat(String(v).replace(/[$,()\s]/g,m=>m==="("?"-":""));
+  return isFinite(n)&&n>=0?n:null;
+}
+/* row -> site: site_id against site_id or name, exact normalized name,
+   then containment either way (lossrunNorm's normalization) */
+function sovSiteMatch(rowSiteId,rowName,sitesArr){
+  const sid=String(rowSiteId==null?"":rowSiteId).trim().toLowerCase();
+  if(sid){
+    for(const s of sitesArr){
+      if(String(s.site_id==null?"":s.site_id).trim().toLowerCase()===sid)return s;
+    }
+  }
+  const cn=lossrunNorm(rowName);if(!cn)return null;
+  for(const s of sitesArr)if(lossrunNorm(s.name)===cn)return s;
+  for(const s of sitesArr){
+    const sn=lossrunNorm(s.name);
+    if(sn&&(cn.indexOf(sn)>=0||sn.indexOf(cn)>=0))return s;
+  }
+  return null;
+}
+/* one SOV row -> the field set to apply. supersede: schema-v3 TCOR facts
+   + TIV; fill-if-absent: vulnerability profile fields. */
+function sovRowFields(row,cols){
+  const out={supersede:{},fill:{},flags:[]};
+  const get=k=>cols[k]!=null?row.get(cols[k]):undefined;
+  const cc=String(get("campus_code")||"").trim();if(cc)out.supersede.campus_code=cc.slice(0,40);
+  const cn=String(get("campus_name")||"").trim();if(cn)out.supersede.campus_name=cn.slice(0,120);
+  const ni=String(get("named_insured")||"").trim();if(ni)out.supersede.named_insured=ni.slice(0,80);
+  const ol=String(get("owned_or_leased")||"").trim().toLowerCase();
+  if(/^own/.test(ol))out.supersede.owned_or_leased="owned";
+  else if(/^leas|^rent/.test(ol))out.supersede.owned_or_leased="leased";
+  const be=sovMoney(get("bi_ee"));if(be!=null)out.supersede.bi_ee_usd=be;
+  const pa=sovMoney(get("premium"));if(pa!=null)out.supersede.premium_annual_usd=pa;
+  let tiv=sovMoney(get("tiv"));
+  if(tiv==null){
+    const b=sovMoney(get("building")),c2=sovMoney(get("contents"));
+    if(b!=null){tiv=b+(c2||0);out.flags.push("TIV derived as building + contents");}
+  }
+  if(tiv!=null&&tiv>0)out.supersede.asset_value_usd=tiv;
+  const sid=String(get("site_id")||"").trim();if(sid)out.fill.site_id=sid.slice(0,80);
+  const occ=String(get("occupancy")||"").toLowerCase();
+  if(/timeshare|vacation\s*ownership|fractional|interval/.test(occ)){
+    out.fill.timeshare_share=1;
+    out.flags.push("occupancy reads timeshare: continuing-revenue share defaulted for the BI module (edit per site if mixed)");
+  }
+  const cs=sovConstructionClass(get("construction"));if(cs)out.fill.construction=cs;
+  const yb=toNum(get("year_built"));if(isFinite(yb)&&yb>1800&&yb<2100)out.fill.year_built=Math.round(yb);
+  return out;
+}
+function loadSovCsv(text,name){
+  const {head,out}=parseCsv(text);
+  const cols=sovHeaderMap(head);
+  if(cols.tiv==null&&cols.building==null&&cols.campus_code==null&&cols.bi_ee==null&&cols.premium==null){
+    toast("That CSV does not look like an SOV (need TIV / campus / BI & EE / premium columns).");return;
+  }
+  if(cols.name==null&&cols.site_id==null){
+    toast("SOV needs a location name or site/location id column to match against the portfolio.");return;
+  }
+  const rows=[];
+  out.forEach(row=>{
+    const nm=String(cols.name!=null?row.get(cols.name)||"":"").trim();
+    const sid=String(cols.site_id!=null?row.get(cols.site_id)||"":"").trim();
+    if(!nm&&!sid)return;
+    rows.push({row,nm,sid});
+  });
+  if(!rows.length){toast("No usable SOV rows found.");return;}
+
+  /* bootstrap: no portfolio loaded and the SOV carries coordinates */
+  if(!sites.length){
+    if(cols.latitude==null||cols.longitude==null){
+      toast("No portfolio is loaded and this SOV has no coordinates: load the portfolio CSV first, then drop the SOV to enrich it.");return;
+    }
+    const recs=[];let skipped=0;
+    rows.forEach(x=>{
+      const lat=toNum(x.row.get(cols.latitude)),lon=toNum(x.row.get(cols.longitude));
+      const f=sovRowFields(x.row,cols);
+      const val=f.supersede.asset_value_usd;
+      if(!isFinite(lat)||!isFinite(lon)||lat<-90||lat>90||lon<-180||lon>180||!(val>0)){skipped++;return;}
+      const rec=Object.assign({name:(x.nm||x.sid).slice(0,120),latitude:lat,longitude:lon},
+        f.supersede,f.fill);
+      rec.sov_fields=Object.keys(f.supersede).concat(Object.keys(f.fill));
+      recs.push(rec);
+    });
+    if(!recs.length){toast("No SOV rows carried valid coordinates and TIV; nothing loaded.");return;}
+    sites=[];nextId=1;selectedId=null;clearHazCache();ui.portfolioSource="sov";
+    addSites(recs);
+    sovLog={name:name||"sov.csv",loaded:new Date().toISOString().slice(0,16).replace("T"," "),
+      mode:"bootstrap",matched:recs.length,unmatched:[],skipped,
+      fieldsApplied:recs.reduce((a,r)=>a+r.sov_fields.length,0)};
+    if(typeof cmdInvalidate==="function")cmdInvalidate();
+    toast("Portfolio bootstrapped from the SOV: "+recs.length+" site"+(recs.length>1?"s":"")
+      +(skipped?", "+skipped+" row(s) skipped (missing coordinates or TIV)":""));
+    return;
+  }
+
+  /* enrich: match each SOV row to a site and apply its facts */
+  let matched=0,fieldsApplied=0;const unmatched=[];const flags={};
+  const touched={};
+  rows.forEach(x=>{
+    const s=sovSiteMatch(x.sid,x.nm,sites);
+    const f=sovRowFields(x.row,cols);
+    if(!s){
+      unmatched.push({name:x.nm||x.sid,tiv:f.supersede.asset_value_usd||0});
+      return;
+    }
+    matched++;
+    const applied=[];
+    for(const k in f.supersede){ s[k]=f.supersede[k]; applied.push(k); }
+    for(const k in f.fill){ if(s[k]==null||s[k]===""){ s[k]=f.fill[k]; applied.push(k); } }
+    f.flags.forEach(fl=>{flags[fl]=(flags[fl]||0)+1;});
+    if(applied.length){
+      const prev=Array.isArray(s.sov_fields)?s.sov_fields:[];
+      s.sov_fields=prev.concat(applied.filter(k=>prev.indexOf(k)<0));
+      fieldsApplied+=applied.length;
+      touched[s.id]=true;
+    }
+  });
+  const unTiv=unmatched.reduce((a,u)=>a+(u.tiv||0),0);
+  sovLog={name:name||"sov.csv",loaded:new Date().toISOString().slice(0,16).replace("T"," "),
+    mode:"enrich",matched,unmatched,unmatchedTiv:unTiv,fieldsApplied,
+    flags:Object.keys(flags).map(k=>k+(flags[k]>1?" ("+flags[k]+" rows)":""))};
+  clearHazCache();
+  if(typeof cmdInvalidate==="function")cmdInvalidate();
+  persist();render();
+  toast("SOV applied: "+matched+" of "+rows.length+" rows matched, "+fieldsApplied+" fields set"
+    +(unmatched.length?"; "+unmatched.length+" unmatched row(s) carrying "+fmt$(unTiv)+" TIV (see Method & data)":""));
+}
+/* the portfolio drop zone accepts either CLAM's site schema or an SOV:
+   sniff the header and route. Wired in place of the bare loadSiteCsv. */
+function routeSiteCsv(text,name){
+  const first=(String(text||"").replace(/^\uFEFF/,"").split(/\r?\n/,1)[0]||"").toLowerCase();
+  const head=splitCsvLine(first).map(h=>h.trim());
+  if(sovLooksLike(head))loadSovCsv(text,name);
+  else loadSiteCsv(text);
+}
 const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1", LS_PACK="rtv_respack_v1";
 const LS_LOSSRUN="rtv_lossrun_v1", LS_TCOR="rtv_tcor_v1";
 /* Power BI export contract (Phase C): the column ORDER is frozen. The three
@@ -8235,8 +9045,10 @@ function wire(){
   if(msb)msb.onclick=loadSample;
   // site drop
   const sd=document.getElementById("siteDrop"),sf=document.getElementById("siteFile");
-  sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0])readFile(sf.files[0],loadSiteCsv);};
-  dropZone(sd,f=>readFile(f,loadSiteCsv));
+  /* Task 8: the portfolio drop accepts CLAM's site schema or an SOV export;
+     routeSiteCsv sniffs the header and picks the loader */
+  sd.onclick=()=>sf.click();sf.onchange=()=>{if(sf.files[0]){const n=sf.files[0].name;readFile(sf.files[0],t=>routeSiteCsv(t,n));}};
+  dropZone(sd,f=>readFile(f,t=>routeSiteCsv(t,f&&f.name)));
   // backtest drop
   const bd=document.getElementById("btDrop"),bf=document.getElementById("btFile");
   bd.onclick=()=>bf.click();bf.onchange=()=>{if(bf.files[0])readFile(bf.files[0],loadBacktestCsv);};
@@ -8307,35 +9119,55 @@ function yearBracket(y){
   return {i:CMD_YEARS.length-2,f:1};
 }
 
-/* the map's peril layers: label, physical unit, and how the field is
-   read. Grid-backed layers draw the loaded rows; interim layers call
-   the app's own screening models; "none" states why a layer is off. */
-const MAP_PERILS=[
-  {key:"tc",    label:"Wind",       unit:"m/s · 1-in-100 wind speed",
-   interim:(la,lo,sc)=>interimVector(la,lo,sc).vec[100]},
-  {key:"cflood",label:"Surge",      unit:"m · 1-in-100 flood depth",
-   interim:(la,lo,sc)=>coastalFloodVector(la,lo,sc)[100]},
-  {key:"rflood",label:"River flood",unit:"m · 1-in-100 flood depth",
-   interim:(la,lo,sc)=>riverineFloodVector(la,lo,sc)[100]},
-  {key:"heat",  label:"Heat",       unit:"days over 32°C per year",
-   interim:(la,lo,sc)=>heatIndicators(la,lo,sc).daysOver32},
-  {key:"wfire", label:"Wildfire",   unit:"% annual burn probability",
-   interim:null,offReason:"wildfire has no interim spatial field (burn probability is point data); load a wfire grid"},
-  {key:"prain", label:"Rain",       unit:"mm · 1-in-100 event rainfall",
-   interim:null,offReason:"TC rainfall has no interim model by design; load a prain grid"},
-];
-const MAP_PERIL_BY={};MAP_PERILS.forEach(p=>MAP_PERIL_BY[p.key]=p);
+/* MAP_PERILS / hazardField / fieldDomain / fieldFC live in 10_hazard_engine.js
+   so the Node harness can contract-test the map's data path. */
 
-let cmdMapState={peril:"tc",opacity:0.7,enc:"tcor",accum:false,eventId:null,
-  year:null,holdYear:false,playing:false,userMoved:false};
+const LS_CMDMAP="rtv_cmdmap_v1";
+function clLoadMapState(){
+  const base={peril:"tc",opacity:0.7,enc:"tcor",accum:false,eventId:null,
+    year:null,holdYear:false,playing:false,userMoved:false,
+    aggregate:true,compare:false,brand:""};
+  try{
+    const raw=localStorage.getItem(LS_CMDMAP);
+    if(!raw)return base;
+    const s=JSON.parse(raw)||{};
+    if(typeof s.peril==="string")base.peril=s.peril;
+    if(typeof s.opacity==="number"&&s.opacity>=0.1&&s.opacity<=1)base.opacity=s.opacity;
+    if(s.enc==="tcor"||s.enc==="component"||s.enc==="confidence")base.enc=s.enc;
+    if(typeof s.accum==="boolean")base.accum=s.accum;
+    if(typeof s.aggregate==="boolean")base.aggregate=s.aggregate;
+    if(typeof s.compare==="boolean")base.compare=s.compare;
+    if(typeof s.brand==="string")base.brand=s.brand;
+  }catch(e){}
+  return base;
+}
+function clPersistMapState(){
+  try{
+    localStorage.setItem(LS_CMDMAP,JSON.stringify({
+      peril:cmdMapState.peril,opacity:cmdMapState.opacity,enc:cmdMapState.enc,
+      accum:cmdMapState.accum,aggregate:cmdMapState.aggregate,
+      compare:cmdMapState.compare,brand:cmdMapState.brand}));
+  }catch(e){}
+}
+function clPrefersReducedMotion(){
+  try{return !!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches);}
+  catch(e){return false;}
+}
+function clAnnounce(msg){
+  const el=document.getElementById("cmdMapLive");
+  if(el)el.textContent=msg||"";
+}
+
+let cmdMapState=clLoadMapState();
 let _clMap=null,_clReady=false,_clFailed=false;
-let _clHaz=null;        // {key,peril,domain,bases:[..],built:[bool x4]}
-let _clSiteInfo=null;   // {key,maxT}
+let _clHaz=null;        // {key,peril,domain,fields:[..]}
+let _clSiteInfo=null;   // {key,maxT,nMarkers,nRecords}
 let _clFitKey="";
 let _clTcorCache={};    // scenario -> tcorPortfolio rows total map
 let _clTcorCacheKey=null;
 let _clPlayT=null;
 let _clThemeObs=null;
+let _clHoverId=null;
 
 /* resolve a CSS token to its current concrete value (theme-aware) */
 function cssTok(name,fallback){
@@ -8364,41 +9196,6 @@ function perilRamp(hz){
 }
 function rampCss(stops){
   return "linear-gradient(90deg,"+stops.join(",")+")";
-}
-
-/* ---- hazard field for one peril at one modeled scenario ----
-   Returns {features:[{lon,lat,v}], basis:"grid"|"interim",
-   cells, partialFrom} or {none:true, reason}. */
-function hazardField(hz,sc){
-  const P=MAP_PERIL_BY[hz];
-  if(gridByHazard[hz]&&hazardGrid&&hazardGrid.rows){
-    let rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario===sc);
-    let partialFrom=null;
-    if(!rows.length&&sc!=="present"){
-      rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario==="present");
-      partialFrom="present";
-    }
-    if(rows.length){
-      const feats=rows.map(r=>({lon:r.lon,lat:r.lat,
-        v:Math.max(hz==="heat"?(+r.v10||0):(hz==="wfire"?(+r.v10||0):(+r.v100||0)),0)}));
-      return {features:feats,basis:"grid",cells:rows.length,partialFrom};
-    }
-  }
-  if(!P.interim)return {none:true,reason:P.offReason||"no data"};
-  /* interim screening field on a coarse mesh over the basemap region */
-  const b=(typeof CLAM_BASEMAP!=="undefined"&&CLAM_BASEMAP.bbox)||[-180,5,-50,55];
-  const step=0.7,feats=[];
-  for(let la=b[1]+step/2;la<b[3];la+=step)
-    for(let lo=b[0]+step/2;lo<b[2];lo+=step){
-      const v=Math.max(P.interim(la,lo,sc)||0,0);
-      if(v>0)feats.push({lon:+lo.toFixed(2),lat:+la.toFixed(2),v});
-    }
-  return {features:feats,basis:"interim",cells:feats.length,partialFrom:null};
-}
-function fieldFC(field){
-  return {type:"FeatureCollection",features:field.features.map(f=>({
-    type:"Feature",geometry:{type:"Point",coordinates:[f.lon,f.lat]},
-    properties:{v:f.v}}))};
 }
 
 /* ---- the offline basemap style ---- */
@@ -8490,24 +9287,55 @@ function clInit(){
           filter:["==",["get","id"],-1],
           paint:{"circle-radius":26,"circle-color":"rgba(0,0,0,0)",
                  "circle-stroke-color":cssTok("--focus","#1E7FA6"),"circle-stroke-width":2.5}});
+        _clMap.addLayer({id:"clam-hover",type:"circle",source:"clam-sites",
+          filter:["==",["get","id"],-1],
+          paint:{"circle-radius":22,"circle-color":"rgba(0,0,0,0)",
+                 "circle-stroke-color":cssTok("--ink-2","#5B6770"),"circle-stroke-width":1.5,
+                 "circle-stroke-opacity":0.7}});
         _clMap.addLayer({id:"clam-sites-l",type:"circle",source:"clam-sites",
           paint:{"circle-radius":6,"circle-color":cssTok("--seq-5","#20718B"),
                  "circle-stroke-color":cssTok("--surface","#fff"),"circle-stroke-width":1.5,
                  "circle-opacity":0.88}});
+        /* Top-N site labels at mid-zoom (halo for contrast on hazard surfaces). */
+        _clMap.addLayer({id:"clam-labels",type:"symbol",source:"clam-sites",
+          layout:{"text-field":["get","name"],"text-size":11,"text-offset":[0,1.35],
+                  "text-anchor":"top","text-optional":true,"text-max-width":10,
+                  "symbol-sort-key":["-",["get","tcorNow"]],
+                  "text-allow-overlap":false,"text-ignore-placement":false},
+          paint:{"text-color":cssTok("--heading","#1A2A33"),
+                 "text-halo-color":cssTok("--surface","#fff"),"text-halo-width":1.4},
+          minzoom:5});
         _clMap.on("click","clam-sites-l",e=>{
           const f=e.features&&e.features[0];if(!f)return;
           const p=f.properties;
           selectedId=+p.id;
           try{_clMap.setFilter("clam-sel",["==",["get","id"],+p.id]);}catch(err){}
+          clBrushList(+p.id);
+          const nMem=+p.nMembers||1;
           const html='<div style="font-family:inherit;min-width:180px">'+
             '<b style="font-family:var(--font-display);font-size:14px;color:var(--heading)">'+esc(p.name)+'</b>'+
+            (nMem>1?'<div style="font-size:10.5px;color:var(--muted)">'+nMem+' named-insured records</div>':'')+
             '<div class="mono" style="font-size:11px;margin:3px 0">TCOR '+fmt$(+p.tcorNow)+'/yr'+(p.conf==="est"?' · <span style="color:var(--warn-ink)">estimate</span>':'')+'</div>'+
             '<div style="font-size:11px;color:var(--ink-2)">dominant: '+esc(p.domLabel)+'</div>'+
             '<button class="lightbtn primary" style="margin-top:6px;font-size:12px" onclick="openSiteView('+(+p.id)+')">Open site view</button></div>';
           new maplibregl.Popup({closeButton:true,maxWidth:"260px"}).setLngLat(e.lngLat).setHTML(html).addTo(_clMap);
         });
-        _clMap.on("mouseenter","clam-sites-l",()=>{_clMap.getCanvas().style.cursor="pointer";});
-        _clMap.on("mouseleave","clam-sites-l",()=>{_clMap.getCanvas().style.cursor="";});
+        _clMap.on("mouseenter","clam-sites-l",e=>{
+          _clMap.getCanvas().style.cursor="pointer";
+          const f=e.features&&e.features[0];if(!f)return;
+          _clHoverId=+f.properties.id;
+          try{_clMap.setFilter("clam-hover",["==",["get","id"],_clHoverId]);}catch(err){}
+          clBrushList(_clHoverId,true);
+        });
+        _clMap.on("mouseleave","clam-sites-l",()=>{
+          _clMap.getCanvas().style.cursor="";
+          _clHoverId=null;
+          try{_clMap.setFilter("clam-hover",["==",["get","id"],-1]);}catch(err){}
+          clBrushList(selectedId,true);
+        });
+        _clMap.getCanvas().setAttribute("tabindex","0");
+        _clMap.getCanvas().setAttribute("aria-label","Portfolio climate map. Arrow keys pan, plus and minus zoom.");
+        _clMap.getCanvas().addEventListener("keydown",clMapKeyNav);
       }catch(e){}
       /* theme flips restyle the basemap and re-colour the data layers */
       try{
@@ -8529,7 +9357,7 @@ function clHazKey(){
 }
 function clBuildHazard(){
   if(!_clMap||!_clReady)return;
-  const key=clHazKey();
+  const key=clHazKey()+(cmdMapState.compare?"|cmp":"");
   if(_clHaz&&_clHaz.key===key)return;
   /* clear previous */
   for(let i=0;i<CMD_YEARS.length;i++){
@@ -8537,24 +9365,14 @@ function clBuildHazard(){
     try{if(_clMap.getSource("clam-haz-"+i))_clMap.removeSource("clam-haz-"+i);}catch(e){}
   }
   _clHaz={key,peril:cmdMapState.peril,fields:[],domain:null};
-  if(cmdMapState.peril==="none"){clLegend();return;}
+  if(cmdMapState.peril==="none"){clLegend();clAnnounceSummary();return;}
   const pw=cmdScenParts().pathway;
-  const fields=CMD_YEARS.map((y,i)=>hazardField(cmdMapState.peril,scenOfYearIdx(i,pw)));
+  const bbox=(typeof CLAM_BASEMAP!=="undefined"&&CLAM_BASEMAP.bbox)||[-180,5,-50,55];
+  const fields=CMD_YEARS.map((y,i)=>hazardField(cmdMapState.peril,scenOfYearIdx(i,pw),{bbox}));
   _clHaz.fields=fields;
-  if(fields.every(f=>f.none)){clLegend();return;}
-  /* one fixed domain across all horizons so the animation reads:
-     2nd..98th percentile, zero-anchored */
-  const vals=[];
-  fields.forEach(f=>{if(!f.none)f.features.forEach(x=>vals.push(x.v));});
-  vals.sort((a,b)=>a-b);
-  const q=p=>vals.length?vals[Math.min(vals.length-1,Math.floor(p*vals.length))]:0;
-  /* fields with a sparse high tail (surge hugging the coast) need the
-     ramp anchored near the true top, not a global percentile that a
-     sea of near-zeros drags down; p99.5 keeps one wild grid cell from
-     stretching the ramp instead */
-  let lo=0,hi=q(0.995);
-  if(!(hi>0))hi=1;
-  _clHaz.domain=[lo,hi];
+  if(fields.every(f=>f.none)){clLegend();clAnnounceSummary();return;}
+  _clHaz.domain=fieldDomain(fields);
+  const [lo,hi]=_clHaz.domain;
   const ramp=perilRamp(cmdMapState.peril);
   const colorExpr=["interpolate",["linear"],["get","v"],
     lo,ramp[0], lo+(hi-lo)*0.33,ramp[1], lo+(hi-lo)*0.66,ramp[2], hi,ramp[3]];
@@ -8562,8 +9380,18 @@ function clBuildHazard(){
     if(f.none)return;
     try{
       _clMap.addSource("clam-haz-"+i,{type:"geojson",data:fieldFC(f)});
-      _clMap.addLayer({id:"clam-haz-"+i,type:"circle",source:"clam-haz-"+i,
-        paint:{
+      /* Heatmap for dense grid/interim fields reads as a continuous surface;
+         circle-blur remains as a fallback when a field is very sparse. */
+      const useHeat=(f.features||[]).length>=40;
+      _clMap.addLayer({id:"clam-haz-"+i,type:useHeat?"heatmap":"circle",source:"clam-haz-"+i,
+        paint:useHeat?{
+          "heatmap-weight":["interpolate",["linear"],["get","v"],lo,0,hi,1],
+          "heatmap-intensity":["interpolate",["linear"],["zoom"],2,0.55,6,1.15],
+          "heatmap-radius":["interpolate",["linear"],["zoom"],2,18,4,32,6,55,9,90],
+          "heatmap-opacity":0,
+          "heatmap-color":["interpolate",["linear"],["heatmap-density"],
+            0,ramp[0],0.25,ramp[1],0.55,ramp[2],1,ramp[3]]
+        }:{
           "circle-radius":["interpolate",["exponential",1.9],["zoom"],2,3.6,4,8.5,6,26,9,100],
           "circle-blur":0.85,
           "circle-color":colorExpr,
@@ -8572,6 +9400,7 @@ function clBuildHazard(){
   });
   clApplyYear();
   clLegend();
+  clAnnounceSummary();
 }
 function clRestyleData(){
   /* theme change: rebuild colour expressions with the new tokens */
@@ -8581,10 +9410,21 @@ function clRestyleData(){
     const colorExpr=["interpolate",["linear"],["get","v"],
       lo,ramp[0], lo+(hi-lo)*0.33,ramp[1], lo+(hi-lo)*0.66,ramp[2], hi,ramp[3]];
     for(let i=0;i<CMD_YEARS.length;i++){
-      try{if(_clMap.getLayer("clam-haz-"+i))_clMap.setPaintProperty("clam-haz-"+i,"circle-color",colorExpr);}catch(e){}
+      try{
+        if(!_clMap.getLayer("clam-haz-"+i))continue;
+        const t=_clMap.getLayer("clam-haz-"+i).type;
+        if(t==="heatmap"){
+          _clMap.setPaintProperty("clam-haz-"+i,"heatmap-color",
+            ["interpolate",["linear"],["heatmap-density"],0,ramp[0],0.25,ramp[1],0.55,ramp[2],1,ramp[3]]);
+        }else{
+          _clMap.setPaintProperty("clam-haz-"+i,"circle-color",colorExpr);
+        }
+      }catch(e){}
     }
   }
   try{_clMap.setPaintProperty("clam-sel","circle-stroke-color",cssTok("--focus","#1E7FA6"));}catch(e){}
+  try{_clMap.setPaintProperty("clam-labels","text-color",cssTok("--heading","#1A2A33"));}catch(e){}
+  try{_clMap.setPaintProperty("clam-labels","text-halo-color",cssTok("--surface","#fff"));}catch(e){}
   clApplyYear();
   clLegend();
 }
@@ -8600,34 +9440,62 @@ function clTcorTotals(sc){
   }
   return _clTcorCache[sc];
 }
+/* Aggregate named-insured records that share a campus (site_id / coords)
+   into one marker, matching the legacy analyst map. Toggleable. */
+function clSiteMarkers(c){
+  const brand=(cmdMapState.brand||"").trim().toLowerCase();
+  let rows=c.rows;
+  if(brand)rows=rows.filter(r=>String(r.brand||"").toLowerCase()===brand);
+  if(!cmdMapState.aggregate||typeof siteGroupKey!=="function"){
+    return rows.map(r=>({id:r.id,name:r.name,lat:r.lat,lon:r.lon,dom:r.domComp,
+      conf:r.estimate?"est":"ok",ids:[r.id],nMembers:1,tiv:r.tiv||0}));
+  }
+  const m=new Map();
+  rows.forEach(r=>{
+    const s=r.site||sites.find(x=>x.id===r.id)||{latitude:r.lat,longitude:r.lon,name:r.name,brand:r.brand};
+    const k=siteGroupKey(s);
+    let g=m.get(k);
+    if(!g){g={id:r.id,name:r.name,lat:r.lat,lon:r.lon,dom:r.domComp,conf:r.estimate?"est":"ok",
+      ids:[],nMembers:0,tiv:0,domT:0};m.set(k,g);}
+    g.ids.push(r.id);g.nMembers++;g.tiv+=(r.tiv||0);
+    if(r.total>g.domT){g.domT=r.total;g.dom=r.domComp;g.id=r.id;g.name=r.name;
+      g.conf=r.estimate?"est":g.conf;g.lat=r.lat;g.lon=r.lon;}
+    if(r.estimate)g.conf="est";
+  });
+  return [...m.values()];
+}
 function clBuildSites(c){
   if(!_clMap||!_clReady||!c)return;
   const pw=cmdScenParts().pathway;
-  const key=cmdStateKey()+"|"+pw+"|"+scenario;
+  const key=cmdStateKey()+"|"+pw+"|"+scenario+"|"+(cmdMapState.aggregate?"agg":"rec")+"|"+(cmdMapState.brand||"");
   if(_clSiteInfo&&_clSiteInfo.key===key)return;
+  const markers=clSiteMarkers(c);
   const perScen=CMD_YEARS.map((y,i)=>clTcorTotals(scenOfYearIdx(i,pw)));
   let maxT=0;
-  const feats=c.rows.map(r=>{
-    const t=perScen.map(m=>m[r.id]||0);
+  const feats=markers.map(m=>{
+    const t=perScen.map(scMap=>m.ids.reduce((a,id)=>a+(scMap[id]||0),0));
     t.forEach(v=>{if(v>maxT)maxT=v;});
-    return {type:"Feature",geometry:{type:"Point",coordinates:[r.lon,r.lat]},
-      properties:{id:r.id,name:r.name,
+    const now=m.ids.reduce((a,id)=>a+((c.rows.find(r=>r.id===id)||{}).total||0),0);
+    return {type:"Feature",geometry:{type:"Point",coordinates:[m.lon,m.lat]},
+      properties:{id:m.id,name:m.name,nMembers:m.nMembers,
         t0:t[0],t1:t[1],t2:t[2],t3:t[3],
-        tcorNow:r.total,dom:r.domComp,domLabel:TCOR_COMP_BY[r.domComp].label,
-        conf:r.estimate?"est":"ok"}};
+        tcorNow:now,dom:m.dom,domLabel:TCOR_COMP_BY[m.dom].label,
+        conf:m.conf}};
   });
-  _clSiteInfo={key,maxT:maxT||1};
+  _clSiteInfo={key,maxT:maxT||1,nMarkers:feats.length,nRecords:c.rows.length};
   try{_clMap.getSource("clam-sites").setData({type:"FeatureCollection",features:feats});}catch(e){}
   try{_clMap.setFilter("clam-sel",["==",["get","id"],selectedId==null?-1:+selectedId]);}catch(e){}
   /* frame the portfolio once per site-set; never fight the user's hand */
-  const fit=c.rows.map(r=>r.id).sort().join(",");
-  if(fit!==_clFitKey&&!cmdMapState.userMoved&&c.rows.length){
+  const fit=markers.map(m=>m.id).sort().join(",")+"|"+(cmdMapState.brand||"");
+  if(fit!==_clFitKey&&!cmdMapState.userMoved&&markers.length){
     _clFitKey=fit;
     let lo0=Infinity,la0=Infinity,lo1=-Infinity,la1=-Infinity;
-    c.rows.forEach(r=>{lo0=Math.min(lo0,r.lon);la0=Math.min(la0,r.lat);lo1=Math.max(lo1,r.lon);la1=Math.max(la1,r.lat);});
-    try{_clMap.fitBounds([[lo0,la0],[lo1,la1]],{padding:70,maxZoom:6,duration:600});}catch(e){}
+    markers.forEach(r=>{lo0=Math.min(lo0,r.lon);la0=Math.min(la0,r.lat);lo1=Math.max(lo1,r.lon);la1=Math.max(la1,r.lat);});
+    const dur=clPrefersReducedMotion()?0:600;
+    try{_clMap.fitBounds([[lo0,la0],[lo1,la1]],{padding:70,maxZoom:6,duration:dur});}catch(e){}
   }
   clApplyYear();
+  clAnnounceSummary();
 }
 
 /* ---- the continuous year: cross-fade + lerp everything ---- */
@@ -8640,12 +9508,25 @@ function clApplyYear(){
   if(!_clMap||!_clReady)return;
   const y=cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario);
   const {i,f}=yearBracket(y);
-  /* hazard cross-fade: exact at modeled points */
+  /* hazard cross-fade: exact at modeled points. Compare mode holds present
+     (horizon 0) at half opacity beside the scrubbed future so the pathway
+     delta is visible without a swipe control. */
   for(let k=0;k<CMD_YEARS.length;k++){
     let op=0;
-    if(k===i)op=(1-f)*cmdMapState.opacity;
-    else if(k===i+1)op=f*cmdMapState.opacity;
-    try{if(_clMap.getLayer("clam-haz-"+k))_clMap.setPaintProperty("clam-haz-"+k,"circle-opacity",op);}catch(e){}
+    if(cmdMapState.compare){
+      if(k===0)op=0.45*cmdMapState.opacity;
+      if(k===i)op=Math.max(op,(1-f)*cmdMapState.opacity);
+      if(k===i+1)op=Math.max(op,f*cmdMapState.opacity);
+    }else{
+      if(k===i)op=(1-f)*cmdMapState.opacity;
+      else if(k===i+1)op=f*cmdMapState.opacity;
+    }
+    try{
+      if(!_clMap.getLayer("clam-haz-"+k))continue;
+      const t=_clMap.getLayer("clam-haz-"+k).type;
+      if(t==="heatmap")_clMap.setPaintProperty("clam-haz-"+k,"heatmap-opacity",op);
+      else _clMap.setPaintProperty("clam-haz-"+k,"circle-opacity",op);
+    }catch(e){}
   }
   /* site encoding lerp */
   const maxT=(_clSiteInfo&&_clSiteInfo.maxT)||1;
@@ -8674,6 +9555,9 @@ function clApplyYear(){
     _clMap.setPaintProperty("clam-sites-l","circle-stroke-color",cssTok("--surface","#fff"));
     _clMap.setLayoutProperty("clam-accum","visibility",cmdMapState.accum?"visible":"none");
     if(cmdMapState.accum)_clMap.setPaintProperty("clam-accum","heatmap-weight",share);
+    /* show labels only when the portfolio is small enough to read */
+    const n=(_clSiteInfo&&_clSiteInfo.nMarkers)||0;
+    _clMap.setLayoutProperty("clam-labels","visibility",n>0&&n<=40?"visible":"none");
   }catch(e){}
   clSyncScrubUI();
 }
@@ -8743,6 +9627,10 @@ function clStopPlay(){
 }
 function clPlayToggle(){
   if(cmdMapState.playing){clStopPlay();return;}
+  if(clPrefersReducedMotion()){
+    /* jump to end rather than animate when the user asked for less motion */
+    clOnScrub(CMD_YEARS[CMD_YEARS.length-1]);return;
+  }
   cmdMapState.playing=true;cmdMapState.holdYear=true;
   const b=document.getElementById("clPlay");if(b)b.textContent="◼";
   let y=cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario);
@@ -8781,6 +9669,7 @@ function clRenderCtl(c){
   if(!host)return;
   const st=cmdMapState;
   const evs=clEventList(c);
+  const brands=[...new Set((c.rows||[]).map(r=>r.brand).filter(Boolean))].sort();
   let h='<div class="mapchips" role="group" aria-label="Hazard layer">'+
     '<span class="lbl">Hazard</span>'+
     MAP_PERILS.map(p=>{
@@ -8797,8 +9686,16 @@ function clRenderCtl(c){
     [["tcor","TCOR intensity"],["component","Dominant part"],["confidence","Confidence"]].map(([k,l])=>
       '<button type="button" class="mapchip" data-clenc="'+k+'" aria-pressed="'+(st.enc===k?"true":"false")+'">'+l+'</button>').join("")+
     '<button type="button" class="mapchip" id="clAccum" aria-pressed="'+(st.accum?"true":"false")+'" title="Where the portfolio\'s TCOR concentrates geographically">Accumulation</button>'+
+    '<button type="button" class="mapchip" id="clAgg" aria-pressed="'+(st.aggregate?"true":"false")+'" title="One marker per campus (named-insured records sharing a site)">Campus</button>'+
+    '<button type="button" class="mapchip" id="clCompare" aria-pressed="'+(st.compare?"true":"false")+'" title="Hold present-day hazard beside the scrubbed future">Compare</button>'+
     infoBtn("mapAccum")+
     '</div>';
+  if(brands.length>1){
+    h+='<div class="mapchips" role="group" aria-label="Brand filter"><span class="lbl">Brand</span>'+
+      '<select id="clBrandSel" aria-label="Filter map sites by brand"><option value="">all brands</option>'+
+      brands.map(b=>'<option value="'+esc(b)+'"'+(st.brand===b?" selected":"")+'>'+esc(b)+'</option>').join("")+
+      '</select></div>';
+  }
   if(evs.length){
     h+='<div class="mapchips" role="group" aria-label="Event footprints"><span class="lbl">Event</span>'+
       '<select id="clEvtSel" aria-label="Modeled event footprint"><option value="">footprint off</option>'+
@@ -8808,16 +9705,22 @@ function clRenderCtl(c){
   }else if(st.eventId){st.eventId=null;clShowEvent(null);}
   host.innerHTML=h;
   host.querySelectorAll("[data-clperil]").forEach(b=>b.onclick=()=>{
-    st.peril=b.dataset.clperil;_clHaz=null;
+    st.peril=b.dataset.clperil;_clHaz=null;clPersistMapState();
     clBuildHazard();clRenderCtl(c);
   });
   host.querySelectorAll("[data-clenc]").forEach(b=>b.onclick=()=>{
-    st.enc=b.dataset.clenc;clApplyYear();clLegend();clRenderCtl(c);
+    st.enc=b.dataset.clenc;clPersistMapState();clApplyYear();clLegend();clRenderCtl(c);
   });
   const ac=document.getElementById("clAccum");
-  if(ac)ac.onclick=()=>{st.accum=!st.accum;clApplyYear();clRenderCtl(c);};
+  if(ac)ac.onclick=()=>{st.accum=!st.accum;clPersistMapState();clApplyYear();clRenderCtl(c);};
+  const ag=document.getElementById("clAgg");
+  if(ag)ag.onclick=()=>{st.aggregate=!st.aggregate;_clSiteInfo=null;clPersistMapState();clBuildSites(c);clRenderCtl(c);clLegend();};
+  const cm=document.getElementById("clCompare");
+  if(cm)cm.onclick=()=>{st.compare=!st.compare;_clHaz=null;clPersistMapState();clBuildHazard();clRenderCtl(c);clLegend();};
   const op=document.getElementById("clOpacity");
-  if(op)op.oninput=()=>{st.opacity=(+op.value)/100;clApplyYear();};
+  if(op)op.oninput=()=>{st.opacity=(+op.value)/100;clPersistMapState();clApplyYear();};
+  const br=document.getElementById("clBrandSel");
+  if(br)br.onchange=()=>{st.brand=br.value||"";_clSiteInfo=null;clPersistMapState();clBuildSites(c);clLegend();clAnnounceSummary();};
   const es=document.getElementById("clEvtSel");
   if(es)es.onchange=()=>{
     st.eventId=es.value||null;
@@ -8897,14 +9800,18 @@ function clLegend(ev){
         '<div class="lgd-minmax"><span>'+(+_clHaz.domain[0].toFixed(1))+'</span><span>'+(+_clHaz.domain[1].toFixed(_clHaz.domain[1]<2?2:(_clHaz.domain[1]<20?1:0)))+'+</span></div>'+
         '<div class="lgd-basis'+(f0.basis==="grid"?"":" est")+'">'+esc(basis)+
         (f0.basis==="grid"?"":" · exploration only, not disclosure")+
-        (partial?" · missing horizons reuse the present-day grid (partial coverage, flagged)":"")+'</div>';
+        (partial?" · missing horizons reuse the present-day grid (partial coverage, flagged)":"")+
+        (cmdMapState.compare?" · compare: present held beside the scrubbed future":"")+'</div>';
     }else{
       const f=_clHaz.fields[0];
       h+='<div class="lh">'+esc(P.label)+'</div><div class="lgd-basis est">layer off: '+esc((f&&f.reason)||"no data")+'</div>';
     }
   }
   const encLab={tcor:"colour = TCOR intensity · area = TCOR",component:"colour = dominant component · area = TCOR",confidence:"colour = confidence · area = TCOR"};
-  h+='<div class="lh" style="margin-top:6px">Sites</div><div class="lgd-basis">'+encLab[cmdMapState.enc]+'</div>';
+  const nMark=_clSiteInfo?_clSiteInfo.nMarkers:0,nRec=_clSiteInfo?_clSiteInfo.nRecords:0;
+  h+='<div class="lh" style="margin-top:6px">Sites</div><div class="lgd-basis">'+encLab[cmdMapState.enc]+
+    (cmdMapState.aggregate&&nRec>nMark?" · "+nMark+" campus marker"+(nMark===1?"":"s")+" ("+nRec+" records)":"")+
+    (cmdMapState.brand?" · brand filter: "+esc(cmdMapState.brand):"")+'</div>';
   if(cmdMapState.enc==="component"){
     h+=TCOR_COMPONENTS.map(cc=>'<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;font-size:10px;color:var(--ink-2)"><i style="width:8px;height:8px;border-radius:2px;background:'+cc.color+';display:inline-block"></i>'+esc(cc.label)+'</span>').join("");
   }else if(cmdMapState.enc==="confidence"){
@@ -8916,6 +9823,42 @@ function clLegend(ev){
     h+='<div class="evt-card"><b>'+esc(ev.id)+'</b> · 1-in-'+Math.round(1/Math.max(ev.freq,1e-6))+' · '+fmt$(ev.tot)+' across <b>'+ev.hits.length+' site'+(ev.hits.length>1?"s":"")+'</b><br>one storm, one shared hurricane deductible per campus: the accumulation the shared-retention math prices.</div>';
   }
   lg.innerHTML=h;
+}
+
+function clBrushList(id,hoverOnly){
+  const scroll=document.getElementById("cmdListScroll");
+  if(!scroll)return;
+  scroll.querySelectorAll("tr[data-sv]").forEach(tr=>{
+    const on=+tr.dataset.sv===+id;
+    tr.classList.toggle("map-hover",!!hoverOnly&&on);
+    if(!hoverOnly)tr.classList.toggle("sel",on);
+  });
+  if(!hoverOnly&&id!=null){
+    const tr=scroll.querySelector('tr[data-sv="'+id+'"]');
+    if(tr&&typeof tr.scrollIntoView==="function")try{tr.scrollIntoView({block:"nearest",behavior:clPrefersReducedMotion()?"auto":"smooth"});}catch(e){}
+  }
+}
+function clAnnounceSummary(){
+  if(!_clSiteInfo)return;
+  const P=MAP_PERIL_BY[cmdMapState.peril];
+  const y=Math.round(cmdMapState.year!=null?cmdMapState.year:yearOfScen(scenario));
+  const basis=_clHaz&&_clHaz.fields?(_clHaz.fields.find(f=>!f.none)||{}).basis:null;
+  const msg=_clSiteInfo.nMarkers+" site marker"+(_clSiteInfo.nMarkers===1?"":"s")
+    +" on the map"
+    +(P?" · "+P.label+(basis==="grid"?" from the hazard grid":basis==="interim"?" from the interim screening field":" off"):"")
+    +" · year "+(y===CMD_YEARS[0]?"present":y)
+    +(cmdMapState.compare?" · compare on":"");
+  clAnnounce(msg);
+}
+function clMapKeyNav(e){
+  if(!_clMap||!_clReady)return;
+  const pan=40;
+  if(e.key==="ArrowLeft"){_clMap.panBy([-pan,0]);e.preventDefault();}
+  else if(e.key==="ArrowRight"){_clMap.panBy([pan,0]);e.preventDefault();}
+  else if(e.key==="ArrowUp"){_clMap.panBy([0,-pan]);e.preventDefault();}
+  else if(e.key==="ArrowDown"){_clMap.panBy([0,pan]);e.preventDefault();}
+  else if(e.key==="+"||e.key==="="){_clMap.zoomIn();e.preventDefault();}
+  else if(e.key==="-"||e.key==="_"){_clMap.zoomOut();e.preventDefault();}
 }
 
 /* ---- entry point, called from renderCommand() every paint ----
@@ -8942,6 +9885,7 @@ function climateMapUpdate(c){
   clRenderScrub();
   if(!cmdMapState.eventId)clShowEvent(null);
   try{_clMap.setFilter("clam-sel",["==",["get","id"],selectedId==null?-1:+selectedId]);}catch(e){}
+  clBrushList(selectedId);
   return true;
 }
 function climateMapResize(){ if(_clMap&&_clReady){try{_clMap.resize();}catch(e){}} }
@@ -8951,22 +9895,27 @@ function climateMapFocus(id){
   if(!s||!_clMap||!_clReady)return;
   selectedId=id;
   try{_clMap.setFilter("clam-sel",["==",["get","id"],+id]);}catch(e){}
+  clBrushList(id);
   cmdMapState.userMoved=true;
-  try{_clMap.flyTo({center:[+s.longitude,+s.latitude],zoom:7.5,duration:900});}catch(e){}
+  const dur=clPrefersReducedMotion()?0:900;
+  try{_clMap.flyTo({center:[+s.longitude,+s.latitude],zoom:7.5,duration:dur});}catch(e){}
 }
 
 /* ---- plain-language explanations for the map surfaces ---- */
 Object.assign(INFO,{
   mapLayers:{t:"Hazard layers",b:
     "<p>Each layer draws CLAM's own modeled hazard as a continuous coloured surface with a physical-unit legend: 1-in-100 wind speed (m/s), 1-in-100 flood or surge depth (m), days over 32&deg;C, annual burn probability (%), 1-in-100 event rainfall (mm).</p>"+
-    "<p><b>Where the surface comes from is stated in the legend.</b> With a CLIMADA hazard grid loaded, the map draws the grid's own cells, never a resampling. Without one, the app's documented interim screening field fills in and the legend says so (exploration only). Wildfire and TC rainfall have no interim spatial field by design, so those layers stay off until a grid supplies them, with the reason stated.</p>",
+    "<p><b>Where the surface comes from is stated in the legend.</b> With a CLIMADA hazard grid loaded, the map draws the grid's own cells, never a resampling. Without one, the app's documented interim screening field fills in and the legend says so (exploration only). Wildfire and TC rainfall have no interim spatial field by design, so those layers stay off until a grid supplies them, with the reason stated.</p>"+
+    "<p><b>Compare</b> holds the present-day surface at half strength beside the scrubbed future so the pathway delta is visible without inventing a swipe control.</p>",
     s:"The same hazard engine every figure uses; the map adds no new science."},
   mapScrub:{t:"The climate pathway timeline",b:
     "<p>Drag the year, or press play, to watch the portfolio's hazard and TCOR migrate along the selected emissions pathway from present through 2030, 2050, and 2080. The hazard surfaces cross-fade between the bracketing modeled horizons and the site encoding interpolates continuously, so the eye sees the pathway rather than a hard cut.</p>"+
-    "<p><b>Modeled vs interpolated, honestly:</b> the chip beside the year says which one you are on. Dots on the track mark the modeled horizons the engine actually computed; every position between them is a visual interpolation only, and the headline and decision list always show the nearest modeled point. No precision exists between modeled years, and none is implied.</p>",
+    "<p><b>Modeled vs interpolated, honestly:</b> the chip beside the year says which one you are on. Dots on the track mark the modeled horizons the engine actually computed; every position between them is a visual interpolation only, and the headline and decision list always show the nearest modeled point. No precision exists between modeled years, and none is implied.</p>"+
+    "<p>Playback respects <code>prefers-reduced-motion</code>: when that preference is on, play jumps to 2080 instead of animating.</p>",
     s:"The timeline IS the global scenario control: scrubbing the map updates the headline and the list."},
   mapAccum:{t:"Accumulation",b:
     "<p>A concentration view of TCOR: kernel density weighted by each site's TCOR at the current point on the pathway, so geographic clustering of exposure is obvious at a glance. Where the teal deepens, one storm can reach several sites at once.</p>"+
+    "<p><b>Campus</b> aggregates named-insured records that share a site into one marker (the legacy analyst behaviour). <b>Brand</b> filters the map to one collection without touching the decision list.</p>"+
     "<p>The event footprints (when a results pack is loaded) make the same point with real modeled events: one storm, these sites, one shared hurricane deductible per campus.</p>"},
   mapEvents:{t:"Event footprints",b:
     "<p>Pick a modeled event from the results pack's event table and the map draws which sites it hit, sized by each site's loss in that event, with the hull of the footprint outlined.</p>"+

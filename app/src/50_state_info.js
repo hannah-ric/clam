@@ -176,7 +176,8 @@ const INFO={
     "<p><b>Honest limit:</b> at realistic point probabilities (roughly 0 to 2%/yr even in high-risk WUI) wildfire contributes to expected annual damage but not to the 1-in-100 tail figures in this app. The results pack carries the fire tail as a per-site occurrence exceedance.</p>"},
   prain:{t:"TC rainfall",b:
     "<p>Event rainfall (mm at each return period, from a prain grid) becomes ponding depth through documented drainage constants: depth = max(0, rain - "+PRAIN_DRAIN_MM+" mm) x "+PRAIN_POND_COEFF+", then the flood damage curve with a "+PRAIN_FB+" m freeboard.</p>"+
-    "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"},
+    "<p>There is deliberately <b>no interim model</b>: rainfall cannot be proxied honestly from regional anchors, so this peril stays zero until a grid is loaded and the trust chip says so.</p>"+
+    "<p><b>Honest limit (v3):</b> the ponding transform is a screening floor, recalibrated so a Harvey-class event can register loss. It still understates site-specific pluvial until a drainage study replaces the constants; the trust chip labels it screening, never a green finding of negligible rain risk.</p>"},
   tc:{t:"Tropical-cyclone wind",b:
     "<p>Wind speeds by return period feed the <b>Emanuel (2011)</b> damage curve, the same one CLIMADA uses (<code>emanuel_usa</code>).</p>"+
     "<p>Damage begins around <code>25.7 m/s</code> and rises steeply toward <code>74.7 m/s</code>.</p>"},

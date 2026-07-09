@@ -326,6 +326,31 @@ def main(path: str, meta_path: str | None = None,
                 warn("cflood rows present but no source records a DEM path")
             if "heat" in set(df["hazard"]) and not any(s.get("method") for s in srcs):
                 warn("heat rows present but no source records a method")
+            # Tail-resolution gate: NB_SYNTH_TRACKS=10 under-resolves the
+            # 250/500-year wind/surge tail used by insurance-layer pricing.
+            tracks = []
+            for s in srcs:
+                t = s.get("nb_synth_tracks")
+                if t is not None and str(t).strip() != "":
+                    try:
+                        tracks.append(int(str(t).strip()))
+                    except ValueError:
+                        tracks.append(0)
+            if tracks and max(tracks) < 50:
+                warn(f"nb_synth_tracks={max(tracks)} under-resolves the "
+                     f"250/500-year tail; authoritative quarterly runs should "
+                     f"use 50 (export RTV_NB_SYNTH_TRACKS=50). The app Method "
+                     f"tab surfaces this next to the high-RP figures.")
+            elif tracks:
+                ok(f"nb_synth_tracks={max(tracks)} meets the authoritative "
+                   f"tail-resolution floor (>=50)")
+            # Tail convention: the grid path extrapolates high RPs; the pack
+            # clamps flat. Surface which one this artifact used.
+            if any(h in set(df["hazard"]) for h in ("tc", "cflood", "rflood", "prain")):
+                warn("grid RP intensities use local_exceedance_intensity "
+                     "(method=extrapolate) for the high tail; the results pack "
+                     "clamps flat beyond the largest simulated RP. Method-tab "
+                     "copy states which convention a figure used.")
             n_skip = len(meta.get("skipped", []))
             if n_skip:
                 warn(f"meta records {n_skip} skipped layer(s) from the last run: "

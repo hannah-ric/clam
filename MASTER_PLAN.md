@@ -262,6 +262,52 @@ by-peril split, export columns, chip counts, and INFO copy all agree on six
 perils.
 
 -----------------------------------------------------------------------------
+TCOR OVERHAUL (v3 program; engine tasks tracked in code comments)
+-----------------------------------------------------------------------------
+
+Tasks 1, 2, 5 (TCOR spine, event-level retained engine with the shared
+per-occurrence campus deductible, loss-run calibration) shipped with the v3
+command surface. The 2026-07 increment closed the remaining engine gaps:
+
+Task 3 (SHIPPED): the BI module. The interim linear damage-to-downtime
+chain is retired. Downtime follows the Hazus RES4 piecewise nodes on the
+operator's reopen anchor with a 120-day REDi impeding-factor floor once
+damage is structural; gross BI walks the downtime window through regional
+monthly revenue shapes (Caribbean/Florida/Gulf/Hawaii, mean 1.0) with the
+event's arrival month drawn from the NOAA landfall climatology, on the
+lossable share of daily GOP after the vacation-ownership continuing
+stream (timeshare_share x 0.65, MVW-disclosure-grounded). The seeded year
+simulation carries retained BI per occurrence (seasonal month draw, full
+terms chain), so the bad-year figure is the JOINT property + BI p99, no
+longer BI at expected level. The regional demand shock (undamaged sites
+in a hit region, uninsured) is computed on the event table and rides the
+flagged indirect line, never the total. All constants live in
+pipeline/assumptions.py with citations (registry v2).
+
+TCOR-aware payoff engine (SHIPPED, 26_payoff.js): every (site, measure)
+payoff splits into the CERTAIN retained saving (below-deductible damage,
+BI waiting/overage, uninsured heat: accrues regardless of the insurer,
+computed on the same ladders and deductibles as the TCOR engine, campus-
+shared for hurricane) and the NEGOTIATED premium saving (transferred-loss
+reduction x load x credit realization, default 0.5 in the registry with
+the evidence poles cited). BCR reported both without and with the credit;
+the opportunities tables, board brief, and renewal ask read these live.
+
+Task 4 (SHIPPED): the premium module's gap surface: per-site rate per
+$100 TIV on both bases, signed actual-vs-technical gaps, the implied
+market load from on-file premiums (which the payoff engine's negotiated
+savings then stand on), and the portfolio over/under position.
+
+Task 8 (SHIPPED): the SOV importer. Header-alias ingestion of the broker
+Statement of Values (drop it on either drop zone; sniffed by columns);
+matches rows site_id-first with the loss-run matcher's discipline;
+SUPERSEDES hand-keyed TCOR facts (campus code, tenure, TIV, BI & EE,
+premium), fills vulnerability profile fields only where absent, flags a
+timeshare occupancy into timeshare_share, records sov_fields per site for
+the provenance vocabulary, reports unmatched rows WITH their TIV, and
+bootstraps a portfolio from nothing when the SOV carries coordinates.
+
+-----------------------------------------------------------------------------
 PHASE C: THE EXPERIENCE LEAP (frontend v2)
 -----------------------------------------------------------------------------
 

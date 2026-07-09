@@ -82,6 +82,10 @@ function loadSiteCsv(text){
     const be3=toNum(row.get("bi_ee_usd"));if(isFinite(be3)&&be3>=0)rec.bi_ee_usd=be3;
     const pa3=toNum(row.get("premium_annual_usd"));if(isFinite(pa3)&&pa3>=0)rec.premium_annual_usd=pa3;
     const ms3=toNum(row.get("mitigation_annual_usd"));if(isFinite(ms3)&&ms3>=0)rec.mitigation_annual_usd=ms3;
+    /* Task 3 (BI module): share of the site's revenue from vacation-ownership
+       operations (0..1); the maintenance-fee part of it keeps flowing during
+       a closure, shrinking insurable BI. Absent = 0 (pure hotel). */
+    const ts3=toNum(row.get("timeshare_share"));if(isFinite(ts3)&&ts3>=0&&ts3<=1)rec.timeshare_share=ts3;
     arr.push(rec);
   });
   if(!arr.length){toast("No valid rows found. Check that latitude (-90..90), longitude (-180..180), and value are numbers.");return;}
@@ -261,13 +265,16 @@ function routeHazFiles(files){
     setTimeout(()=>{
       const jsons=[],csvs=[];
       list.forEach(o=>{ if(/\.json$/i.test(o.name)||/^\s*[[{]/.test(o.text)) jsons.push(o); else csvs.push(o); });
-      /* a loss run announces itself by its claim columns: route it to the
-         calibration loader instead of the hazard-grid parser */
+      /* a loss run announces itself by its claim columns, an SOV by its
+         TIV/campus columns (Task 8): route both to their loaders instead
+         of the hazard-grid parser */
       const grids=[];
       csvs.forEach(o=>{
         const h=(o.text.split(/\r?\n/,1)[0]||"").toLowerCase();
-        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)) loadLossRun(o.text,o.name);
-        else grids.push(o);
+        if(/claim/.test(h)&&/(incurred|coverage)/.test(h)){ loadLossRun(o.text,o.name); return; }
+        const head=splitCsvLine(h).map(x=>x.trim());
+        if(sovLooksLike(head)){ loadSovCsv(o.text,o.name); return; }
+        grids.push(o);
       });
       if(grids.length===1) loadHazardCsv(grids[0].text,grids[0].name);
       else if(grids.length>1) loadHazardCsvMulti(grids);

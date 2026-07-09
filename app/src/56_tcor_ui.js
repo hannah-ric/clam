@@ -14,13 +14,13 @@
    leaving retained property, plus retained BI, plus allocated premium,
    arriving at TCOR. Every segment is hoverable to its derivation.
 
-   READ-ONLY over the TCOR engine (22_tcor.js): every figure comes
-   from tcorPortfolio / tcorSite / simulateRetainedYears /
-   lossrunCalibration / the adaptation appraisal, or is plain
+   READ-ONLY over the TCOR engine (22_tcor.js), the BI module, the
+   premium module, and the payoff engine (26_payoff.js): every figure
+   comes from tcorPortfolio / tcorSite / simulateRetainedYears /
+   lossrunCalibration / sitePayoffs / renewalAskFor, or is plain
    arithmetic on their outputs. Nothing here re-derives or alters the
-   financial science; where a needed output does not exist yet (the
-   full BI bad-year module, the TCOR-aware premium credit), the
-   surface says so instead of inventing it.
+   financial science; where an output stands on a fallback, the
+   surface says so instead of hiding it.
    ============================================================ */
 
 /* The five TCOR components: one fixed palette, one fixed order, used
@@ -98,13 +98,15 @@ function calibrationStateOf(calib,cls){
 let _cmd={key:null};
 function cmdStateKey(){
   let v=0;
-  sites.forEach(s=>{v+=(+s.asset_value_usd||0)+(+s.premium_annual_usd||0)+(+s.annual_revenue_usd||0);});
+  sites.forEach(s=>{v+=(+s.asset_value_usd||0)+(+s.premium_annual_usd||0)+(+s.annual_revenue_usd||0)
+    +(+s.timeshare_share||0)*7919+(+s.bi_ee_usd||0);});
   return [scenario,sites.length,typeof nextId==="undefined"?0:nextId,v.toFixed(0),
     hazardGrid?hazardGrid.meta.loaded:"-",
     resultsPack?resultsPack.loaded:"-",
     lossRun?lossRun.loaded:"-",
     JSON.stringify(tcorProgram.deductibles),
     tcorProgram.bi.limitUsd||"",tcorProgram.premium.programAnnualUsd||"",
+    tcorProgram.premium.loadFactor||"",tcorProgram.premium.creditRealization||"",
     tcorProgram.adminAnnualUsd,tcorProgram.mitigationAnnualUsd,
     finAssume.revRatio,finAssume.gopMargin,finAssume.reopenMonths,
     typeof adapt!=="undefined"?JSON.stringify(adapt.m):""].join("|");
@@ -141,7 +143,11 @@ function cmdCtx(){
   }).sort((a,b)=>b.total-a.total);
   const completeTcor=rows.reduce((a,r)=>a+(r.estimate?0:r.total),0);
   const sim=simulateRetainedYears(sites,scenario);
-  const fixed=tp.components.retainedBI+tp.components.premium
+  /* bad-year TCOR (Task 3): retained property AND retained BI at the
+     99th percentile of the SAME simulated year (the joint draw: one
+     storm drives both sides); premium, risk control, and admin ride at
+     expected level, which is what they are: costs, not losses. */
+  const fixedNonLoss=tp.components.premium
     +tp.components.mitigation+tp.components.admin;
   _cmd={key,tp,rows,join,af,calib,sim,
     portComp:{
@@ -151,11 +157,8 @@ function cmdCtx(){
       admin:tp.components.mitigation+tp.components.admin},
     confidence:tp.total>0?completeTcor/tp.total:0,
     nComplete:rows.filter(r=>!r.estimate).length,
-    /* bad-year TCOR: retained property at the 99th percentile of the
-       engine's seeded year simulation; BI, premium, and fixed costs at
-       expected level (the BI bad-year module is pending, and the
-       surface says so). */
-    badYear:sim.p99+fixed,
+    badYear:sim.combined.p99+fixedNonLoss,
+    badYearFixed:fixedNonLoss,
     expectedYear:tp.total};
   return _cmd;
 }
@@ -239,17 +242,20 @@ function portDeriveHtml(key,c){
       ["Waiting-period share",fmt$(bi.waiting)+"/yr"],
       ["Beyond limit / indemnity",fmt$(bi.overage)+"/yr"],
       ["Gross BI (before terms)",fmt$(bi.gross)+"/yr"],
-      ["Transferred to insurer",fmt$(bi.transferred)+"/yr"]],
+      ["Transferred to insurer",fmt$(bi.transferred)+"/yr"],
+      ["Regional demand shock (flagged, excluded)",fmt$(bi.demandShock?bi.demandShock.total:0)+"/yr"]],
       bi.basis);
   }
   if(key==="prem"){
-    const pr=tp.ctx.prem;
+    const pr=tp.ctx.prem,pos=pr.position||{};
     return deriveHtml("Allocated premium",[
       ["Allocated total",fmt$(pr.allocatedTotal)+"/yr"],
       ["Technical benchmark",fmt$(pr.technicalTotal)+"/yr"],
       ["Actual on file",pr.nActual+" site"+(pr.nActual===1?"":"s")+" · "+fmt$(pr.actualTotal)+"/yr"],
-      ["Loading factor",pr.load+"x"]],
-      pr.allocBasis);
+      ["Assumed load",pr.load+"x"],
+      ["Implied market load",pos.impliedLoad!=null?pos.impliedLoad.toFixed(2)+"x ("+Math.round((pos.tivShareWithActual||0)*100)+"% of TIV has premiums on file)":"n/a (no premiums on file)"],
+      ["Above / below technical",fmt$(pos.overTechnicalUsd||0)+" / "+fmt$(pos.underTechnicalUsd||0)]],
+      pr.allocBasis+(pos.impliedLoad!=null?" The implied load is actual premium over modeled transferred expected loss on the sites whose premium is on file: the market's own price per dollar of transfer.":""));
   }
   if(key==="freq"){
     const at=tp.attritional;
@@ -326,7 +332,7 @@ function renderCommand(){
     '<div class="eb"><div class="l">Expected year</div><div class="v">'+fmt$(c.expectedYear)+'</div>'+
       '<div class="f">mean annual TCOR</div></div>'+
     '<div class="eb bad" data-derive="badyear" tabindex="0"><div class="l">Bad year (1-in-100)</div><div class="v">'+fmt$(c.badYear)+'</div>'+
-      '<div class="f">retained property at the 99th percentile simulated year; BI and premium at expected level</div></div>'+
+      '<div class="f">retained property + BI at the 99th percentile simulated year; premium and fixed costs at expected level</div></div>'+
     '</div>'+
     '<div class="col-l" style="margin-top:8px">Confidence'+infoBtn("cmdConfidence")+'</div>'+
     '<div data-derive="confidence" tabindex="0"><div class="confbar"><i style="width:'+conf+'%"></i></div>'+
@@ -388,11 +394,12 @@ function renderCommand(){
       ["Indirect (flagged, excluded)",fmt$(tp.indirect.value)+"/yr"]],
       "Event-level for hurricane (shared per-occurrence deductible per campus), per-location ladders for flood and general. "+(tp.basisFlags[0]||""));
     if(key==="badyear")return deriveHtml("Bad year (1-in-100)",[
-      ["Retained property, p99 year",fmt$(c.sim.p99)],
-      ["Median year",fmt$(c.sim.median)],
-      ["p90 year",fmt$(c.sim.p90)],
-      ["BI + premium + fixed",fmt$(c.badYear-c.sim.p99)+" (expected level)"]],
-      c.sim.years+"-year seeded simulation, "+c.sim.basis+". The BI bad-year module is pending; until it lands, BI rides at expected level and this figure is labeled an estimate.");
+      ["Property + BI, p99 year",fmt$(c.sim.combined.p99)],
+      ["...retained property alone, p99",fmt$(c.sim.p99)],
+      ["...retained BI alone, p99",fmt$(c.sim.bi.p99)],
+      ["Median / p90 year (property + BI)",fmt$(c.sim.combined.median)+" / "+fmt$(c.sim.combined.p90)],
+      ["Premium + risk control + admin",fmt$(c.badYearFixed)+" (expected level)"]],
+      c.sim.years+"-year seeded simulation, "+c.sim.basis+". One drawn storm drives both sides of the same year, so the combined p99 is a joint figure, not a sum of separate tails.");
     if(key==="confidence"||key==="quality"){
       const miss={};c.rows.forEach(r=>r.missing.forEach(m=>miss[m]=(miss[m]||0)+1));
       const top=Object.keys(miss).sort((a,b)=>miss[b]-miss[a]).slice(0,4);
@@ -478,6 +485,16 @@ function renderCmdList(c,lens){
     const open=()=>{selectedId=+tr.dataset.sv;openSiteView(+tr.dataset.sv);};
     tr.onclick=open;
     tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}});
+    tr.addEventListener("mouseenter",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=+tr.dataset.sv;_clMap.setFilter("clam-hover",["==",["get","id"],_clHoverId]);
+      }
+    }catch(e){}});
+    tr.addEventListener("mouseleave",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=null;_clMap.setFilter("clam-hover",["==",["get","id"],-1]);
+      }
+    }catch(e){}});
   });
 }
 
@@ -730,16 +747,9 @@ function renderSiteView(){
   const actual=agg&&agg.bySite[s.id]?agg.bySite[s.id]:null;
   const nYears=agg?agg.years.n:0;
 
-  /* opportunities: the adaptation engine's own appraisal */
-  const sBase=adaptedFinSite(s,scenario,{}).totalAal;
-  const opps=MEASURES.filter(m=>m.inScope(s,scenario)).map(m=>{
-    const st=adapt.m[m.key];
-    const averted=sBase-adaptedFinSite(s,scenario,m.mods(st)).totalAal;
-    const cost=m.siteCost(s,st);
-    return {name:m.name,target:m.target,averted,cost,
-      bcr:cost>0?averted*c.af/cost:0,
-      payback:(averted>0&&cost>0)?cost/averted:null};
-  }).sort((a,b)=>b.bcr-a.bcr);
+  /* opportunities: the TCOR-aware payoff engine's appraisal, split into
+     the certain retained saving and the negotiated premium saving */
+  const opps=sitePayoffs(s,scenario,{sites,join:c.join,af:c.af,prem:c.tp.ctx.prem});
 
   const comps=r.row.components;
   const bt=biTermsOf(s);
@@ -783,9 +793,11 @@ function renderSiteView(){
       ["Waiting period ("+bt.waitingDays+" days, every event)",fmt$(comps.retainedBI.waiting)+"/yr"],
       ["Beyond limit / indemnity",fmt$(comps.retainedBI.overage)+"/yr"],
       ["BI limit",bt.limitUsd!=null?fmt$(bt.limitUsd)+" ("+bt.limitBasis+")":bt.limitBasis],
-      ["Indemnity period",bt.indemnityDays+" days"]],
-      comps.retainedBI.basis+" Downtime days and seasonality weighting arrive with the full BI module; until then the linear damage-to-downtime chain stands, labeled.",
-      "estimated") +
+      ["Indemnity period",bt.indemnityDays+" days"],
+      ["Continuing revenue in closure",(+s.timeshare_share>0)?Math.round(biEconOf(s).continueShare*100)+"% (vacation-ownership fees keep flowing)":"none on file (pure hotel: all revenue stops)"],
+      ["Regional demand shock (flagged)",fmt$(r.row.indirect.demandShock||0)+"/yr, uninsured, outside TCOR"]],
+      comps.retainedBI.basis+". "+c.tp.ctx.bi.basis+(bt.provenance==="default"?" BI policy terms are defaults, not policy facts: confirm at renewal.":""),
+      bt.provenance==="default"?"estimated":(String(c.tp.ctx.bi.basis).indexOf("per event")>=0?"modeled":"estimated")) +
     compCard("Premium: technical vs actual","var(--c-prem)",[
       ["Allocated",fmt$(r.premAllocated)+"/yr"],
       ["Technical benchmark",fmt$(r.premTechnical)+"/yr"],
@@ -815,9 +827,10 @@ function renderSiteView(){
       '<div class="kv" style="margin-top:6px">'+
       '<span class="k">Expected year (this site)</span><span class="v mono">'+fmt$(r.total)+' TCOR</span>'+
       '<span class="k">Site loss at 1-in-100</span><span class="v mono">'+fmt$((function(){const lad=siteLadderFor(s,"tc_joint",scenario,c.join);const i=lad.rps.indexOf(100);return i>=0?lad.losses[i]:0;})())+' gross (wind + surge)</span>'+
-      '<span class="k">Portfolio bad year (p99)</span><span class="v mono">'+fmt$(c.sim.p99)+' retained property</span>'+
+      '<span class="k">Portfolio bad year (p99)</span><span class="v mono">'+fmt$(c.sim.combined.p99)+' retained property + BI</span>'+
+      '<span class="k">...of which retained BI</span><span class="v mono">'+fmt$(c.sim.bi.p99)+' at the BI-side p99</span>'+
       '</div>'+
-      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, and downtime beyond the indemnity period stays retained. The seeded year simulation carries the retained-property side; the BI bad-year module is pending and this narrative says so.</div></div>'+
+      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, downtime beyond the indemnity period stays retained, and a September landfall with a long rebuild eats the winter high season. The seeded year simulation now carries BOTH sides jointly: each drawn storm gets an arrival month from the landfall climatology and its BI runs through the full seasonal terms chain.</div></div>'+
     '<div class="panel" style="margin-bottom:0"><h3>Calibration vs actual losses</h3>'+
       (lossRun?(
         '<div class="kv" style="margin-top:6px">'+
@@ -830,13 +843,15 @@ function renderSiteView(){
       ):'<div class="sv-note" style="margin-top:6px">No loss run loaded. Drop the claims report on Advanced &#8594; Method &amp; data to anchor these figures to actual losses; disagreement is shown honestly when it exists.</div>')+
     '</div>'+
     '<div class="panel" style="margin-bottom:0"><h3>Opportunities'+infoBtn("svOpp")+'</h3>'+
-      (opps.length?('<table class="tbl" style="margin-top:4px"><thead><tr><th>Measure</th><th class="num">Averted / yr</th><th class="num">Cost</th><th class="num">Payback</th><th class="num">Benefit-cost</th></tr></thead><tbody>'+
-        opps.map(o=>'<tr><td>'+esc(o.name)+'<div style="font-size:10.5px;color:var(--muted)">'+esc(o.target)+'</div></td>'+
-          '<td class="num mono">'+fmt$(o.averted)+'</td><td class="num mono">'+fmt$(o.cost)+'</td>'+
-          '<td class="num mono">'+(o.payback!=null?(o.payback<1?"<1 yr":o.payback.toFixed(1)+" yr"):"\u2014")+'</td>'+
-          '<td class="num mono" style="color:'+(o.bcr>=1?"var(--good)":"var(--bad)")+'">'+o.bcr.toFixed(2)+'x</td></tr>').join("")+
+      (opps.length?('<table class="tbl" style="margin-top:4px"><thead><tr><th>Measure</th><th class="num">Certain saving / yr</th><th class="num">Premium ask / yr</th><th class="num">Cost</th><th class="num">BCR certain</th><th class="num">BCR w/ credit</th></tr></thead><tbody>'+
+        opps.map(o=>'<tr><td>'+esc(o.measure)+'<div style="font-size:10.5px;color:var(--muted)">'+esc(o.target)+'</div></td>'+
+          '<td class="num mono" title="'+esc("property "+fmt$(o.certain.property)+" + BI "+fmt$(o.certain.bi)+" + heat "+fmt$(o.certain.heat))+'">'+fmt$(o.certain.total)+'</td>'+
+          '<td class="num mono" title="'+esc("transferred-loss reduction "+fmt$(o.negotiated.transferredEl)+" x "+o.negotiated.loadEff.toFixed(2)+" load x "+Math.round(o.negotiated.creditRealization*100)+"% realization")+'">'+fmt$(o.negotiated.premiumSaving)+'</td>'+
+          '<td class="num mono">'+fmt$(o.cost)+'</td>'+
+          '<td class="num mono" style="color:'+(o.bcrCertain>=1?"var(--good)":"var(--bad)")+'">'+o.bcrCertain.toFixed(2)+'x</td>'+
+          '<td class="num mono" style="color:'+(o.bcrWithCredit>=1?"var(--good)":"var(--bad)")+'">'+o.bcrWithCredit.toFixed(2)+'x</td></tr>').join("")+
         '</tbody></table>'):'<div class="sv-note" style="margin-top:6px">No in-scope measures for this site at current settings.</div>')+
-      '<div class="sv-note" style="margin-top:8px">Appraised on averted expected annual climate cost (the adaptation engine’s own figures; planning-grade costs). The split of certain retained saving vs negotiated premium saving, and the TCOR benefit-cost ratio with and without the premium credit, arrive with the TCOR-aware payoff module; until then this table states the engine’s appraisal and nothing more.</div></div>'+
+      '<div class="sv-note" style="margin-top:8px">'+esc(opps.length?opps[0].basis+". ":"")+'The certain column accrues the moment the work is done: it is the reduction in losses YOU retain (below deductibles, BI waiting periods and overages, uninsured heat). The premium ask is cash only if the insurer reprices at renewal, so a measure that clears breakeven on the certain column alone needs nobody\u2019s permission to pay off. Planning-grade costs; replace with engineering estimates before committing capital.</div></div>'+
     '</div></div>';
   host.innerHTML=h;
 
@@ -940,7 +955,10 @@ function exportComponentBreakdownCsv(){
   TCOR_COMPONENTS.forEach(cc=>add("tcor_component",cc.key,c.portComp[cc.key],cc.label));
   add("tcor_total","total",c.tp.total,"five components above");
   add("expected_year","total",c.expectedYear,"mean annual TCOR");
-  add("bad_year_p99","total",c.badYear,"retained property at p99 simulated year; BI and fixed at expected level");
+  add("bad_year_p99","total",c.badYear,"retained property + BI at the p99 simulated year (joint); premium and fixed at expected level");
+  add("bad_year_property_p99","prop",c.sim.p99,"retained property alone at its p99 simulated year");
+  add("bad_year_bi_p99","bi",c.sim.bi.p99,"retained BI alone at its p99 simulated year");
+  add("indirect_demand_shock","indirect",c.tp.ctx.bi.demandShock?c.tp.ctx.bi.demandShock.total:0,"regional demand shock: flagged estimate, uninsured, excluded from TCOR");
   add("gross_modeled_loss","gross",c.tp.waterfall.gross,"property + BI before insurance");
   add("transferred","transfer",c.tp.waterfall.transferredProperty+c.tp.waterfall.transferredBI,"to the insurer");
   add("indirect_flagged","indirect",c.tp.indirect.value,"flagged estimate, excluded from TCOR");
@@ -1033,23 +1051,33 @@ function tcorBriefHtml(){
     ' <small style="color:#777">'+esc(HAZARD_LABEL[r.driver]||r.driver)+(r.estimate?' · est':'')+'</small></td>'+
     '<td class="num mono">'+fmt$(r.total)+'/yr</td></tr>').join("");
 
-  /* top opportunities: the action queue's own ranking (funded first) */
+  /* top opportunities: the action queue's ranking, each split by the
+     TCOR payoff engine into certain saving and negotiated premium ask */
   const q=actionQueue(sites,scenario,c.af,(typeof adapt!=="undefined"&&adapt&&adapt.budget)?+adapt.budget:0);
-  const opps=q.items.slice(0,6).map(it=>
-    '<tr><td>'+esc(it.site)+' · '+esc(it.measure.split("(")[0].trim())+
+  const pctx={sites,join:c.join,af:c.af,prem:tp.ctx.prem};
+  const opps=q.items.slice(0,6).map(it=>{
+    const s2=sites.find(x=>x.id===it.id),m2=MEASURES.find(x=>x.key===it.key);
+    const p=(s2&&m2)?tcorPayoffFor(s2,m2,adapt.m[it.key],scenario,pctx):null;
+    return '<tr><td>'+esc(it.site)+' · '+esc(it.measure.split("(")[0].trim())+
     ' <small style="color:#777">'+(it.funded?"funded":"unfunded")+'</small></td>'+
-    '<td class="num mono">'+fmt$(it.averted)+'/yr for '+fmt$(it.cost)+' · '+it.bcr.toFixed(1)+'x</td></tr>').join("");
+    '<td class="num mono">'+(p
+      ?(fmt$(p.certain.total)+'/yr certain + '+fmt$(p.negotiated.premiumSaving)+'/yr ask · '+p.bcrCertain.toFixed(1)+'x / '+p.bcrWithCredit.toFixed(1)+'x')
+      :(fmt$(it.averted)+'/yr for '+fmt$(it.cost)+' · '+it.bcr.toFixed(1)+'x'))+'</td></tr>';
+  }).join("");
 
   /* the premium position (leads under the renewal framing) */
-  const prem=tp.ctx.prem;
+  const prem=tp.ctx.prem,pos=prem.position||{};
+  const ask=renewalAskFor(sites,scenario,c.af,(typeof adapt!=="undefined"&&adapt&&adapt.budget)?+adapt.budget:0,pctx);
   const premRows=
     tr2("Allocated premium",fmt$(prem.allocatedTotal)+"/yr")+
     tr2("Technical benchmark",fmt$(prem.technicalTotal)+"/yr at "+prem.load+"x load")+
+    tr2("Implied market load",pos.impliedLoad!=null?pos.impliedLoad.toFixed(2)+"x (premiums on file / modeled transfer)":"n/a: no premiums on file")+
     tr2("Actual premiums on file",prem.nActual+" of "+sites.length+" sites · "+fmt$(prem.actualTotal)+"/yr")+
-    tr2("Retained (property + BI + frequency)",fmt$(tp.components.retainedProperty+tp.components.retainedBI)+"/yr");
+    tr2("Retained (property + BI + frequency)",fmt$(tp.components.retainedProperty+tp.components.retainedBI)+"/yr")+
+    tr2("Renewal ask (funded measures)",fmt$(ask.premiumAskUsd)+"/yr negotiated saving to table");
   const oppSec='<h2>Top opportunities (adaptation)</h2><table>'+
     (opps||'<tr><td colspan="2">No in-scope measures at current settings.</td></tr>')+'</table>'+
-    '<div style="font-size:10px;color:#555;margin-top:2px">Planning-grade costs; the TCOR-aware premium-credit split is pending the payoff module and is not shown rather than guessed.</div>';
+    '<div style="font-size:10px;color:#555;margin-top:2px">Certain savings (retained losses the measure removes) accrue regardless of the insurer; the ask is negotiated premium saving at '+Math.round(payoffCreditRealization()*100)+'% credit realization, shown as BCR certain / BCR with credit. Planning-grade costs.</div>';
   const premSec='<h2>Premium & retention position</h2><table>'+premRows+'</table>';
 
   /* honest data-basis footer */
@@ -1066,7 +1094,7 @@ function tcorBriefHtml(){
       (tp.estimate?' · <span class="bflag">estimate: see data basis</span>':'')+'</div>'+
     '<div class="bkpis">'+
       kpi("Total cost of risk",fmt$(tp.total)+"/yr",(tiv?(tp.total/tiv*100).toFixed(2):"0")+"% of "+fmt$(tiv)+" insured value")+
-      kpi("Expected vs bad year",fmt$(c.expectedYear)+" / "+fmt$(c.badYear),"bad year: p99 retained property; BI and premium at expected level")+
+      kpi("Expected vs bad year",fmt$(c.expectedYear)+" / "+fmt$(c.badYear),"bad year: retained property + BI at the p99 simulated year (joint); premium and fixed at expected level")+
       kpi("Gross modeled loss",fmt$(tp.waterfall.gross)+"/yr",xferPct+"% transferred to the insurer: what stays is BI + premium + retained slivers")+
       kpi("Confidence",conf+"%","of TCOR backed by complete data · "+c.nComplete+" of "+sites.length+" sites complete")+
     '</div>'+
@@ -1120,8 +1148,8 @@ Object.assign(INFO,{
     "<p>The stacked bar splits the total into those five parts, in the same colours everywhere they appear. Hover any part for its derivation. Indirect costs (rebooking, reputation) are a flagged estimate and are never inside the total.</p>",
     s:"Engine: event-level retained math for hurricane, per-location ladders for the rest; every figure carries its basis."},
   cmdBadYear:{t:"Expected year vs bad year",b:
-    "<p><b>Expected year</b> is the mean annual TCOR: the long-run average bill. <b>Bad year</b> is what a roughly 1-in-100 year looks like: retained property at the 99th percentile of the engine's seeded 1000-year simulation (which replays the modeled hurricane event table with the shared deductible), with BI, premium, and fixed costs at expected level.</p>"+
-    "<p>The BI side of a bad year (a season that blows through the BI limit) arrives with the full BI module; until then this figure is a labeled partial view, honest rather than precise.</p>"},
+    "<p><b>Expected year</b> is the mean annual TCOR: the long-run average bill. <b>Bad year</b> is what a roughly 1-in-100 year looks like: retained property <b>and retained BI together</b> at the 99th percentile of the engine's seeded 1000-year simulation, with premium and fixed costs at expected level.</p>"+
+    "<p>The simulation replays the modeled hurricane event table with the shared campus deductible; every drawn storm also draws an <b>arrival month</b> from the landfall climatology, and its BI runs through the seasonal terms chain (waiting period, indemnity period, BI limit, the vacation-ownership revenue that keeps flowing). A September landfall whose rebuild eats the winter high season is exactly the year this figure now prices. Without an event table the two sides draw from labeled ladder bands and the basis says so.</p>"},
   cmdConfidence:{t:"Portfolio confidence",b:
     "<p>The share of the TCOR total that stands on <b>complete data</b>: sites where no component needed a default or interim fallback (campus code present, revenue on file, BI limit known, actual premium on file, policy terms confirmed).</p>"+
     "<p>Everything else is still shown, but marked <b>est</b> in the list and on its site view, with the exact missing fields named. Estimates are never silently rendered as precise.</p>"},
@@ -1132,6 +1160,6 @@ Object.assign(INFO,{
     "<p>Start at the <b>gross modeled property loss</b>: what the climate event sets say the buildings lose per year before any insurance. Subtract the <b>transferred</b> portion the insurance program pays. What remains is <b>retained property</b> (with the frequent attritional band shown in green). Add <b>retained BI</b>, the <b>allocated premium</b>, and <b>admin</b>, and you arrive at <b>TCOR</b>: what the portfolio actually retains.</p>"+
     "<p>This one figure is the thesis of the tool: most of the gross number is transferred; the cost that stays is BI plus premium plus a sliver of retained damage. Hover any bar for its exact derivation and basis.</p>"},
   svOpp:{t:"Opportunities",b:
-    "<p>The site's in-scope adaptation measures, appraised by the engine: annual loss averted, one-time cost, simple payback, and the benefit-cost ratio at the current appraisal settings (Advanced &#8594; Adaptation).</p>"+
-    "<p>Costs are planning-grade defaults from published mitigation studies: firm enough to rank, to be replaced with engineering estimates before committing capital. The TCOR-aware split (certain retained saving vs negotiated premium saving, with and without the premium credit) arrives with the payoff module and is flagged until then.</p>"},
+    "<p>The site's in-scope adaptation measures through the TCOR lens. Each payoff is split in two. <b>Certain saving</b> is the reduction in losses you retain either way: below-deductible damage, BI waiting periods and over-limit downtime, uninsured heat cost. It accrues the moment the work is done. <b>Premium ask</b> is the reduction in transferred expected loss priced at the program load and haircut by a credit-realization factor (default from the sourced registry; market recognition of mitigation is bounded and discretionary, so the ask is a negotiation target, not a promise).</p>"+
+    "<p><b>BCR certain</b> counts only the certain column; <b>BCR with credit</b> adds the ask. The dual framing follows published practice: owner-perspective analyses count premium savings, societal ones exclude them as transfers, and no dollar appears in both columns. Costs are planning-grade defaults: firm enough to rank, to be replaced with engineering estimates before committing capital.</p>"},
 });

@@ -136,17 +136,56 @@ let siteSum=0;S.forEach(s=>{const p=prop.perSite[s.id];siteSum+=p.hurricane.reta
 assert(near(siteSum,prop.total.annualRetained,5),
   "per-site retained rows reconcile with the portfolio total");
 
-/* ---------------- BI terms: waiting vs overage ------------------------ */
-const econ={value:10e6,daily:1000,maxDownDays:365};
+/* ---------------- BI module (Task 3): terms, downtime, seasonality ---- */
+/* the terms math is unchanged in structure: on a flat season at full
+   damage the split reproduces the pinned pre-module numbers exactly */
+const econF={value:10e6,dailyLossable:1000,maxDownDays:365,shape:BI_SEASON_SHAPES.global_mean};
 const terms={waitingDays:3,indemnityDays:365,limitUsd:100000};
-const bs=biSplitForLoss(10e6,S[0],terms,econ);
+const bs=biEventSplit(10e6,terms,econF,0);
 assert(near(bs.gross,365000)&&near(bs.waiting,3000)&&near(bs.overage,262000)
   &&near(bs.retained,265000),
-  "BI terms: waiting 3k + beyond-limit 262k of a 365k gross BI event");
+  "BI terms: waiting 3k + beyond-limit 262k of a 365k gross BI event (flat season, full damage)");
+
+/* damage-to-downtime: Hazus nodes + REDi impeding floor */
+assert(biDowntimeDays(0,365)===0,"zero damage means zero downtime");
+assert(near(biDowntimeDays(0.02,365),0.03*365,0.1),
+  "2% damage is cleanup, ~11 days (Hazus slight)");
+assert(biDowntimeDays(0.10,365)===120,
+  "10% damage trips the 120-day REDi impeding floor (curve alone would say ~33)");
+assert(near(biDowntimeDays(0.40,365),0.75*365,0.1),
+  "40% damage runs most of the reconstruction year (Hazus extensive)");
+assert(near(biDowntimeDays(1,365),365),"full damage anchors to the operator's reopen time");
+assert(biDowntimeDays(0.05,365)<biDowntimeDays(0.10,365),
+  "downtime is monotone in damage");
+
+/* seasonality: the walk conserves the year (mean weight 1.0) and prices
+   a September Caribbean closure below flat, a winter one above */
+const CAR=BI_SEASON_SHAPES.caribbean;
+assert(near(biSeasonDays(CAR,0,365.28),365.28,0.5),
+  "a full-year walk is season-neutral (weights are mean 1.0)");
+assert(biSeasonDays(CAR,8,91)<91*0.75,
+  "a 3-month September closure in the Caribbean loses well under flat revenue");
+assert(biSeasonDays(CAR,0,91)>91*1.2,
+  "a 3-month January closure loses well over flat revenue");
+/* the honesty gap the module closes: a September landfall with a long
+   rebuild eats the winter peak, so downtime cost is NOT linear in days */
+assert(biSeasonDays(CAR,8,270)>2.4*biSeasonDays(CAR,8,90),
+  "extending a September closure into the high season more than triples its cost");
+
+/* timeshare: the continuing fee stream shrinks the lossable daily GOP */
+const eHot=biEconOf({asset_value_usd:10e6,latitude:18.3,longitude:-64.9});
+const eVo=biEconOf({asset_value_usd:10e6,latitude:18.3,longitude:-64.9,timeshare_share:1});
+assert(near(eVo.dailyLossable,eHot.dailyLossable*(1-BI_TIMESHARE_CONTINUING),0.01),
+  "a pure vacation-ownership site keeps the registry's continuing share flowing");
+assert(eHot.continueShare===0,"a site with no timeshare_share loses all revenue (today's behavior)");
+
 const biAll=retainedBICalc(S,"present");
 assert(biAll.retained>0&&biAll.waiting>0,"portfolio retained BI carries a waiting-period piece");
 assert(near(biAll.retained,biAll.waiting+biAll.overage,1),"retained BI = waiting + overage exactly");
-assert(biAll.basis.indexOf("interim")>=0,"the interim BI chain says it is interim");
+assert(biAll.basis.indexOf("BI module")>=0&&biAll.basis.indexOf("per event")>=0,
+  "the BI module states its basis and applies hurricane terms per event when the table is loaded");
+assert(biAll.demandShock&&biAll.demandShock.excludedFromTotal===true,
+  "the regional demand shock is flagged and excluded from the total by construction");
 
 /* ---------------- premium: actual first, technical benchmark ---------- */
 const prem=premiumCalc(S,"present",prop,biAll);
@@ -172,7 +211,7 @@ assert(near(c.retainedProperty,prop.total.annualRetained,1),
 const rowSum=port.rows.reduce((a,r)=>a+r.total,0);
 assert(near(rowSum,port.total,5),"per-site TCOR rows reconcile with the portfolio TCOR");
 const r0=port.rows[0];
-assert(r0.quality.propertyBasis==="event"&&r0.components.retainedBI.basis.indexOf("interim")>=0,
+assert(r0.quality.propertyBasis==="event"&&r0.components.retainedBI.basis.indexOf("BI module")>=0,
   "every component carries its basis; quality marks the fallbacks");
 assert(port.rows.every(r=>r.quality.estimate===true),
   "with default BI terms the TCOR is marked an estimate, never precise");
@@ -185,6 +224,15 @@ const sim1=simulateRetainedYears(S,"present",{years:400,seed:7});
 const sim2=simulateRetainedYears(S,"present",{years:400,seed:7});
 assert(sim1.mean===sim2.mean&&sim1.p99===sim2.p99,"the year simulation is seed-deterministic");
 assert(sim1.basis.indexOf("event table")>=0,"simulation replays the event table when loaded");
+/* Task 3: the bad year carries BI jointly, not at expected level */
+assert(sim1.bi&&sim1.combined&&sim1.bi.p99>0,
+  "the simulation carries a per-year retained-BI distribution");
+assert(sim1.combined.p99>=sim1.p99,
+  "the combined p99 dominates property alone (BI is non-negative in every year)");
+assert(near(sim1.combined.mean,sim1.mean+sim1.bi.mean,1),
+  "combined years are the same-year sums: the means are exactly additive");
+assert(sim1.bi.p99===sim2.bi.p99&&sim1.combined.p99===sim2.combined.p99,
+  "the BI side of the simulation is seed-deterministic too");
 tcorProgram.aggregateCapUsd=150000;
 const simCap=simulateRetainedYears(S,"present",{years:400,seed:7});
 assert(simCap.p99<=150000.0001&&simCap.mean<=sim1.mean+0.0001,
@@ -297,7 +345,166 @@ assert(A.campus_code==="TPA01"&&A.campus_name==="Tampa Campus"&&A.owned_or_lease
 assert(B.campus_code===undefined&&B.owned_or_leased===undefined,
   "blank or invalid TCOR fields stay absent (labeled fallbacks downstream)");
 
-console.log("\nALL TCOR + LOSS-RUN TESTS PASSED");
+/* ---------------- Task 3: timeshare_share intake ----------------------- */
+loadSiteCsv([
+"name,latitude,longitude,asset_value_usd,timeshare_share",
+"VoResort,18.34,-64.90,9000000,0.8",
+"HotelOnly,18.34,-64.89,9000000,",
+"BadShare,18.34,-64.88,9000000,1.7"
+].join("\n"));
+const VO=sites.find(s=>s.name==="VoResort"),HO=sites.find(s=>s.name==="HotelOnly"),BS=sites.find(s=>s.name==="BadShare");
+assert(VO.timeshare_share===0.8&&HO.timeshare_share===undefined&&BS.timeshare_share===undefined,
+  "timeshare_share loads from CSV within 0..1; blank or out-of-range stays absent");
+
+/* ---------------- regional demand shock (event table) ------------------ */
+sites=[];nextId=1;clearHazCache();
+addSites([
+  {name:"Hit Resort",latitude:26.2,longitude:-80.1,asset_value_usd:10e6,campus_code:"FL1"},
+  {name:"Open Resort",latitude:26.3,longitude:-80.1,asset_value_usd:10e6,campus_code:"FL2"},
+  {name:"Far Resort",latitude:21.3,longitude:-157.8,asset_value_usd:10e6,campus_code:"HI1"}
+]);
+const DS=sites.slice();
+resultsPack={name:"ds.json",data:{kind:"results_pack",pack_version:1,
+  scenarios:{present:{portfolio:{},per_site:DS.map(s=>({name:s.name}))}},
+  event_sets:{scenarios:{present:[{source:"p",weight:1,country:"USA",events:[
+    {id:"BIGONE",freq:0.01,sites:[[0,3000000]]}     // 30% damage at Hit Resort
+  ]}]}},
+  frequent_losses:{ladder_rps:F.rps,scenarios:{present:{
+    tc_joint:DS.map(()=>zeroRow.slice()),rflood:DS.map(()=>zeroRow.slice()),
+    prain:DS.map(()=>zeroRow.slice()),wfire:DS.map(()=>zeroRow.slice())}}}}};
+const biDs=retainedBICalc(DS,"present");
+assert(biDs.demandShock.total>0,
+  "a 30%-damaged site (structural) triggers the regional demand shock");
+assert(biDs.demandShock.perSite[DS[1].id]>0,
+  "the UNDAMAGED site in the hit region loses transient demand");
+assert((biDs.demandShock.perSite[DS[2].id]||0)===0,
+  "a site in another region is untouched (the shock is destination-level)");
+assert(biDs.demandShock.perSite[DS[1].id]>biDs.demandShock.perSite[DS[0].id],
+  "the damaged site's own closure comes out of its shock window (it cannot lose the same day twice)");
+const portDs=tcorPortfolio(DS,"present");
+assert(portDs.indirect.excludedFromTotal===true
+  &&near(portDs.total,portDs.components.retainedProperty+portDs.components.retainedBI
+    +portDs.components.premium+portDs.components.mitigation+portDs.components.admin,1),
+  "the demand shock rides the flagged indirect line and never enters the TCOR total");
+
+/* ---------------- TCOR-aware payoff engine ----------------------------- */
+resultsPack=null;clearHazCache();
+sites=[];nextId=1;
+addSites([
+  {name:"Payoff One",latitude:26.2,longitude:-80.1,asset_value_usd:20e6,campus_code:"P1"},
+  {name:"Payoff Two",latitude:26.2,longitude:-80.1,asset_value_usd:20e6,campus_code:"P1"}
+]);
+const P=sites.slice();
+const mWind=MEASURES.find(m=>m.key==="wind");
+const pay=tcorPayoffFor(P[0],mWind,adapt.m.wind,"present",{sites:P,af:14});
+assert(pay.certain.total>0,
+  "wind hardening on a wind-exposed site yields a certain retained saving");
+assert(near(pay.certain.total-pay.certain.heat+pay.negotiated.transferredEl,
+  pay.grossAverted-pay.certain.heat,Math.max(1,pay.grossAverted*1e-6)),
+  "certain + transferred reconcile exactly to the payoff engine's gross averted loss");
+assert(pay.bcrWithCredit>=pay.bcrCertain,
+  "the with-credit BCR can only add to the certain BCR");
+assert(pay.basis.indexOf("credit realization")>=0,
+  "the payoff states its negotiated basis in plain language");
+/* the credit is a dial, and zero means zero */
+tcorProgram.premium.creditRealization=0;
+const pay0=tcorPayoffFor(P[0],mWind,adapt.m.wind,"present",{sites:P,af:14});
+assert(pay0.negotiated.premiumSaving===0&&near(pay0.bcrWithCredit,pay0.bcrCertain),
+  "credit realization 0 collapses the with-credit BCR onto the certain BCR");
+tcorProgram.premium.creditRealization=null;
+/* deductibles far above every modeled loss and a token BI limit keep
+   everything retained, so the measure's payoff is (almost) all certain */
+const dedSave=tcorProgram.deductibles.hurricane.amountUsd;
+tcorProgram.deductibles.hurricane.amountUsd=1e12;
+tcorProgram.deductibles.flood.amountUsd=1e12;
+tcorProgram.deductibles.general.amountUsd=1e12;
+tcorProgram.bi.limitUsd=1;
+const payAll=tcorPayoffFor(P[0],mWind,adapt.m.wind,"present",{sites:P,af:14});
+assert(payAll.negotiated.transferredEl<Math.max(payAll.certain.total*0.01,10),
+  "with nothing transferred, the payoff is certain: no premium story to tell");
+tcorProgram.bi.limitUsd=null;
+tcorProgram.deductibles.hurricane.amountUsd=dedSave;
+tcorProgram.deductibles.flood.amountUsd=100000;
+tcorProgram.deductibles.general.amountUsd=50000;
+const pays=sitePayoffs(P[0],"present",{sites:P,af:14});
+assert(pays.length>0&&pays.every(x=>x.bcrCertain>=0&&x.certain.total>=-1e-6),
+  "sitePayoffs appraises every in-scope measure with non-negative certain savings");
+const ask=renewalAskFor(P,"present",14,0);
+assert(isFinite(ask.premiumAskUsd)&&ask.premiumAskUsd>=0,
+  "the renewal ask aggregates the funded queue's negotiated savings");
+
+/* ---------------- premium module (Task 4): the gap surface ------------- */
+sites=[];nextId=1;clearHazCache();
+addSites([
+  {name:"Priced",latitude:26.2,longitude:-80.1,asset_value_usd:10e6,premium_annual_usd:60000},
+  {name:"Unpriced",latitude:26.2,longitude:-80.1,asset_value_usd:10e6}
+]);
+const PR=sites.slice();
+const prProp=retainedPropertyCalc(PR,"present");
+const prBi=retainedBICalc(PR,"present");
+const prPrem=premiumCalc(PR,"present",prProp,prBi);
+const pPriced=prPrem.perSite[PR[0].id];
+assert(pPriced.ratePer100!=null&&near(pPriced.ratePer100,60000/10e6*100,1e-9),
+  "the actual rate per $100 TIV reads off the premium on file");
+assert(pPriced.gapUsd!=null&&near(pPriced.gapUsd,60000-pPriced.technical,1),
+  "the signed actual-vs-technical gap is exposed per site");
+assert(prPrem.perSite[PR[1].id].gapUsd===null,
+  "no gap verdict without an actual premium (no data, no verdict)");
+assert(prPrem.position.impliedLoad!=null
+  &&near(prPrem.position.impliedLoad,60000/pPriced.transferredEl,0.01),
+  "the implied market load is actual premium over modeled transferred loss, on-file sites only");
+assert(near(premiumLoadEff(prPrem),prPrem.position.impliedLoad,1e-9),
+  "negotiated savings stand on the implied load when premiums are on file");
+assert(prPrem.position.tivShareWithActual===0.5,
+  "the position states how much of the TIV its implied load stands on");
+
+/* ---------------- SOV importer (Task 8) -------------------------------- */
+sites=[];nextId=1;clearHazCache();
+addSites([
+  {name:"Harbor Bay Resort",latitude:26.2,longitude:-80.1,asset_value_usd:10e6,construction:"engineered"},
+  {name:"Palm Grove Villas",latitude:26.3,longitude:-80.2,asset_value_usd:8e6}
+]);
+const SOV_CSV=[
+"Location Name,Campus Code,Owned/Leased,Total Insured Value,BI/EE,Annual Premium,Occupancy,Construction,Year Built",
+'Harbor Bay,HB01,Owned,"12,500,000","2,000,000","85,000",Timeshare Resort,Wood Frame,1998',
+'Mystery Point,XX01,Leased,"5,000,000",,,Hotel,,'
+].join("\n");
+const sovHead=SOV_CSV.split("\n")[0].toLowerCase().split(",").map(x=>x.trim());
+assert(sovLooksLike(sovHead)===true,"an SOV announces itself by its TIV/campus columns");
+assert(sovLooksLike(["name","latitude","longitude","asset_value_usd"])===false,
+  "CLAM's own site schema is never mistaken for an SOV");
+assert(sovLooksLike(["lat","lon","scenario","v10"])===false,
+  "a hazard grid is never mistaken for an SOV");
+loadSovCsv(SOV_CSV,"sov.csv");
+const HB=sites.find(s=>s.name==="Harbor Bay Resort");
+assert(HB.campus_code==="HB01"&&HB.owned_or_leased==="owned"
+  &&HB.bi_ee_usd===2000000&&HB.premium_annual_usd===85000&&HB.asset_value_usd===12500000,
+  "SOV facts supersede hand-keyed TCOR fields (campus, tenure, BI & EE, premium, TIV)");
+assert(HB.construction==="engineered",
+  "an operator-verified vulnerability profile is never overwritten by the broker schedule");
+assert(HB.timeshare_share===1,
+  "a timeshare occupancy defaults the continuing-revenue share (editable per site)");
+assert(Array.isArray(HB.sov_fields)&&HB.sov_fields.indexOf("campus_code")>=0,
+  "every SOV-applied field is recorded for the provenance vocabulary");
+assert(sovLog&&sovLog.matched===1&&sovLog.unmatched.length===1
+  &&sovLog.unmatched[0].tiv===5000000,
+  "an unmatched SOV row is reported WITH its TIV, never silently dropped");
+const PG=sites.find(s=>s.name==="Palm Grove Villas");
+assert(PG.campus_code===undefined,"sites the SOV does not carry are untouched");
+/* bootstrap: an SOV with coordinates builds the portfolio from nothing */
+sites=[];nextId=1;clearHazCache();
+loadSovCsv([
+"Location Name,Latitude,Longitude,Total Insured Value,Campus Code",
+'Boot One,26.20,-80.10,"9,000,000",B1',
+'Boot Two,26.30,-80.20,"7,000,000",B1',
+"No Coords,,,1000000,B2"
+].join("\n"),"sov_boot.csv");
+assert(sites.length===2&&sites[0].asset_value_usd===9000000&&sites[0].campus_code==="B1",
+  "with no portfolio loaded, an SOV carrying coordinates bootstraps the sites");
+assert(sovLog.mode==="bootstrap"&&sovLog.skipped===1,
+  "rows without coordinates or TIV are counted, not silently dropped");
+
+console.log("\nALL TCOR + LOSS-RUN + BI + PAYOFF + PREMIUM + SOV TESTS PASSED");
 """
 
 
