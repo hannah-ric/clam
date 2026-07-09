@@ -323,7 +323,11 @@ function wire(){
   horSel.onchange=composeScenario;
   document.getElementById("sampleBtn").onclick=loadSample;
   document.getElementById("exportBtn").onclick=exportCsv;
-  document.getElementById("briefBtn").onclick=openBrief;
+  /* v3: the board brief is the TCOR one-pager; the pre-TCOR analytical
+     brief stays available as the legacy item (nothing deleted) */
+  document.getElementById("briefBtn").onclick=(typeof openTcorBrief==="function")?openTcorBrief:openBrief;
+  const blb=document.getElementById("briefLegacyBtn");
+  if(blb)blb.onclick=openBrief;
   window.addEventListener("afterprint",()=>{document.body.classList.remove("printbrief");});
   const dcb=document.getElementById("decisionCompactBtn");
   if(dcb)dcb.onclick=()=>{ui.decisionCompact=!ui.decisionCompact;persist();renderDecision();};

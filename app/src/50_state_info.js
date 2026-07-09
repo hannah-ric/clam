@@ -410,7 +410,7 @@ function showMapUnavailable(){
      under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
   if(el.classList&&el.classList.add)el.classList.add("mapless");
-  el.innerHTML='<div class="mapless-msg">Map is unavailable on this network. Every figure and analysis works without it.</div>';
+  el.innerHTML='<div class="mapless-msg">The climate map lives on the command view (top bar: Command view): real hazard surfaces, TCOR-encoded sites, and the pathway timeline, fully offline. This legacy pins-map area is retired; every figure and analysis works without it.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }

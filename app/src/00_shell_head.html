@@ -4,8 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Resort Portfolio Risk-to-Value</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<!-- v3: the online Leaflet/tile dependency is retired. The climate map
+     is MapLibre GL (vendored) over a bundled Natural Earth basemap, so
+     the app makes ZERO network calls; the legacy analyst map area shows
+     a pointer to the command view instead of pins. -->
+
 <style>
   /* ============================================================
      Design tokens. Restyling the app means editing THIS block.
@@ -720,6 +723,12 @@
 
   /* ---- Phase C2: board brief (print) ---- */
   #briefHost{display:none}
+  /* v3 TCOR board one-pager: colours must survive the printer */
+  #briefHost .briefpage{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #briefHost .bsw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  #briefHost .bbar{display:flex;gap:2px;height:10px;border-radius:5px;overflow:hidden;margin:6px 0 2px}
+  #briefHost .bflag{display:inline-block;padding:0 6px;border:1px dashed #b98a2e;border-radius:8px;color:#7A4A08;font-size:9.5px;font-weight:600}
+  #briefHost .bframe{display:inline-block;padding:0 7px;border:1px solid #0F3A4B;border-radius:8px;color:#0F3A4B;font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
   #briefHost .briefpage{max-width:760px;margin:0 auto;color:#111;font-size:12.5px;line-height:1.5}
   #briefHost .bkicker{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#555}
   #briefHost h1{font-family:var(--font-display);font-size:26px;margin:4px 0 2px;color:#0F3A4B}
@@ -800,7 +809,8 @@
     <div class="exportwrap">
       <button class="btn solid" id="exportMenuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export &amp; brief &#9662;</button>
       <div class="exportmenu" id="exportMenu" role="menu" aria-label="Exports and briefings">
-        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>Opens your print dialog; choose Save as PDF. One page, data basis stated.</small></button>
+        <button class="mi" role="menuitem" id="briefBtn"><b>Board brief (PDF)</b><small>The TCOR one-pager at the current scenario and framing. Opens your print dialog; choose Save as PDF.</small></button>
+        <button class="mi" role="menuitem" id="briefLegacyBtn"><b>Climate-cost brief (legacy)</b><small>The pre-TCOR analytical one-pager (expected annual climate cost)</small></button>
         <button class="mi" role="menuitem" id="exportBtn"><b>Portfolio CSV</b><small>Full multi-hazard schema, feeds Power BI (frozen contract)</small></button>
         <button class="mi" role="menuitem" id="menuBrokerBtn"><b>Broker evidence pack (CSV)</b><small>Secondary modifiers plus the modeled view, for the renewal submission</small></button>
         <button class="mi" role="menuitem" id="menuActionBtn"><b>Adaptation action list (CSV)</b><small>Every ranked site-and-measure pair with the funding cutline</small></button>
@@ -1365,6 +1375,20 @@
       <div class="note">Wiring to Power BI: the exported CSV carries per-site EAD and rating for every peril, combined physical EAD and %, heat indicators, combined return-period losses, and the full financial layer (per-site revenue, direct damage, business interruption, heat revenue at risk, and total climate AAL). Run refresh_hazard.py on a schedule to keep the multi-peril hazard grid current (add a <span class="mono">hazard</span> column per row), load it here, and the same schema feeds your RtV model and the 17-resort backtest.</div>
       <div class="note" style="margin-top:8px"><b>Decision-layer artifacts (Wave 1).</b> Two additional exports carry the decision layer on their own schemas; the Power BI export above is a frozen contract and is unchanged. The <b>broker evidence pack</b> (Adaptation tab, risk-layering panel) writes one row per site: verified secondary modifiers (roof type and year, opening protection, first-floor elevation, elevated equipment, defenses, wildfire attributes) plus present-day modeled direct EAD, the top peril, the 1-in-100 loss, and a <span class="mono">hazard_source</span> column stating whether figures came from a CLIMADA grid or the interim model. The <b>action list</b> (Adaptation tab, action queue) writes every ranked site-and-measure pair with averted loss, cost, BCR, funded status, and the appraisal assumptions (scenario, horizon, discount rate); when a results pack is loaded, its canonical capital-plan rows are appended and labeled <span class="mono">climada_pack</span>. The owner column ships blank on purpose.</div>
     </div>
+    <div class="panel">
+      <h3>Export artifacts &amp; schemas (v3)</h3>
+      <div class="hint">Every surface exports the exact data behind what it shows, scoped to the selected scenario and labeled with it. These files feed the SharePoint-to-Power-BI pipeline, so the formats are stable by contract: <b>new artifacts get new files; within a file, columns only ever append at the tail, never rename or reorder.</b> The legacy Power BI export above is a frozen contract and is unchanged.</div>
+      <div class="kv" style="margin-top:10px">
+        <span class="k">Provenance vocabulary</span><span class="v">Per-field provenance columns use four values, never blended: <span class="mono">sov</span> (a fact on file from the SOV or profile), <span class="mono">calibrated</span> (modeled AND grounded by the loaded loss run within the 0.5x-2x band), <span class="mono">modeled</span> (event-set or pack math), <span class="mono">estimated</span> (interim model, default terms, or any fallback). Anything standing on a fallback reads <span class="mono">estimated</span>; the display never overstates.</span>
+        <span class="k mono">clam_tcor_portfolio_&lt;scenario&gt;.csv</span><span class="v">One row per site: identity and tenure (<span class="mono">site_id, name, brand, campus_code, owned_or_leased, latitude, longitude, tiv_usd, bi_ee_usd</span>), the scenario (<span class="mono">scenario, scenario_label</span>), the five components (<span class="mono">tcor_total_usd, retained_property_usd, retained_property_cat_usd, frequency_layer_usd, retained_bi_usd, bi_waiting_usd, bi_overage_usd, premium_allocated_usd, premium_technical_usd, premium_actual_usd, admin_risk_control_usd</span>), the flagged indirect estimate (<span class="mono">indirect_flagged_excluded_usd</span>, never inside the total), quality (<span class="mono">confidence, missing_fields</span>), per-field provenance (<span class="mono">prov_retained_property, prov_retained_bi, prov_premium</span>), <span class="mono">calibration_ratio_property</span>, and the per-peril <span class="mono">hazard_source</span> string (grid / interim / none per peril, pipe-separated, unchanged from the legacy exports).</span>
+        <span class="k mono">clam_decision_list_&lt;scenario&gt;.csv</span><span class="v">Exactly the ranked list beside the map: <span class="mono">rank, name, brand, scenario, tcor_total_usd, dominant_component, top_climate_driver, driver_gross_ead_usd, top_opportunity, opportunity_averted_usd_per_yr, opportunity_cost_usd, opportunity_payback_years, premium_allocated_usd, confidence, hazard_source</span>.</span>
+        <span class="k mono">clam_tcor_components_&lt;scenario&gt;.csv</span><span class="v">Long format (<span class="mono">metric, component, value_usd_per_yr, scenario, basis</span>): the portfolio five-part split, TCOR total, expected year, bad-year p99, gross modeled loss, transferred, the flagged indirect line, and the confidence share.</span>
+        <span class="k mono">clam_site_tcor_&lt;site&gt;_&lt;scenario&gt;.csv / .json</span><span class="v">The site view's full backing data. CSV is long format (<span class="mono">section, field, value, unit, basis</span>) across waterfall, drivers, opportunities, and quality; JSON carries the same plus the engine's raw tcorSite row, event contributions, and the calibration summary.</span>
+        <span class="k">Board one-pager</span><span class="v">Print/PDF via the browser (zero dependencies): TCOR headline and five components, expected vs bad year, the gross-to-retained transfer share, top sites, top opportunities, the premium position, and an honest data-basis footer. Carries the current scenario AND the renewal/capital framing; under the renewal framing the premium position leads. The pre-TCOR analytical brief remains available as the legacy item.</span>
+        <span class="k">Scenario labeling</span><span class="v">Every artifact carries the scenario in the file name and in a column (or the brief header): <span class="mono">present</span> or <span class="mono">&lt;pathway&gt;_&lt;horizon&gt;</span> plus the plain-language label. Exports always reflect the modeled point currently selected, never an interpolated map frame.</span>
+        <span class="k">Existing artifacts</span><span class="v">Unchanged: the frozen Power BI CSV (schema above), the broker evidence pack, and the adaptation action list (both documented in the decision-layer note).</span>
+      </div>
+    </div>
     <div class="panel pro-only">
       <h3>Backtest against observed losses<button type="button" class="info" data-info="backtest" aria-label="How this is calculated" aria-expanded="false">i</button></h3>
       <div class="hint">CLIMADA's calibration loop: compare modeled expected damage against your own loss history. Site names must match the loaded portfolio.</div>
@@ -1390,7 +1414,7 @@
 
 <div class="foot-legal advanced-only">
   Screening and appraisal tool for internal planning. Sample asset values are illustrative and not actual Travel + Leisure Co. figures. Hazard from the built-in interim model is an approximation for exploration; load a CLIMADA hazard grid for disclosure-grade results.
-  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.0.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall) over the classic workspace in Advanced: scenario timeline, score tracing, board brief, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
+  <br><span style="font-size:11px;line-height:1.6">Resort Portfolio Risk-to-Value <span class="mono">v3.0.0</span>, assembled from source. TCOR command view (portfolio TCOR, expected vs bad year, ranked decision list, site waterfall), WebGL climate map (MapLibre GL, offline Natural Earth basemap, per-peril hazard surfaces, event footprints, accumulation, pathway timeline with modeled-vs-interpolated labeling), TCOR board one-pager, over the classic workspace in Advanced: scenario timeline, score tracing, decision layer (risk tolerance and lanes, action queue and cutline, renewal workbench), display options (theme, density, detail level, panels). Zero network calls. Perils: TC wind (Emanuel 2011), coastal and riverine flood, extreme heat, wildfire, TC rainfall, on SSP-RCP scenarios. Measure library, ECA cost curve, waterfall, insurance layering, uncertainty bands, site scorecards, loss backtest. Runs entirely in your browser; portfolio data is never transmitted.</span>
 </div>
 
 <div id="briefHost"></div>
@@ -1499,6 +1523,4 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>

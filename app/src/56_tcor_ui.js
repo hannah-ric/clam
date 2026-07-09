@@ -352,6 +352,7 @@ function renderCommand(){
       '<button class="mi" role="menuitem" id="cmdExpTcor"><b>Portfolio TCOR by site (CSV)</b><small>Five components per site with per-field provenance, scoped to this scenario</small></button>'+
       '<button class="mi" role="menuitem" id="cmdExpList"><b>Ranked decision list (CSV)</b><small>Exactly the list beside the map: totals, drivers, opportunities, confidence</small></button>'+
       '<button class="mi" role="menuitem" id="cmdExpComp"><b>Component breakdown (CSV)</b><small>Portfolio five-part split, expected vs bad year, confidence</small></button>'+
+      '<button class="mi" role="menuitem" id="cmdExpBrief"><b>Board one-pager (print / PDF)</b><small>TCOR headline, components, top sites and opportunities, at this scenario and framing</small></button>'+
       '</div></div></div>';
   band.innerHTML=h;
 
@@ -375,6 +376,7 @@ function renderCommand(){
     w("cmdExpTcor",exportTcorPortfolioCsv);
     w("cmdExpList",exportDecisionListCsv);
     w("cmdExpComp",exportComponentBreakdownCsv);
+    w("cmdExpBrief",openTcorBrief);
   }
   wireDerive(band,key=>{
     if(key.indexOf("pc_")===0)return portDeriveHtml(key.slice(3),c);
@@ -989,6 +991,108 @@ function exportSiteTcorJson(id){
   dlFile("clam_site_tcor_"+String(r.name).replace(/[^a-z0-9]+/gi,"_").toLowerCase()+"_"+scenario+".json",
     JSON.stringify(out,null,2),"application/json");
   toast("Site detail exported: "+r.name);
+}
+
+/* ============================================================
+   The TCOR board one-pager: a print/PDF-ready decision summary
+   carrying the CURRENT scenario and framing. One page: the headline
+   TCOR and its five components, expected vs bad year, gross-to-
+   retained thesis, top sites, top opportunities (or the premium
+   position first under the renewal framing), and an honest data-basis
+   footer. Zero dependencies: the browser's own print dialog makes the
+   PDF, exactly like the legacy brief (which stays available).
+   ============================================================ */
+const BRIEF_COMP_HEX={prop:"#0E7A9B",bi:"#C2561B",prem:"#7048C6",freq:"#1E8E5A",admin:"#B84A82"};
+function tcorBriefHtml(){
+  if(!sites.length)return "";
+  const c=cmdCtx(); if(!c)return "";
+  const tp=c.tp;
+  const lens=(ui&&ui.lens)==="renewal"?"renewal":"capital";
+  const tiv=sites.reduce((a,s)=>a+(+s.asset_value_usd||0),0);
+  const dt=new Date().toISOString().slice(0,10);
+  const conf=Math.round(c.confidence*100);
+  const xferPct=tp.waterfall.gross>0?Math.round((tp.waterfall.transferredProperty+tp.waterfall.transferredBI)/tp.waterfall.gross*100):0;
+  const kpi=(l,v,foot)=>'<div class="bk"><div class="bl">'+l+'</div><div class="bv">'+v+'</div><div class="bf">'+foot+'</div></div>';
+  const tr2=(a,b)=>'<tr><td>'+a+'</td><td class="num mono">'+b+'</td></tr>';
+
+  /* component split, in the same fixed order and colours as the app */
+  const compTot=tp.total||1;
+  let compBar='<div class="bbar">';
+  let compRows='';
+  TCOR_COMPONENTS.forEach(cc=>{
+    const v=Math.max(c.portComp[cc.key],0);
+    compBar+='<div style="flex:'+(v/compTot).toFixed(4)+' 1 0%;background:'+BRIEF_COMP_HEX[cc.key]+'"></div>';
+    compRows+=tr2('<span class="bsw" style="background:'+BRIEF_COMP_HEX[cc.key]+'"></span>'+esc(cc.label),
+      fmt$(v)+"/yr · "+(v/compTot*100).toFixed(0)+"%");
+  });
+  compBar+='</div>';
+
+  /* top sites by TCOR, with dominant component and driver */
+  const topSites=c.rows.slice(0,8).map(r=>
+    '<tr><td><span class="bsw" style="background:'+BRIEF_COMP_HEX[r.domComp]+'"></span>'+esc(r.name)+
+    ' <small style="color:#777">'+esc(HAZARD_LABEL[r.driver]||r.driver)+(r.estimate?' · est':'')+'</small></td>'+
+    '<td class="num mono">'+fmt$(r.total)+'/yr</td></tr>').join("");
+
+  /* top opportunities: the action queue's own ranking (funded first) */
+  const q=actionQueue(sites,scenario,c.af,(typeof adapt!=="undefined"&&adapt&&adapt.budget)?+adapt.budget:0);
+  const opps=q.items.slice(0,6).map(it=>
+    '<tr><td>'+esc(it.site)+' · '+esc(it.measure.split("(")[0].trim())+
+    ' <small style="color:#777">'+(it.funded?"funded":"unfunded")+'</small></td>'+
+    '<td class="num mono">'+fmt$(it.averted)+'/yr for '+fmt$(it.cost)+' · '+it.bcr.toFixed(1)+'x</td></tr>').join("");
+
+  /* the premium position (leads under the renewal framing) */
+  const prem=tp.ctx.prem;
+  const premRows=
+    tr2("Allocated premium",fmt$(prem.allocatedTotal)+"/yr")+
+    tr2("Technical benchmark",fmt$(prem.technicalTotal)+"/yr at "+prem.load+"x load")+
+    tr2("Actual premiums on file",prem.nActual+" of "+sites.length+" sites · "+fmt$(prem.actualTotal)+"/yr")+
+    tr2("Retained (property + BI + frequency)",fmt$(tp.components.retainedProperty+tp.components.retainedBI)+"/yr");
+  const oppSec='<h2>Top opportunities (adaptation)</h2><table>'+
+    (opps||'<tr><td colspan="2">No in-scope measures at current settings.</td></tr>')+'</table>'+
+    '<div style="font-size:10px;color:#555;margin-top:2px">Planning-grade costs; the TCOR-aware premium-credit split is pending the payoff module and is not shown rather than guessed.</div>';
+  const premSec='<h2>Premium & retention position</h2><table>'+premRows+'</table>';
+
+  /* honest data-basis footer */
+  const auth=perilAuthority();const nLive=auth.filter(a=>a.live).length;
+  const calibLine=lossRun?(c.calib&&c.calib.materialDisagreement
+      ?"Loss run loaded ("+c.calib.years.min+"-"+c.calib.years.max+"): MODEL AND ACTUALS DISAGREE: "+c.calib.disagreements[0]
+      :"Loss run loaded ("+(c.calib?c.calib.years.min+"-"+c.calib.years.max:"")+"); body calibration within band; the rare-cat tail stays modeled.")
+    :"No loss run loaded: retained figures are uncalibrated model output.";
+  return '<div class="briefpage">'+
+    '<div class="bkicker">Travel + Leisure Co. · Resort Portfolio Risk-to-Value</div>'+
+    '<h1>Total cost of risk: board brief</h1>'+
+    '<div class="bmeta">'+esc(scenLabelPlain(scenario))+' · <span class="bframe">'+(lens==="renewal"?"Renewal framing (1-3 yr)":"Capital framing (multi-decade)")+'</span> · '+
+      sites.length+' site'+(sites.length>1?"s":"")+' · generated '+dt+
+      (tp.estimate?' · <span class="bflag">estimate: see data basis</span>':'')+'</div>'+
+    '<div class="bkpis">'+
+      kpi("Total cost of risk",fmt$(tp.total)+"/yr",(tiv?(tp.total/tiv*100).toFixed(2):"0")+"% of "+fmt$(tiv)+" insured value")+
+      kpi("Expected vs bad year",fmt$(c.expectedYear)+" / "+fmt$(c.badYear),"bad year: p99 retained property; BI and premium at expected level")+
+      kpi("Gross modeled loss",fmt$(tp.waterfall.gross)+"/yr",xferPct+"% transferred to the insurer: what stays is BI + premium + retained slivers")+
+      kpi("Confidence",conf+"%","of TCOR backed by complete data · "+c.nComplete+" of "+sites.length+" sites complete")+
+    '</div>'+
+    '<h2>The five components</h2>'+compBar+'<table>'+compRows+
+      tr2("Indirect (flagged estimate, never in the total)",fmt$(tp.indirect.value)+"/yr")+'</table>'+
+    '<div class="bcols"><div>'+
+      '<h2>Where the cost sits</h2><table>'+topSites+'</table>'+
+    '</div><div>'+
+      (lens==="renewal"?premSec+oppSec:oppSec+premSec)+
+    '</div></div>'+
+    '<div class="bprov"><b>Data basis:</b> '+
+      (hazardGrid?("CLIMADA hazard grid ("+esc(hazardGrid.meta.name)+"), "+nLive+" of "+HAZARDS.length+" perils grid-driven; the rest interim screening."):
+        "Built-in interim screening model for every peril; load a CLIMADA grid for disclosure-grade figures.")+
+      " "+(resultsPack?("Results pack "+esc(resultsPack.name)+": hurricane retained is event-level with the shared per-occurrence campus deductible."):
+        "No results pack: hurricane retained uses the labeled campus-comonotonic approximation.")+
+      " "+esc(calibLine)+
+      (tp.basisFlags.length?" Basis flags: "+esc(tp.basisFlags.join(" · "))+".":"")+
+      " Deductible and BI terms are program parameters with documented defaults, not policy facts. Screening and appraisal for internal planning, not audited disclosure.</div>"+
+    '</div>';
+}
+function openTcorBrief(){
+  if(!sites.length){toast("Load a portfolio first: the brief reports the portfolio.");return;}
+  const h=document.getElementById("briefHost"); if(!h)return;
+  h.innerHTML=tcorBriefHtml();
+  document.body.classList.add("printbrief");
+  setTimeout(()=>{try{window.print();}catch(e){}},60);
 }
 
 /* ---- Advanced mode toggle (the classic workspace, one action away) ---- */
