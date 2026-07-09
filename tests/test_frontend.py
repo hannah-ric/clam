@@ -758,15 +758,15 @@ assert(siteGroupKey({site_id:"C1",latitude:1,longitude:2})===siteGroupKey({site_
 
 /* two named insureds share one campus; a third site stands alone */
 sites=[
- {id:1,name:"Angels Camp",brand:"WorldMark",latitude:25.5,longitude:-80.1,asset_value_usd:80e6,named_insured:"HOA",site_id:"FU2005",site_name:"Angels Camp - WorldMark",construction:"masonry",year_built:1999},
- {id:2,name:"Angels Camp",brand:"WorldMark",latitude:25.5,longitude:-80.1,asset_value_usd:20e6,named_insured:"TNL",site_id:"FU2005",site_name:"Angels Camp - WorldMark",construction:"frame",year_built:1999},
- {id:3,name:"Island Resort",brand:"Margaritaville",latitude:18.34,longitude:-64.93,asset_value_usd:50e6,named_insured:"HOA",site_id:"ISL01"},
+ {id:1,name:"Cypress Point",brand:"Coastal Collection",latitude:25.5,longitude:-80.1,asset_value_usd:80e6,named_insured:"HOA",site_id:"FU2005",site_name:"Cypress Point Resort",construction:"masonry",year_built:1999},
+ {id:2,name:"Cypress Point",brand:"Coastal Collection",latitude:25.5,longitude:-80.1,asset_value_usd:20e6,named_insured:"Operating company",site_id:"FU2005",site_name:"Cypress Point Resort",construction:"frame",year_built:1999},
+ {id:3,name:"Island Resort",brand:"Island Collection",latitude:18.34,longitude:-64.93,asset_value_usd:50e6,named_insured:"HOA",site_id:"ISL01"},
 ];
 assert(siteGroups(sites).length===2,"siteGroups collapses the shared-site_id records into one physical site");
 const camp=siteGroups(sites).map(g=>scoreGroup(g,"present")).find(g=>g.key==="id:fu2005");
 assert(camp.members.length===2&&Math.abs(camp.value-100e6)<1&&camp.multi===true,
   "the campus group aggregates value across its two named insureds");
-assert(camp.name==="Angels Camp - WorldMark","the group display name prefers site_name");
+assert(camp.name==="Cypress Point Resort","the group display name prefers site_name");
 assert(camp.byInsured.length===2&&camp.byInsured[0].ead>=camp.byInsured[1].ead,
   "the breakout lists each named insured, most exposed first");
 assert(Math.abs(camp.byInsured.reduce((a,r)=>a+r.ead,0)-camp.ead)<1e-6,
@@ -795,13 +795,13 @@ assert(JSON.stringify(matrixRows("brand"))===JSON.stringify(matrixGroupRows(s=>s
 
 /* the detail/scorecard breakout renders who is impacted and to what degree */
 const niHtml=namedInsuredDetail(sites[0]);
-assert(niHtml.indexOf("Named insured at this site")>=0&&niHtml.indexOf("HOA")>=0&&niHtml.indexOf("TNL")>=0&&niHtml.indexOf("Share")>=0,
+assert(niHtml.indexOf("Named insured at this site")>=0&&niHtml.indexOf("HOA")>=0&&niHtml.indexOf("Operating company")>=0&&niHtml.indexOf("Share")>=0,
   "the named-insured breakout panel names both parties and their shares");
 assert(namedInsuredDetail(sites[2])==="","a single-record site shows no breakout panel");
 
 /* coordinate fallback groups records with no site_id but identical coordinates */
 sites=[{id:1,name:"A",latitude:25,longitude:-80,asset_value_usd:1e6,named_insured:"HOA"},
-       {id:2,name:"B",latitude:25,longitude:-80,asset_value_usd:1e6,named_insured:"TNL"},
+       {id:2,name:"B",latitude:25,longitude:-80,asset_value_usd:1e6,named_insured:"Operating company"},
        {id:3,name:"C",latitude:26,longitude:-81,asset_value_usd:1e6}];
 assert(siteGroups(sites).length===2,"records at identical coordinates aggregate even without a site_id");
 
@@ -813,8 +813,8 @@ assert(siteGroups(sites).length===2&&siteGroups(sites).every(g=>g.members.length
 
 /* CSV + form ingest the new fields */
 loadSiteCsv("name,latitude,longitude,asset_value_usd,named_insured,site_id,site_name\\n"+
-            "Angels Camp,25.5,-80.1,80000000,HOA,FU2005,Angels Camp - WorldMark","sites.csv");
-assert(sites.length===1&&sites[0].named_insured==="HOA"&&sites[0].site_id==="FU2005"&&sites[0].site_name==="Angels Camp - WorldMark",
+            "Cypress Point,25.5,-80.1,80000000,HOA,FU2005,Cypress Point Resort","sites.csv");
+assert(sites.length===1&&sites[0].named_insured==="HOA"&&sites[0].site_id==="FU2005"&&sites[0].site_name==="Cypress Point Resort",
   "site CSV ingests named_insured, site_id, and site_name");
 const _niRec=siteRecordFromFields({name:"X",latitude:25,longitude:-80,asset_value_usd:5e7,named_insured:"HOA",site_id:"C1",site_name:"Campus One"});
 assert(_niRec.named_insured==="HOA"&&_niRec.site_id==="C1"&&_niRec.site_name==="Campus One",

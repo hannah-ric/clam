@@ -680,13 +680,13 @@ function svWfDerive(key,c,r,w){
   if(key==="admin")return deriveHtml("Admin & risk control",[
     ["This site's share",fmt$(w.admin)+"/yr"]],
     "Program admin and risk-control spend allocated by TIV; site spend on file wins.");
-  if(key.indexOf("tcor")===0)return deriveHtml("TCOR: what TNL pays",[
+  if(key.indexOf("tcor")===0)return deriveHtml("TCOR: what you retain",[
     ["Retained property",fmt$(w.retProp)+"/yr"],
     ["Retained BI",fmt$(w.biRetained)+"/yr"],
     ["Premium",fmt$(w.prem)+"/yr"],
     ["Admin & risk control",fmt$(w.admin)+"/yr"],
     ["Total",fmt$(w.tcor)+"/yr"]],
-    "Most of the gross number is transferred; what TNL pays is BI plus premium plus the retained slivers. Indirect costs (rebooking, reputation) are a flagged estimate and never inside this total.");
+    "Most of the gross number is transferred; what you retain is BI plus premium plus the retained slivers. Indirect costs (rebooking, reputation) are a flagged estimate and never inside this total.");
   return null;
 }
 
@@ -768,7 +768,7 @@ function renderSiteView(){
     '</div>'+
     '<div class="panel" style="margin-bottom:16px"><h3>From gross loss to TCOR'+infoBtn("wfTeach")+'</h3>'+
     '<div class="hint">Hover any bar for its derivation. '+
-      (w.grossProp>0?('The insurer takes '+Math.round(w.transferred/Math.max(w.grossProp,1)*100)+'% of the gross modeled property loss; what TNL pays is BI, premium, and the retained slivers.'):'')+'</div>'+
+      (w.grossProp>0?('The insurer takes '+Math.round(w.transferred/Math.max(w.grossProp,1)*100)+'% of the gross modeled property loss; what you retain is BI, premium, and the retained slivers.'):'')+'</div>'+
     svWaterfallHtml(w)+'</div>'+
     '<div class="sv-grid">'+
     compCard("Retained property","var(--c-prop)",[
@@ -817,7 +817,7 @@ function renderSiteView(){
       '<span class="k">Site loss at 1-in-100</span><span class="v mono">'+fmt$((function(){const lad=siteLadderFor(s,"tc_joint",scenario,c.join);const i=lad.rps.indexOf(100);return i>=0?lad.losses[i]:0;})())+' gross (wind + surge)</span>'+
       '<span class="k">Portfolio bad year (p99)</span><span class="v mono">'+fmt$(c.sim.p99)+' retained property</span>'+
       '</div>'+
-      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, and downtime beyond the indemnity period stays with TNL. The seeded year simulation carries the retained-property side; the BI bad-year module is pending and this narrative says so.</div></div>'+
+      '<div class="sv-note" style="margin-top:8px">A 1-in-100 season can blow through the shared hurricane retention and the BI limit at once: the waiting period bites on every event, and downtime beyond the indemnity period stays retained. The seeded year simulation carries the retained-property side; the BI bad-year module is pending and this narrative says so.</div></div>'+
     '<div class="panel" style="margin-bottom:0"><h3>Calibration vs actual losses</h3>'+
       (lossRun?(
         '<div class="kv" style="margin-top:6px">'+
@@ -1059,7 +1059,7 @@ function tcorBriefHtml(){
       :"Loss run loaded ("+(c.calib?c.calib.years.min+"-"+c.calib.years.max:"")+"); body calibration within band; the rare-cat tail stays modeled.")
     :"No loss run loaded: retained figures are uncalibrated model output.";
   return '<div class="briefpage">'+
-    '<div class="bkicker">Travel + Leisure Co. · Resort Portfolio Risk-to-Value</div>'+
+    '<div class="bkicker">Illustrative Resort Group · Resort Portfolio Risk-to-Value</div>'+
     '<h1>Total cost of risk: board brief</h1>'+
     '<div class="bmeta">'+esc(scenLabelPlain(scenario))+' · <span class="bframe">'+(lens==="renewal"?"Renewal framing (1-3 yr)":"Capital framing (multi-decade)")+'</span> · '+
       sites.length+' site'+(sites.length>1?"s":"")+' · generated '+dt+
@@ -1129,7 +1129,7 @@ Object.assign(INFO,{
     "<p>The same data, framed for the two decisions. <b>Renewal</b> (present day, 1 to 3 years): premium and retention lead; the list shows each site's allocated premium against the technical benchmark and its retained total. <b>Capital</b> (multi-decade): adaptation leads; the list shows each site's best measure and payback at the selected horizon.</p>"+
     "<p>Switching the framing never changes a computed figure, only which columns lead.</p>"},
   wfTeach:{t:"The TCOR waterfall",b:
-    "<p>Start at the <b>gross modeled property loss</b>: what the climate event sets say the buildings lose per year before any insurance. Subtract the <b>transferred</b> portion the insurance program pays. What remains is <b>retained property</b> (with the frequent attritional band shown in green). Add <b>retained BI</b>, the <b>allocated premium</b>, and <b>admin</b>, and you arrive at <b>TCOR</b>: what TNL actually pays.</p>"+
+    "<p>Start at the <b>gross modeled property loss</b>: what the climate event sets say the buildings lose per year before any insurance. Subtract the <b>transferred</b> portion the insurance program pays. What remains is <b>retained property</b> (with the frequent attritional band shown in green). Add <b>retained BI</b>, the <b>allocated premium</b>, and <b>admin</b>, and you arrive at <b>TCOR</b>: what the portfolio actually retains.</p>"+
     "<p>This one figure is the thesis of the tool: most of the gross number is transferred; the cost that stays is BI plus premium plus a sliver of retained damage. Hover any bar for its exact derivation and basis.</p>"},
   svOpp:{t:"Opportunities",b:
     "<p>The site's in-scope adaptation measures, appraised by the engine: annual loss averted, one-time cost, simple payback, and the benefit-cost ratio at the current appraisal settings (Advanced &#8594; Adaptation).</p>"+

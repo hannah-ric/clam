@@ -1476,7 +1476,7 @@ function briefHtml(){
   const kpi=(l,v,foot)=>'<div class="bk"><div class="bl">'+l+'</div><div class="bv">'+v+'</div><div class="bf">'+foot+'</div></div>';
   const tr2=(a,b)=>'<tr><td>'+a+'</td><td class="num mono">'+b+'</td></tr>';
   return '<div class="briefpage">'+
-    '<div class="bhead"><div class="bkicker">Travel + Leisure Co. \u00b7 Resort Portfolio Risk-to-Value</div>'+
+    '<div class="bhead"><div class="bkicker">Illustrative Resort Group \u00b7 Resort Portfolio Risk-to-Value</div>'+
     '<h1>Portfolio climate risk brief</h1>'+
     '<div class="bmeta">'+esc(SCEN_LABEL[sc]||sc)+' \u00b7 '+sites.length+' site'+(sites.length>1?"s":"")+' \u00b7 generated '+dt+'</div></div>'+
     '<div class="bkpis">'+
