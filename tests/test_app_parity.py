@@ -1,11 +1,17 @@
-"""Phase C parity gate, Task 3.5 edition. Two contracts:
+"""Phase C parity gate, Task 3.5 + assumptions-v3 edition. Two contracts:
 
-1. FIRE-FREE PARITY: on a fixture with no wildfire input (no wfire grid
-   rows, no wui_class), the current deployable must produce EXACTLY the
-   numbers v1.13 produces across the whole computation surface: per-site
-   per-peril EAD, the financial layer, adaptation, waterfall, insurance
-   layering, uncertainty, and the Power BI export string byte for byte.
-   This proves the wildfire structural fix moved NOTHING else.
+1. FIRE-FREE PARITY (present day): on a fixture with no wildfire input (no
+   wfire grid rows with burn probability, no wui_class), the current
+   deployable must produce EXACTLY the numbers v1.13 produces for every
+   peril EXCEPT TC rainfall at the present-day scenario. Rainfall is the
+   intentional v3 ponding recalibration (drain/pond/freeboard); everything
+   else on the fire-free present surface must stay byte-identical so the
+   wildfire structural fix and later map work move NOTHING else.
+
+   Future scenarios intentionally diverge under the v3 warming/SLR margin
+   rule (uniform 15% of AR6 central). The gate pins that the present-day
+   non-prain surface is unchanged, that prain EAD rose (Harvey-class events
+   can register loss), and that the 2080 pathway spread is not compressed.
 
 2. THE NEW FIRE MATH, pinned to its formula (not to v1.13, whose flat
    FIRE_MDD=0.6 cell-occupancy math is deliberately retired): point burn
@@ -16,6 +22,7 @@
     python3 test_app_parity.py
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -88,6 +95,8 @@ for(const sc of ["present","ssp245_2050","ssp585_2080"]){
     unc:(u=>({c:u.central,l:u.low,h:u.high}))(uncRange(sites,sc))};
 }
 out.waterfall=waterfallData(sites,"ssp245_2050");
+out.warming={ssp126_2080:WARMING.ssp126_2080,ssp585_2080:WARMING.ssp585_2080,
+  prainDrain:PRAIN_DRAIN_MM,prainPond:PRAIN_POND_COEFF,prainFb:PRAIN_FB};
 scenario="ssp245_2050";
 exportCsv();
 out.exportCsv=_lastCsv;
@@ -145,26 +154,68 @@ def run_app(path, fixture):
     return r.stdout.strip()
 
 
+def _strip_prain(per):
+    """Drop the intentional rainfall recalibration from a per-site dict."""
+    return {site: {hz: v for hz, v in haz.items() if hz != "prain"}
+            for site, haz in per.items()}
+
+
 def main():
     a, b = run_app(OLD, FIXTURE), run_app(NEW, FIXTURE)
-    if a != b:
-        import json
-        da, db = json.loads(a), json.loads(b)
-        for k in da:
-            if da[k] != db.get(k):
-                print(f"DIVERGENCE at '{k}':")
-                print(f"  v1.13 : {str(da[k])[:300]}")
-                print(f"  v2.1.0: {str(db.get(k))[:300]}")
+    da, db = json.loads(a), json.loads(b)
+
+    # 1. Present-day fire-free identity for every peril except prain.
+    old_p, new_p = da["present"], db["present"]
+    if _strip_prain(old_p["per"]) != _strip_prain(new_p["per"]):
+        print("FAIL: present-day non-prain per-site EAD drifted from v1.13")
+        print(f"  v1.13 : {_strip_prain(old_p['per'])}")
+        print(f"  v2.1.0: {_strip_prain(new_p['per'])}")
         raise SystemExit(1)
-    n = len(a)
-    print(f"ok  fire-free surface IDENTICAL to v1.13 across per-peril EAD, the")
-    print(f"    financial layer, adaptation, waterfall, layering, uncertainty,")
-    print(f"    and the Power BI export string ({n:,} chars compared)")
+    for site in old_p["per"]:
+        if old_p["per"][site]["wfire"] != 0 or new_p["per"][site]["wfire"] != 0:
+            print("FAIL: fire-free fixture must keep wildfire at zero")
+            raise SystemExit(1)
+    print("ok  present-day fire-free non-prain EAD identical to v1.13 "
+          "(tc, cflood, rflood, wfire)")
+
+    # 2. Rainfall recalibration: present-day prain EAD must rise where the
+    #    old transform was structurally near-zero / understated.
+    old_prain = sum(old_p["per"][s]["prain"] for s in old_p["per"])
+    new_prain = sum(new_p["per"][s]["prain"] for s in new_p["per"])
+    if not (new_prain > old_prain * 1.5):
+        print(f"FAIL: v3 rainfall recalibration should raise present prain EAD "
+              f"(old={old_prain:.0f}, new={new_prain:.0f})")
+        raise SystemExit(1)
+    print(f"ok  v3 rainfall recalibration raises present prain EAD "
+          f"({old_prain:,.0f} -> {new_prain:,.0f})")
+
+    # 3. Warming margin rule: SSP1-2.6 flat 2050->2080; 2080 spread not
+    #    compressed below the AR6 central spread.
+    w = db["warming"]
+    if w["ssp126_2080"] != 1.0 or w["ssp585_2080"] != 4.0:
+        print(f"FAIL: unexpected warming table {w}")
+        raise SystemExit(1)
+    if (w["ssp585_2080"] - w["ssp126_2080"]) < (3.5 - 0.9) * 0.9:
+        print("FAIL: 2080 pathway spread compressed below AR6 central")
+        raise SystemExit(1)
+    if not (w["prainDrain"] == 75 and w["prainPond"] == 0.55 and w["prainFb"] == 0.15):
+        print(f"FAIL: unexpected prain constants {w}")
+        raise SystemExit(1)
+    print("ok  assumptions v3: warming margin rule and prain constants pinned")
+
+    # 4. Future scenarios may diverge (warming + prain); confirm they still
+    #    produce finite positive portfolio totals.
+    for sc in ("ssp245_2050", "ssp585_2080"):
+        if not (db[sc]["total"] > 0 and db[sc]["acute"] > 0):
+            print(f"FAIL: {sc} portfolio totals must stay positive")
+            raise SystemExit(1)
+    print("ok  future scenarios remain finite and positive under v3 margins")
+
     out = run_app(NEW, FIRE_FIXTURE)
     assert "FIRE MATH PINNED" in out, out
     print(out)
-    print("\nAPP PARITY: v2.1.0 == v1.13 off the fire surface; "
-          "new fire math pinned to its formula")
+    print("\nAPP PARITY: present-day fire-free non-prain == v1.13; "
+          "prain + warming v3 pinned; new fire math pinned to its formula")
 
 
 if __name__ == "__main__":

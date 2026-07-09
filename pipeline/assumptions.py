@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 
-ASSUMPTIONS_VERSION = "2"       # bump when any effective value changes
+ASSUMPTIONS_VERSION = "3"       # bump when any effective value changes
 
 SCEN_KEYS = ["present"] + [f"{p}_{h}" for h in (2030, 2050, 2080)
                            for p in ("ssp126", "ssp245", "ssp585")]
@@ -48,20 +48,29 @@ SCEN_KEYS = ["present"] + [f"{p}_{h}" for h in (2030, 2050, 2080)
 _WARMING_CITE = ("IPCC AR6 WG1 Table 4.1, GSAT change vs 1995-2014 "
                  "(central estimate; 2021-2040 / 2041-2060 / 2081-2100 "
                  "windows read at the 2030 / 2050 / 2080 horizons)")
+# Margin rule (v3): every cell uses ~the 60th percentile of the AR6 likely
+# range, approximated as a FIXED fraction of the AR6 central so pathway
+# comparisons stay undistorted. Prior asymmetric deltas (e.g. +0.4 C on a
+# 0.9 C SSP1-2.6 2080 central vs +0.1 C on 3.5 C SSP5-8.5) compressed the
+# 2080 pathway spread and made the low-emissions branch keep warming where
+# AR6's central is flat. Rule: delta = round(0.15 * ar6_central, 1), floored
+# at 0.0. Near-term (2030) stays 0.0: the window already brackets the point
+# year and a fractional margin would invent precision the assessment lacks.
+_WARMING_MARGIN_FRAC = 0.15
 _WARMING_DELTA_REASON = (
-    "conservative screening margin retained from v1: the app horizons are "
-    "point years read against AR6 20-year windows, and the margin covers "
-    "within-window trend plus model spread; kept explicit, not silent")
+    "v3 margin rule: ~60th percentile of the AR6 likely range, approximated "
+    "as 15% of the AR6 central (rounded to 0.1 C) so every pathway/horizon "
+    "cell uses the SAME rule; near-term 2030 stays at the central (0.0). "
+    "Replaces the asymmetric v1/v2 offsets that distorted pathway spread.")
 
 _WARMING_AR6 = {                     # (pathway, horizon) -> AR6 central
     ("ssp126", 2030): 0.6, ("ssp126", 2050): 0.9, ("ssp126", 2080): 0.9,
     ("ssp245", 2030): 0.7, ("ssp245", 2050): 1.1, ("ssp245", 2080): 1.8,
     ("ssp585", 2030): 0.8, ("ssp585", 2050): 1.5, ("ssp585", 2080): 3.5,
 }
-_WARMING_DELTA = {                   # explicit conservative offsets
-    ("ssp126", 2030): 0.0, ("ssp126", 2050): 0.1, ("ssp126", 2080): 0.4,
-    ("ssp245", 2030): 0.0, ("ssp245", 2050): 0.3, ("ssp245", 2080): 0.5,
-    ("ssp585", 2030): 0.0, ("ssp585", 2050): 0.5, ("ssp585", 2080): 0.1,
+_WARMING_DELTA = {                   # explicit conservative offsets (rule above)
+    (p, h): (0.0 if h == 2030 else round(_WARMING_MARGIN_FRAC * c, 1))
+    for (p, h), c in _WARMING_AR6.items()
 }
 
 WARMING = {"present": {
@@ -101,10 +110,16 @@ def warming(scenario):
 
 _SLR_CITE = ("IPCC AR6 WG1 Table 9.9, GMSL rise vs 1995-2014 (median; 2080 "
              "interpolated between the 2050 and 2100 medians)")
+# Margin rule (v3): same fractional rule as warming (~60th percentile of the
+# AR6 likely range), applied to GMSL centrals. delta = round(0.15 * central, 2)
+# with 2030 held at 0.00 so near-term SLR is not invented. Prior asymmetric
+# offsets leaned hardest on SSP5-8.5 2080 and left SSP1-2.6 2050 unmargined.
+_SLR_MARGIN_FRAC = 0.15
 _SLR_DELTA_REASON = (
-    "conservative screening margin retained from v1 (roughly the 60-70th "
-    "percentile of the AR6 likely range at the late horizons); kept "
-    "explicit, not silent")
+    "v3 margin rule: ~60th percentile of the AR6 likely range, approximated "
+    "as 15% of the AR6 GMSL central (rounded to 0.01 m); 2030 stays at the "
+    "central. Same rule as the warming table so pathway comparisons stay "
+    "undistorted.")
 _SLR_REGION_CITE = ("NOAA 2022 Interagency Sea Level Rise Technical Report, "
                     "regional scenarios (screening-grade central factor on "
                     "the global-mean trajectory)")
@@ -115,9 +130,8 @@ _SLR_AR6_GMSL = {                    # (pathway, horizon) -> AR6 GMSL central
     ("ssp585", 2030): 0.10, ("ssp585", 2050): 0.23, ("ssp585", 2080): 0.48,
 }
 _SLR_DELTA = {                       # explicit conservative offsets (m)
-    ("ssp126", 2030): 0.00, ("ssp126", 2050): 0.00, ("ssp126", 2080): 0.03,
-    ("ssp245", 2030): 0.01, ("ssp245", 2050): 0.02, ("ssp245", 2080): 0.07,
-    ("ssp585", 2030): 0.01, ("ssp585", 2050): 0.04, ("ssp585", 2080): 0.14,
+    (p, h): (0.00 if h == 2030 else round(_SLR_MARGIN_FRAC * c, 2))
+    for (p, h), c in _SLR_AR6_GMSL.items()
 }
 
 # region -> (relative-SLR factor, one-line basis). global_mean is the
@@ -216,6 +230,32 @@ SCALARS = {
                     "to Communities, RDS-2020-0016). LABELED interim on the "
                     "trust surface; replaced per site wherever the CFL "
                     "raster is supplied"},
+    # TC-rainfall ponding transform (app + pack). v3 recalibrates so a
+    # Harvey-class ~1000 mm event can register a non-trivial damage fraction
+    # instead of the prior structural near-zero (>900 mm before any loss).
+    "prain_drain_mm": {
+        "value": 75.0, "units": "mm of event rainfall absorbed by site "
+                                "drainage before ponding begins",
+        "baseline": "per-event site drainage capacity (screening)",
+        "citation": "v3 recalibration: prior 150 mm stacked with ponding 0.4 "
+                    "and 0.3 m freeboard required >900 mm before any damage "
+                    "(structurally incapable of pricing Harvey-type pluvial). "
+                    "75 mm is a screening drainage capacity for a graded "
+                    "resort pad; LABELED screening on the trust surface"},
+    "prain_pond_coeff": {
+        "value": 0.55, "units": "fraction of excess rainfall that ponds as "
+                                "depth at the structure",
+        "baseline": "per-event ponding share (screening)",
+        "citation": "v3 recalibration: 0.55 of excess rain ponds (was 0.4); "
+                    "screening share for impermeable resort hardscape with "
+                    "partial drainage; not a site drainage study"},
+    "prain_fb_m": {
+        "value": 0.15, "units": "m freeboard (grading and drains) before "
+                                "rainfall ponding damages the structure",
+        "baseline": "per-site grading freeboard (screening)",
+        "citation": "v3 recalibration: 0.15 m (was 0.3 m) so extreme TC rain "
+                    "events can enter the damage curve; still a screening "
+                    "floor, not a site drainage study"},
 }
 
 # Conditional flame length (ft, upper band edge) -> conditional structure
@@ -589,6 +629,10 @@ def to_app_js():
         "// site (capped; LABELED interim); a grid carrying flame-length-\n"
         "// conditioned ratios in v25 supersedes it per site\n"
         f"const FIRE_COND_INTERIM={_js(scalar('fire_cond_interim'))};\n"
+        "// TC-rainfall ponding transform (v3 recalibrated; screening floor)\n"
+        f"const PRAIN_DRAIN_MM={_js(scalar('prain_drain_mm'))};\n"
+        f"const PRAIN_POND_COEFF={_js(scalar('prain_pond_coeff'))};\n"
+        f"const PRAIN_FB={_js(scalar('prain_fb_m'))};\n"
         "// BI module (Task 3): monthly share of Atlantic TC activity\n"
         "// (NOAA NHC climatology; sums to 1), regional monthly revenue\n"
         "// weights (mean 1 per region, same boxes as SLR), the HAZUS/REDi\n"

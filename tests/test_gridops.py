@@ -46,6 +46,24 @@ def test_thin_to_grid():
     print("ok  thin_to_grid: cell assignment and within-cell averaging")
 
 
+def test_thin_to_grid_wet_only():
+    # one wet shoreline centroid + three dry inland in the same 0.25-deg cell:
+    # all-centroid mean dilutes 2.0 m to 0.5 m; wet_only keeps 2.0 m.
+    lat = [25.01, 25.02, 24.99, 25.03]
+    lon = [-80.01, -80.02, -79.99, -80.03]
+    vals = {rp: np.array([2.0, 0.0, 0.0, 0.0], float) for rp in RPS}
+    diluted = rh.thin_to_grid(lat, lon, vals, grid_deg=0.25)
+    wet = rh.thin_to_grid(lat, lon, vals, grid_deg=0.25, wet_only=True)
+    assert len(diluted) == 1 and len(wet) == 1
+    assert np.isclose(diluted["v100"].iloc[0], 0.5)
+    assert np.isclose(wet["v100"].iloc[0], 2.0)
+    # all-dry cell vanishes under wet_only (align_to_cells restores zeros)
+    dry = rh.thin_to_grid([25.01], [-80.01],
+                          {rp: np.array([0.0]) for rp in RPS}, wet_only=True)
+    assert len(dry) == 0
+    print("ok  thin_to_grid wet_only: shoreline depth preserved, dry cells omitted")
+
+
 def test_blend_equal_and_renormalised():
     cells = [(25.0, -80.0), (25.25, -80.0)]
     a, b = mkgrid(cells, 10), mkgrid(cells, 30)
@@ -86,6 +104,7 @@ def test_blend_reproduces_single_source():
 if __name__ == "__main__":
     test_recipes()
     test_thin_to_grid()
+    test_thin_to_grid_wet_only()
     test_blend_equal_and_renormalised()
     test_align_to_cells()
     test_blend_reproduces_single_source()

@@ -214,11 +214,11 @@ COUNTRIES = ["USA", "PRI", "VIR"]        # add "MEX", "BHS" etc. as the portfoli
 # Return periods reported per cell (must match the app's loss table).
 RETURN_PERIODS = [10, 25, 50, 100, 250, 500]
 
-# Synthetic-track count requested from the Data API. "10" is fast and fine for
-# dev runs; "50" resolves the 250/500-year tail better and is recommended for
-# the scheduled authoritative run IF the machine has the memory for the USA
-# set (budget >= 32 GB RAM for USA at 50 tracks; PRI/VIR are small either way).
-NB_SYNTH_TRACKS = "10"
+# Synthetic-track count requested from the Data API. Default "50" resolves the
+# 250/500-year tail for authoritative quarterly runs. Override for fast local
+# smoke tests:  export RTV_NB_SYNTH_TRACKS=10
+# (USA at 50 tracks wants >= 32 GB RAM; PRI/VIR are small either way.)
+NB_SYNTH_TRACKS = os.environ.get("RTV_NB_SYNTH_TRACKS", "50")
 
 # Grid resolution for the output, in degrees (~25 km at 0.25). Raw centroids
 # are ~150 arcsec (~4-5 km); we thin to keep the CSV small and the app snappy.
@@ -506,15 +506,37 @@ def source_key(source) -> str:
     return source if source == "present" else f"{source[0]}_{source[1]}"
 
 
-def thin_to_grid(lat, lon, values_by_rp, grid_deg=GRID_DEG):
+def thin_to_grid(lat, lon, values_by_rp, grid_deg=GRID_DEG,
+                 wet_only=False, wet_eps=1e-6):
     """Average centroid RP intensities into grid cells of `grid_deg` spacing.
 
     Returns a DataFrame with lat, lon (cell centre) and one v{rp} column per
-    return period. Averaging within a cell is a mild, defensible smoothing
-    for portfolio screening.
+    return period. For smooth fields (wind) the all-centroid mean is a mild,
+    defensible smoothing. For sparse water fields (surge, river flood) pass
+    wet_only=True so dry inland centroids cannot dilute shoreline / channel
+    depth: only centroids above wet_eps enter the cell mean, and cells with
+    no wet centroids are omitted (callers restore full coverage with
+    align_to_cells zeros).
     """
-    glat = np.round(np.asarray(lat, dtype=float) / grid_deg) * grid_deg
-    glon = np.round(np.asarray(lon, dtype=float) / grid_deg) * grid_deg
+    lat = np.asarray(lat, dtype=float)
+    lon = np.asarray(lon, dtype=float)
+    values_by_rp = {rp: np.asarray(vals, dtype=float)
+                    for rp, vals in values_by_rp.items()}
+    if wet_only and len(lat):
+        wet = np.zeros(len(lat), dtype=bool)
+        for vals in values_by_rp.values():
+            wet |= vals > wet_eps
+        if wet.any():
+            lat, lon = lat[wet], lon[wet]
+            values_by_rp = {rp: vals[wet] for rp, vals in values_by_rp.items()}
+        else:
+            # no wet centroids at all: empty grid; align_to_cells will zero-fill
+            cols = {"lat": np.array([], float), "lon": np.array([], float)}
+            for rp in values_by_rp:
+                cols[f"v{rp}"] = np.array([], float)
+            return pd.DataFrame(cols)
+    glat = np.round(lat / grid_deg) * grid_deg
+    glon = np.round(lon / grid_deg) * grid_deg
     df = pd.DataFrame({"glat": glat, "glon": glon})
     for rp, vals in values_by_rp.items():
         df[f"v{rp}"] = vals
@@ -658,8 +680,11 @@ def fetch_river_flood_grid(iso3: str, app_key: str, meta: dict, cache=None):
                 lat = np.asarray(haz.centroids.lat, dtype=float)
                 lon = np.asarray(haz.centroids.lon, dtype=float)
                 inten = local_rp_intensity(haz, RETURN_PERIODS)
+                # wet_only: river flood is sparse along channels; all-centroid
+                # means dilute depth the same way surge does on the coast.
                 g = thin_to_grid(lat, lon,
-                                 {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)})
+                                 {rp: inten[i] for i, rp in enumerate(RETURN_PERIODS)},
+                                 wet_only=True)
                 if name is not None:
                     grid_cache[name] = g
                 del haz
@@ -759,9 +784,14 @@ def process_country(iso3: str, surge_enabled: bool, river_enabled: bool, meta: d
                             pt_v[rp].append(s_int[i][keep])
                     if not pt_lat:
                         raise RuntimeError("surge produced no centroids")
+                    # wet_only: surge is nonzero only in a narrow coastal strip;
+                    # averaging wet shoreline centroids with the dry inland
+                    # majority of a 0.25 deg cell systematically understates
+                    # depth at the shore (see RISK_MATH_REVIEW finding 3.2).
                     sgrid = thin_to_grid(
                         np.concatenate(pt_lat), np.concatenate(pt_lon),
-                        {rp: np.concatenate(pt_v[rp]) for rp in RETURN_PERIODS})
+                        {rp: np.concatenate(pt_v[rp]) for rp in RETURN_PERIODS},
+                        wet_only=True)
                     # Petals may subset centroids to the coastal band: restore
                     # full coverage with explicit zeros inland (see docstring).
                     out["surge"][app_key] = align_to_cells(sgrid, out["wgrid"])

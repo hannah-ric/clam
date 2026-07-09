@@ -116,7 +116,8 @@ def test_accumulator_nan_ocean():
 def test_deltas_and_lon():
     d = hh.scen_deltas(1.25)
     assert d["present"] == 0.0
-    assert np.isclose(d["ssp585_2080"], 3.6 * 1.25)
+    w85 = hh.WARMING["ssp585_2080"]
+    assert np.isclose(d["ssp585_2080"], w85 * 1.25)
     assert d["ssp126_2030"] < d["ssp245_2050"] < d["ssp585_2080"]
     lon = hh.to_pm180(np.array([0.25, 179.75, 180.25, 359.75]))
     assert np.allclose(lon, [0.25, 179.75, -179.75, -0.25])
@@ -132,7 +133,7 @@ def test_heat_meta_shape():
     assert m["years"] == [2005, 2024] and m["method"]
     lay = {(l["scenario"], l["cells"]) for l in m["layers"]}
     assert lay == {("present", 2), ("ssp585_2080", 1)}
-    assert m["deltas_c"]["ssp585_2080"] == round(3.6 * 1.25, 3)
+    assert m["deltas_c"]["ssp585_2080"] == round(hh.WARMING["ssp585_2080"] * 1.25, 3)
     print("ok  heat_meta: script, years, per-scenario layer counts, deltas")
 
 

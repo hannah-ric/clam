@@ -485,6 +485,16 @@ function renderCmdList(c,lens){
     const open=()=>{selectedId=+tr.dataset.sv;openSiteView(+tr.dataset.sv);};
     tr.onclick=open;
     tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}});
+    tr.addEventListener("mouseenter",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=+tr.dataset.sv;_clMap.setFilter("clam-hover",["==",["get","id"],_clHoverId]);
+      }
+    }catch(e){}});
+    tr.addEventListener("mouseleave",()=>{try{
+      if(typeof _clMap!=="undefined"&&_clMap&&typeof _clReady!=="undefined"&&_clReady){
+        _clHoverId=null;_clMap.setFilter("clam-hover",["==",["get","id"],-1]);
+      }
+    }catch(e){}});
   });
 }
 

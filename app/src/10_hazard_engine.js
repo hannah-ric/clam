@@ -66,14 +66,26 @@ function reliefVec(vec,relief){
 function haversine(a,b,c,d){const R=6371,r=Math.PI/180;const dLat=(c-a)*r,dLon=(d-b)*r;
   const x=Math.sin(dLat/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 
+/* Interim wind anchors: [lat, lon, v100_ms, log_slope]. Screening-grade
+   1-in-100 wind (m/s) and log-RP slope for IDW fill-in until a CLIMADA grid
+   loads. Provenance: regional climatology consistent with NOAA HURDAT /
+   IBTrACS basin intensity and inland decay (Holland-type), rounded to
+   screening precision; NOT a CAT-model output. Coastal Gulf/Florida and
+   Caribbean anchors sit in the Cat-3/4 1-in-100 band (~55-65 m/s); Mid-
+   Atlantic and Northeast step down; Hawaii is EP-basin; inland CONUS and
+   West Coast are residual tropical / remnant intensity. LABELED interim
+   on every trust surface; superseded cell-by-cell wherever a grid reaches. */
 const ANCHORS=[
-  [25.8,-80.2,62,7.5],[24.5,-81.8,64,7.7],[30.0,-90.1,58,7.2],[29.3,-94.8,56,7.0],
-  [18.4,-66.1,62,7.6],[18.3,-64.9,62,7.6],[27.0,-82.6,60,7.4],[26.1,-80.1,61,7.5],
-  [32.8,-79.9,52,6.9],[33.7,-78.9,50,6.8],[35.2,-75.5,54,7.0],[34.2,-77.9,51,6.8],[30.3,-81.4,48,6.7],
-  [36.8,-76.0,44,6.4],[40.7,-74.0,40,6.0],[41.7,-70.3,42,6.2],
-  [21.3,-157.8,42,5.8],[19.7,-155.1,46,6.1],[22.1,-159.4,44,6.0],
-  [28.5,-81.4,41,6.0],[29.4,-98.5,30,5.2],[33.7,-84.4,26,4.8],[30.3,-97.7,27,5.0],
-  [33.8,-116.5,15,3.6],[36.2,-115.1,14,3.4],[39.7,-105.0,12,3.2],[34.0,-118.2,14,3.4],[37.8,-122.4,13,3.3],
+  /* South Florida / Keys */ [25.8,-80.2,62,7.5],[24.5,-81.8,64,7.7],[26.1,-80.1,61,7.5],
+  /* Gulf Coast */           [30.0,-90.1,58,7.2],[29.3,-94.8,56,7.0],[27.0,-82.6,60,7.4],
+  /* Caribbean */            [18.4,-66.1,62,7.6],[18.3,-64.9,62,7.6],
+  /* SE Atlantic */          [32.8,-79.9,52,6.9],[33.7,-78.9,50,6.8],[35.2,-75.5,54,7.0],
+                             [34.2,-77.9,51,6.8],[30.3,-81.4,48,6.7],
+  /* Mid-Atlantic / NE */    [36.8,-76.0,44,6.4],[40.7,-74.0,40,6.0],[41.7,-70.3,42,6.2],
+  /* Hawaii */               [21.3,-157.8,42,5.8],[19.7,-155.1,46,6.1],[22.1,-159.4,44,6.0],
+  /* Inland Florida / TX */  [28.5,-81.4,41,6.0],[29.4,-98.5,30,5.2],[30.3,-97.7,27,5.0],
+  /* Inland SE / Rockies */  [33.7,-84.4,26,4.8],[39.7,-105.0,12,3.2],
+  /* West Coast / SW */      [33.8,-116.5,15,3.6],[36.2,-115.1,14,3.4],[34.0,-118.2,14,3.4],[37.8,-122.4,13,3.3],
 ];
 const IDW_SCALE=380;
 function interimVector(lat,lon,scenario){
@@ -349,8 +361,8 @@ function heatBand(days32){const t=[10,45,100,160],n=["Minimal","Low","Moderate",
    (an older grid, or no CFL raster supplied) the capped INTERIM ratio
    FIRE_COND_INTERIM applies and is LABELED interim on the trust surface. */
 const FIRE_WUI_PBURN={interface:0.3,intermix:0.6};  // interim annual point-burn %, by WUI class
-/* FIRE_WARMING_UPLIFT and FIRE_COND_INTERIM live in 05_assumptions.js */
-const PRAIN_DRAIN_MM=150, PRAIN_POND_COEFF=0.4, PRAIN_FB=0.3;  // site drainage screening constants
+/* FIRE_WARMING_UPLIFT, FIRE_COND_INTERIM, and the PRAIN_* ponding constants
+   live in 05_assumptions.js (generated from pipeline/assumptions.py). */
 function fireBurnPct(site,sc){
   const g=gridByHazard.wfire;
   if(g){const r=g(site.latitude,site.longitude,sc);
@@ -374,6 +386,74 @@ function fireVulnMult(site){
 function prainToDepth(vec){
   const o={};RPS.forEach(rp=>o[rp]=Math.max(0,((vec&&vec[rp])||0)-PRAIN_DRAIN_MM)/1000*PRAIN_POND_COEFF);
   return o;
+}
+
+/* ============================================================
+   Map hazard fields (Surface 3)
+   Shared by the MapLibre climate map and the Node test harness.
+   Grid-backed layers draw the loaded cells (never resampled).
+   Interim layers evaluate screening models on a mesh; wildfire and
+   TC rainfall have no interim spatial field by design.
+   ============================================================ */
+const MAP_PERILS=[
+  {key:"tc",    label:"Wind",       unit:"m/s · 1-in-100 wind speed",
+   interim:(la,lo,sc)=>interimVector(la,lo,sc).vec[100]},
+  {key:"cflood",label:"Surge",      unit:"m · 1-in-100 flood depth",
+   interim:(la,lo,sc)=>coastalFloodVector(la,lo,sc)[100]},
+  {key:"rflood",label:"River flood",unit:"m · 1-in-100 flood depth",
+   interim:(la,lo,sc)=>riverineFloodVector(la,lo,sc)[100]},
+  {key:"heat",  label:"Heat",       unit:"days over 32°C per year",
+   interim:(la,lo,sc)=>heatIndicators(la,lo,sc).daysOver32},
+  {key:"wfire", label:"Wildfire",   unit:"% annual burn probability",
+   interim:null,offReason:"wildfire has no interim spatial field (burn probability is point data); load a wfire grid"},
+  {key:"prain", label:"Rain",       unit:"mm · 1-in-100 event rainfall",
+   interim:null,offReason:"TC rainfall has no interim model by design; load a prain grid"},
+];
+const MAP_PERIL_BY={};MAP_PERILS.forEach(p=>MAP_PERIL_BY[p.key]=p);
+/* Interim mesh step (degrees). 0.5 is denser than the prior 0.7 so the
+   screening surface reads as a continuous field without inventing
+   sub-grid precision the interim models do not have. */
+const MAP_INTERIM_STEP=0.5;
+function hazardField(hz,sc,opts){
+  opts=opts||{};
+  const P=MAP_PERIL_BY[hz];
+  if(!P)return {none:true,reason:"unknown peril"};
+  if(gridByHazard[hz]&&hazardGrid&&hazardGrid.rows){
+    let rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario===sc);
+    let partialFrom=null;
+    if(!rows.length&&sc!=="present"){
+      rows=hazardGrid.rows.filter(r=>(r.hazard||"tc")===hz&&r.scenario==="present");
+      partialFrom="present";
+    }
+    if(rows.length){
+      const feats=rows.map(r=>({lon:r.lon,lat:r.lat,
+        v:Math.max(hz==="heat"?(+r.v10||0):(hz==="wfire"?(+r.v10||0):(+r.v100||0)),0)}));
+      return {features:feats,basis:"grid",cells:rows.length,partialFrom};
+    }
+  }
+  if(!P.interim)return {none:true,reason:P.offReason||"no data"};
+  const b=opts.bbox||[-180,5,-50,55];
+  const step=opts.step||MAP_INTERIM_STEP,feats=[];
+  for(let la=b[1]+step/2;la<b[3];la+=step)
+    for(let lo=b[0]+step/2;lo<b[2];lo+=step){
+      const v=Math.max(P.interim(la,lo,sc)||0,0);
+      if(v>0)feats.push({lon:+lo.toFixed(2),lat:+la.toFixed(2),v});
+    }
+  return {features:feats,basis:"interim",cells:feats.length,partialFrom:null};
+}
+function fieldDomain(fields){
+  const vals=[];
+  (fields||[]).forEach(f=>{if(f&&!f.none)f.features.forEach(x=>vals.push(x.v));});
+  if(!vals.length)return [0,1];
+  vals.sort((a,b)=>a-b);
+  const q=p=>vals[Math.min(vals.length-1,Math.floor(p*vals.length))];
+  let hi=q(0.995);if(!(hi>0))hi=1;
+  return [0,hi];
+}
+function fieldFC(field){
+  return {type:"FeatureCollection",features:(field.features||[]).map(f=>({
+    type:"Feature",geometry:{type:"Point",coordinates:[f.lon,f.lat]},
+    properties:{v:f.v}}))};
 }
 
 /* Vulnerability attributes (Phase B): optional per-site construction,
@@ -462,9 +542,15 @@ function siteTrust(site,hz,sc){
         const rel=siteRelief(site);
         t.coarse=rel==null;
         t.note=rel==null
-          ?"modeled-coarse: cell-average depth; add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
+          ?"modeled-coarse: cell wet-mean depth (dry centroids excluded); add ground_elev_m + cell_ground_elev_m (survey or enrich_sites.py) to read depth at the structure"
           :"depth at the structure (site sits "+(rel>=0?rel.toFixed(1)+" m above":Math.abs(rel).toFixed(1)+" m below")+" the cell's land ground)";
       }
+      /* TC rainfall: grid-backed but the ponding transform is a screening
+         floor (v3 recalibrated); never present a near-zero as a finding. */
+      if(hz==="prain")
+        t.note="screening ponding transform (drain "+PRAIN_DRAIN_MM+" mm, pond "
+          +PRAIN_POND_COEFF+", freeboard "+PRAIN_FB+" m); understates site-specific "
+          +"pluvial until a drainage study replaces the constants";
       return t;
     }
     const fb=trustFallback(site,hz);

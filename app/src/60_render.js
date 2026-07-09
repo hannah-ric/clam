@@ -1205,7 +1205,11 @@ function metaSourceLine(s){
   if(s.script)bits.push(esc(String(s.script).split(" ")[0]));
   if(s.generated_utc)bits.push("run "+esc(String(s.generated_utc).slice(0,10)));
   if(s.climada_version)bits.push("climada "+esc(s.climada_version)+(s.climada_petals_version?" + petals "+esc(s.climada_petals_version):""));
-  if(s.nb_synth_tracks)bits.push(esc(s.nb_synth_tracks)+" synth tracks");
+  if(s.nb_synth_tracks){
+    const n=+s.nb_synth_tracks;
+    bits.push(esc(s.nb_synth_tracks)+" synth tracks"
+      +(isFinite(n)&&n<50?" (tail under-resolved; authoritative runs use 50)":""));
+  }
   if(s.surge&&s.surge.dem_path)bits.push("DEM "+esc(String(s.surge.dem_path).split(/[\/\\]/).pop()));
   if(s.method)bits.push(esc(s.method));
   if(s.years&&s.years.length)bits.push("climatology "+esc(s.years[0])+"-"+esc(s.years[s.years.length-1]));
@@ -1263,6 +1267,13 @@ function renderHazProv(){
     if(md){
       metaSources(md).forEach((s,i)=>{const line=metaSourceLine(s);
         if(line)kv+='<span class="k">'+(i===0?"Pipeline":"")+'</span><span class="v">'+line+'</span>';});
+      /* Tail convention + track count: the two facts a coverage decision
+         needs next to any 250/500-year figure (RISK_MATH_REVIEW 3.1). */
+      const tracks=metaSources(md).map(s=>+s.nb_synth_tracks).filter(n=>isFinite(n)&&n>0);
+      const trackN=tracks.length?Math.max.apply(null,tracks):null;
+      kv+='<span class="k">High-RP tail</span><span class="v">grid path <b>extrapolates</b> beyond the largest simulated return period'
+        +(trackN!=null?'; · '+trackN+' synth tracks'+(trackN<50?' <small style="color:var(--warn-ink)">(under-resolved; authoritative runs use 50)</small>':''):'')
+        +'. The results pack clamps the tail <b>flat</b> instead. Figures on this tab use the grid convention unless a pack is loaded.</span>';
       const skipped=(md.skipped||[]).length;
       if(skipped)kv+='<span class="k">Skipped</span><span class="v">'+skipped+' layer'+(skipped>1?"s":"")+' in the last run fell back to interim (details in the meta file)</span>';
       kv+='<span class="k">Meta file</span><span class="v mono">'+esc(hazardMeta.name)+' \u00b7 '+hazardMeta.loaded+'</span>';

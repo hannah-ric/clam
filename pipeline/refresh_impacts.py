@@ -129,9 +129,21 @@ UNCERTAINTY_SCENARIOS = ["present", "ssp245_2050", "ssp585_2080"]
 FIRE_COND_INTERIM = assumptions.scalar("fire_cond_interim")
 FIRE_ROOF_A = 0.6                 # fire vulnerability factor: Class A roof
 FIRE_DEFENSIBLE = 0.7             # fire vulnerability factor: space >= 30 m
-PRAIN_DRAIN_MM = 150.0            # site drainage capacity per event
-PRAIN_POND_COEFF = 0.4            # ponding share of excess rain
-PRAIN_FB = 0.3                    # rainfall freeboard (grading and drains)
+# TC-rainfall ponding transform: single sourced in assumptions.py (v3
+# recalibration). Mirrors the app's generated 05_assumptions.js constants.
+PRAIN_DRAIN_MM = assumptions.scalar("prain_drain_mm")
+PRAIN_POND_COEFF = assumptions.scalar("prain_pond_coeff")
+PRAIN_FB = assumptions.scalar("prain_fb_m")
+# FLOPROS / protection embedding: mirrors the app's RFLOOD_GRID_INCLUDES_PROTECTION.
+# Flip BOTH when the served ISIMIP river_flood sets are confirmed to embed
+# protection standards (see RUNBOOK). Default false = apply FB_RIVER freeboard.
+RFLOOD_GRID_INCLUDES_PROTECTION = False
+
+
+def fb_river_m():
+    """Riverine freeboard used by the pack; 0 when the grid already embeds
+    protection, else FB_RIVER. Keeps pack and app from diverging on FLOPROS."""
+    return 0.0 if RFLOOD_GRID_INCLUDES_PROTECTION else FB_RIVER
 
 
 # ---------------------------------------------------------------------------
@@ -1871,7 +1883,7 @@ def main(argv=None) -> int:
                           for r in sites_c.itertuples()])
         fb_coast = np.maximum(FB_COAST + fbb, 0.0)
         fbp = np.maximum(np.full(len(sites_c), PRAIN_FB) + fbb, 0.0)
-        fb_river = np.maximum(FB_RIVER + fbb, 0.0)
+        fb_river = np.maximum(fb_river_m() + fbb, 0.0)
         scen = {}
         for app_key in rh.APP_SCENARIOS:
             r = eval_scenario(prep, app_key, values, wm, fb_coast, fb_river,
