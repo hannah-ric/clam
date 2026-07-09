@@ -83,6 +83,9 @@ function render(){
    why-these-numbers trace. Physical units lead; the qualitative bands stay
    on the ratings surfaces. */
 let decisionSort={key:"ead",dir:-1};
+/* v3.1 UX: compact is the landing state; only an explicit, persisted false
+   (the user clicked "All columns") widens the table. */
+function decisionCompactOn(){ return !(ui&&ui.decisionCompact===false); }
 function syncDecisionScroll(){
   const el=document.getElementById("decisionScroll");
   if(!el||!el.classList||el.scrollWidth==null)return;
@@ -93,7 +96,7 @@ function renderDecision(){
   const host=document.getElementById("decisionHost"); if(!host)return;
   if(!sites.length){host.innerHTML="";const p=document.getElementById("decisionPanel");if(p)p.style.display="none";return;}
   const p=document.getElementById("decisionPanel");if(p)p.style.display="block";
-  const compact=!!(ui&&ui.decisionCompact);
+  const compact=decisionCompactOn();
   const cbtn=document.getElementById("decisionCompactBtn");
   if(cbtn){cbtn.textContent=compact?"All columns":"Fewer columns";if(cbtn.setAttribute)cbtn.setAttribute("aria-pressed",compact?"true":"false");}
   const rows=decisionRows(sites,scenario,tolAf());
@@ -109,7 +112,12 @@ function renderDecision(){
   const perilName=k=>k==="heat"?"Extreme heat":HAZARD_LABEL[k]||k;
   const th=(label,key,num,title)=>'<th'+(num?' class="num"':'')+' data-dsort="'+key+'" style="cursor:pointer"'+(title?' title="'+esc(title)+'"':'')+'>'
     +label+(decisionSort.key===key?(decisionSort.dir<0?" ↓":" ↑"):"")+'</th>';
-  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead><tr>'+
+  /* v3.1 UX: a group row chunks the columns into four readable families
+     (who / cost / physical impact / action / status), so the table scans in
+     blocks instead of ten equal-weight headers. Display-only. */
+  const grp=(label,span)=>'<th colspan="'+span+'" scope="colgroup">'+label+'</th>';
+  let h='<div class="decision-scroll" id="decisionScroll"><table class="tbl"><thead>'+
+    '<tr class="thgroup">'+grp("Site",1)+grp("Driver &amp; cost",3)+(compact?"":grp("1-in-100 impact",2))+grp("Best action",2)+grp("Status &amp; data",2)+'</tr><tr>'+
     th("Site","name")+th("Main driver","dom")+
     th("Rare extreme year damage","dmg100",1,"Loss at a ~1% annual chance return period (1-in-100)")+
     th("Expected annual cost ($/yr)","ead",1,"Average yearly climate cost at this scenario")+
@@ -344,12 +352,40 @@ function tolAf(){
   return annuity(hv===""?APPRAISAL_DEFAULTS.horizonYears:+hv,
                  (dv===""?APPRAISAL_DEFAULTS.discountPct:+dv)/100);
 }
+/* v3.1 UX: the tolerance position is a decision driver, so a compact status
+   strip stays on the Summary tab even while the full threshold panel is
+   hidden by the default panel set. The strip reads the same toleranceFlags
+   as the panel and computes nothing new. */
+function revealTolerancePanel(){
+  if(!ui.panels)ui.panels={};
+  ui.panels.tolerance=true;persist();applyPanelPrefs();
+  const p=document.getElementById("tolPanel");
+  if(p&&p.scrollIntoView)try{p.scrollIntoView({behavior:"smooth",block:"start"});}catch(e){}
+}
+function renderToleranceStatus(t){
+  const card=document.getElementById("tolStatusCard"); if(!card)return;
+  if(!sites.length){card.style.display="none";card.innerHTML="";return;}
+  const nBr=t.siteBreaches.length;
+  const breach=t.anyBreach;
+  const bits=[];
+  if(nBr)bits.push("<b>"+nBr+" site"+(nBr>1?"s":"")+"</b> over the site threshold");
+  if(t.portBreach)bits.push("portfolio expected cost over its threshold");
+  if(t.varBreach)bits.push("rare extreme year over its threshold");
+  card.style.display="";
+  card.innerHTML=
+    '<span class="tolchip '+(breach?"breach":"ok")+'"><span class="dot"></span>'+(breach?"Over tolerance":"Within tolerance")+'</span>'+
+    '<span style="flex:1;min-width:200px">'+(breach
+      ?bits.join(" \u00b7 ")+" at "+esc(SCEN_LABEL[scenario]||scenario)+"."
+      :"Every site, the portfolio, and the tail sit inside your stated thresholds at "+esc(SCEN_LABEL[scenario]||scenario)+".")+'</span>'+
+    '<button type="button" class="lightbtn" onclick="revealTolerancePanel()">Review thresholds</button>';
+}
 function renderTolerance(){
   const host=document.getElementById("tolBody"); if(!host)return;
   const panel=document.getElementById("tolPanel");
-  if(!sites.length){ if(panel)panel.style.display="none"; return; }
+  if(!sites.length){ if(panel)panel.style.display="none"; renderToleranceStatus(null); return; }
   if(panel)panel.style.display="block";
   const t=toleranceFlags(sites,scenario,tolAf());
+  renderToleranceStatus(t);
   const fld=(key,label,val,step,unit)=>'<div class="field" style="margin-bottom:4px"><label>'+label+'</label>'+
     '<input type="number" data-tol="'+key+'" min="0" step="'+step+'" value="'+val+'" style="width:100%"> <span class="hint">'+unit+'</span></div>';
   const line=(lab,val,lim,breach)=>'<span class="k">'+lab+'</span><span class="v mono">'+val+' vs '+lim+
@@ -392,7 +428,7 @@ function renderTolerance(){
   if(ro&&ro.innerHTML)ro.innerHTML+=" "+(t.anyBreach
     ?'Against the stated risk tolerance, <b>'+(t.siteBreaches.length?t.siteBreaches.length+" site"+(t.siteBreaches.length>1?"s":""):"")+
       (t.siteBreaches.length&&(t.portBreach||t.varBreach)?" and ":"")+
-      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; see Position vs tolerance below.'
+      ((t.portBreach||t.varBreach)?"the portfolio":"")+'</b> sit above threshold; Review thresholds on the tolerance strip shows the detail.'
     :"The portfolio sits within its stated risk tolerance at this scenario.");
 }
 function renderOverview(scored){
@@ -1175,7 +1211,23 @@ function metaSourceLine(s){
   if(s.years&&s.years.length)bits.push("climatology "+esc(s.years[0])+"-"+esc(s.years[s.years.length-1]));
   return bits.join(" \u00b7 ");
 }
+/* v3.1 UX: the Method tab walks new users through step 1 before step 2. With
+   no portfolio loaded, the sites panel carries a "Start here" badge and the
+   hazard drop zone reads gated (the click/drop guard lives in wire()). Pure
+   display: data loaders are untouched. */
+function updateMethodGate(){
+  const gate=!sites.length;
+  const hd=document.getElementById("hazDrop");
+  if(hd&&hd.classList){
+    if(gate)hd.classList.add("gated"); else hd.classList.remove("gated");
+    hd.title=gate?"Load your sites first (step 1). Hazard data is reported against the loaded portfolio.":"";
+    if(hd.setAttribute)hd.setAttribute("aria-disabled",gate?"true":"false");
+  }
+  const sh=document.getElementById("siteStartHere");
+  if(sh&&sh.style)sh.style.display=gate?"":"none";
+}
 function renderHazProv(){
+  updateMethodGate();
   const badge=document.getElementById("hazBadge"),text=document.getElementById("hazText");
   const auth=perilAuthority();
   const chip=a=>'<span class="pill mini" title="'+esc(a.label+": "+(a.live?("CLIMADA grid, "+a.cells+" cells, "+a.nScen+"/"+SCEN_KEYS.length+" scenarios"+(a.nSites?", "+a.sitesModeled+"/"+a.nSites+" sites within coverage":"")):"interim model"))+'" style="background:'+(a.live?(a.full?"var(--r-low)":"var(--r-mod)"):"var(--r-min)")+'">'+a.short+'</span>';

@@ -52,7 +52,10 @@ let ui={views:{matrixGroup:"site",matrixMetric:"pct",mapColor:"peril",brand:"",s
      compact), and per-panel visibility on the Summary tab (panels[key]=false
      hides; anything else shows). simpleView above remains the detail-level
      flag (true = essentials). */
-  theme:"auto",density:"comfortable",panels:{},decisionCompact:false,dismissedInterimBanner:false};
+  /* decisionCompact defaults ON (v3.1 UX): the decision view lands with the
+     scannable column set; "All columns" persists an explicit false. Legacy
+     saved sessions carry their own value and are untouched by the default. */
+  theme:"auto",density:"comfortable",panels:{},decisionCompact:true,dismissedInterimBanner:false};
 
 /* hazard provider is built once (not per call) and cached per site+scenario,
    so the many scoring passes in one render do not repeat spatial lookups. */
@@ -373,10 +376,19 @@ function ensureInfoPop(){
   document.body.appendChild(_infoPop);
   return _infoPop;
 }
+/* v3.1 UX: one reading rhythm for every popover. The first paragraph is the
+   takeaway; bodies of three or more paragraphs collapse the rest behind a
+   "More detail" disclosure so no popover demands a long read up front. The
+   authored content strings are untouched (tests pin their wording). */
+function infoBodyHtml(b){
+  const parts=String(b).split(/(?=<p[ >])/).filter(x=>x.trim());
+  if(parts.length<3)return b;
+  return parts[0]+'<details class="more"><summary>More detail</summary>'+parts.slice(1).join("")+'</details>';
+}
 function showInfo(btn){
   const c=INFO[btn.dataset.info];if(!c)return;
   const pop=ensureInfoPop();
-  pop.innerHTML='<button class="close" aria-label="Close explanation">&times;</button><h4>'+esc(c.t)+'</h4>'+c.b+(c.s?'<div class="src">'+c.s+'</div>':"");
+  pop.innerHTML='<button class="close" aria-label="Close explanation">&times;</button><h4>'+esc(c.t)+'</h4>'+infoBodyHtml(c.b)+(c.s?'<div class="src">'+c.s+'</div>':"");
   pop.classList.add("open");
   const r=btn.getBoundingClientRect();
   const pw=pop.offsetWidth,ph=pop.offsetHeight,vw=document.documentElement.clientWidth,vh=document.documentElement.clientHeight;
@@ -410,7 +422,7 @@ function showMapUnavailable(){
      under the floating panels in the executive home (no blank void). */
   const el=document.getElementById("map");
   if(el.classList&&el.classList.add)el.classList.add("mapless");
-  el.innerHTML='<div class="mapless-msg">The climate map lives on the command view (top bar: Command view): real hazard surfaces, TCOR-encoded sites, and the pathway timeline, fully offline. This legacy pins-map area is retired; every figure and analysis works without it.</div>';
+  el.innerHTML='<div class="mapless-msg">The map is not shown here. Use the <b>Command view</b> (top bar) for the climate map and its timeline; every figure and analysis on this page works without the map.</div>';
 }
 function initMap(){
   if(typeof L==="undefined"){ showMapUnavailable(); return; }
