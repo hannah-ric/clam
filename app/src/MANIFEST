@@ -2,6 +2,8 @@
 05_assumptions.js
 10_hazard_engine.js
 20_finance.js
+22_tcor.js
+25_lossrun.js
 30_adaptation.js
 40_uncertainty.js
 50_state_info.js

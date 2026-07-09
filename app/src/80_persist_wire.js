@@ -1,4 +1,5 @@
 const LS_STATE="rtv_state_v1", LS_HAZ="rtv_hazard_v1", LS_META="rtv_hazmeta_v1", LS_PACK="rtv_respack_v1";
+const LS_LOSSRUN="rtv_lossrun_v1", LS_TCOR="rtv_tcor_v1";
 /* Power BI export contract (Phase C): the column ORDER is frozen. The three
    legacy perils sit mid-row where they always were; later perils append at
    the tail, never reorder. A test asserts these two lists partition ACUTE. */
@@ -8,6 +9,8 @@ function persist(){ try{ localStorage.setItem(LS_STATE,JSON.stringify({sites,sce
 function persistHazard(){ try{ localStorage.setItem(LS_HAZ,JSON.stringify(hazardGrid)); }catch(e){ /* grid too large to cache: fine, keeps working in-session */ } }
 function persistMeta(){ try{ localStorage.setItem(LS_META,JSON.stringify(hazardMeta)); }catch(e){} }
 function persistPack(){ try{ localStorage.setItem(LS_PACK,JSON.stringify(resultsPack)); }catch(e){} }
+function persistLossRun(){ try{ localStorage.setItem(LS_LOSSRUN,JSON.stringify(lossRun)); }catch(e){ /* a very large loss run may exceed quota: keeps working in-session */ } }
+function persistTcorProgram(){ try{ localStorage.setItem(LS_TCOR,JSON.stringify(tcorProgram)); }catch(e){} }
 function restore(){
   try{
     const s=JSON.parse(localStorage.getItem(LS_STATE)||"null");
@@ -36,6 +39,17 @@ function restore(){
     if(hm&&hm.data)hazardMeta=hm;
     const rpk=JSON.parse(localStorage.getItem(LS_PACK)||"null");
     if(rpk&&rpk.data)resultsPack=rpk;
+    const lr=JSON.parse(localStorage.getItem(LS_LOSSRUN)||"null");
+    if(lr&&Array.isArray(lr.claims)&&lr.claims.length)lossRun=lr;
+    const tp=JSON.parse(localStorage.getItem(LS_TCOR)||"null");
+    if(tp&&typeof tp==="object"){
+      tcorProgram=Object.assign({},tcorProgram,tp);
+      /* nested blocks merge over defaults so a new field ships with its
+         documented default even against an older saved program */
+      ["deductibles","perilClass","bi","premium","indirect"].forEach(k=>{
+        if(tp[k]&&typeof tp[k]==="object")tcorProgram[k]=Object.assign({},tcorProgram[k],tp[k]);
+      });
+    }
   }catch(e){}
 }
 

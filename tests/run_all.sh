@@ -44,6 +44,7 @@ rm -f pipeline/sim_hazard_grid.csv pipeline/sim_hazard_grid_meta.json \
 echo
 echo "== 3  frontend functional tests (v2.1.0 surface) ====================="
 python3 tests/test_frontend.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
+python3 tests/test_tcor.py app/TNL_Resort_Climate_Risk_Explorer_v210.html
 python3 tests/test_app_parity.py
 
 echo
